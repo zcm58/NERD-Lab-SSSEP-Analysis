@@ -11,22 +11,25 @@ now live in separate focused files.
 The current design also improves processing speed. It downsamples data to
 `256 Hz` before later analysis stages to reduce memory use and processing cost,
 and it supports file-level parallel processing so multiple `.bdf` files can be
-processed at the same time on machines with enough memory.
+processed at the same time. Yay for multi-core CPUs. 
 
-It also fixes several correctness issues from the earlier pipeline design. In
-particular, trigger events are now detected before downsampling and carried
+It also fixes several issues from Dylan's earlier design (no hate, just trying to help)
+In particular, trigger IDs are now detected before downsampling and carried
 forward through resampling, epochs near FIR filter boundaries are excluded from
-analysis, and parallel runs now enforce native thread limits so worker
-processes do not oversubscribe the machine.
+analysis, and parallel processing was implemented and is designed for potato laptops with 16 gigs of ram. 
 
 Before you start, create or activate your local virtual environment and run:
 
 `pip install -r requirements.txt`
 
+The above command will install the libraries directly into your virtual environment rather than
+across your whole machine. This is good coding practice - keeping projects and their dependencies separate from each other. 
+
 ## Project Layout
 
-- `sssep_bdf_batch_processor.py` is the compatibility entrypoint.
-  In PyCharm, this is the file to run.
+- `sssep_bdf_batch_processor.py` is THE file. It's like Dr. D.
+
+  In PyCharm, this is the file you'll run to actually process/analyze the data. 
 - `sssep_batch` contains the implementation.
 - `sssep_batch.batch.main()` is the batch runner used by the wrapper.
 - `sssep_batch.pipeline.process_one_bdf()` is the per-file orchestration layer.
@@ -39,18 +42,20 @@ Use this exact workflow:
    `BATCH_WORKERS = 3` controls how many `.bdf` files run at once.
    Start with `3`. On typical 16 GB machines, values above `3` are not
    recommended unless you have tested memory headroom and stability.
-2. In the PyCharm Project pane, locate [sssep_bdf_batch_processor.py](<C:/Users/zcm58/PycharmProjects/Dylan SSSEP/sssep_bdf_batch_processor.py>).
-3. Right-click `sssep_bdf_batch_processor.py`.
-4. Click `Run 'sssep_bdf_batch_processor'`.
 
-Do not run package modules directly. The intended user entrypoint is
-[sssep_bdf_batch_processor.py](<C:/Users/zcm58/PycharmProjects/Dylan SSSEP/sssep_bdf_batch_processor.py>), and the intended user-edit configuration file is
-[config.py](<C:/Users/zcm58/PycharmProjects/Dylan SSSEP/sssep_batch/config.py>).
+   Trust me. Your PC may scream at you if you do not obey.
+
+3. In the PyCharm Project pane, locate [sssep_bdf_batch_processor.py](<C:/Users/zcm58/PycharmProjects/Dylan SSSEP/sssep_bdf_batch_processor.py>).
+4. Right-click `sssep_bdf_batch_processor.py`.
+5. Click `Run 'sssep_bdf_batch_processor'`.
+
+See if it works. Idk yet. 
 
 ## Parallel Processing
 
-Parallel processing here is across files only. Each worker is a separate
-process handling one `.bdf` file at a time.
+Parallel processing just lets you process more than one file at a time. Should speed up analysis. 
+
+The 'batch worker' count sets how many files you wwant to process at once. 
 
 Increasing `BATCH_WORKERS` does not always make runs faster. On low-RAM
 systems, memory pressure can rise quickly because each worker may hold a full
@@ -103,7 +108,7 @@ C:\Users\zcm58\PycharmProjects\Dylan SSSEP\
       test_filtering.py
 ```
 
-## Module Responsibilities
+## Here's what each file does 
 
 - `config.py`
   Holds all experiment settings, trigger maps, analysis constants, and output
@@ -142,7 +147,7 @@ C:\Users\zcm58\PycharmProjects\Dylan SSSEP\
 
 ## Design Rules
 
-These rules should guide future edits:
+If you're editing this repo in the future, follow these rules: 
 
 1. `pipeline.py` defines stage order.
 2. `config.py` remains the single source of truth for settings.
@@ -153,6 +158,7 @@ These rules should guide future edits:
 6. Preserve mathematical output unless a change is explicitly intended and
    validated.
 7. The intended user-edit surface is `config.py`, not command-line arguments.
+8. Keep each file below 400 lines if possible. The smaller each file is, the easier it is to understand
 
 ## Testing
 
