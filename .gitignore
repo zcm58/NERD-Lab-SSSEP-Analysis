@@ -1,0 +1,34 @@
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test and tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE settings
+.idea/
+.vscode/
+
+# Local output and generated analysis artifacts
+Output/
+output/
+plots/
+*.png
+
+# Local EEG/data files
+*.bdf
+*.edf
+*.fif
+
+# OS files
+.DS_Store
+Thumbs.db
