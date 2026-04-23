@@ -1,6 +1,6 @@
 # NERD Lab SSSEP Analysis
 
-## Introduction
+## Overview
 
 This repository contains the BioSemi `.bdf` SSSEP batch processor as a
 structured package instead of one monolithic script. That design makes the code
@@ -23,7 +23,7 @@ Before you start, create or activate your local virtual environment and run:
 
 `pip install -r requirements.txt`
 
-## Current Role
+## Project Layout
 
 - `sssep_bdf_batch_processor.py` is the compatibility entrypoint.
   In PyCharm, this is the file to run.
@@ -59,7 +59,7 @@ FFT/Welch, plotting, and report generation. On a typical 16 GB system, start
 with `3` and do not increase above `3` unless you have tested memory headroom
 and stability.
 
-## Intended Repository Structure
+## Repository Structure
 
 The intended long-term shape of this repository is:
 
@@ -154,28 +154,13 @@ These rules should guide future edits:
    validated.
 7. The intended user-edit surface is `config.py`, not command-line arguments.
 
-## Near-Term Cleanup Targets
-
-The package split is in place, but these are the next logical cleanup steps:
-
-1. Unit tests now cover `events`, `analysis`, and `preprocess` with synthetic
-   arrays and small constructed MNE objects. Keep extending those tests before
-   changing core math or preprocessing rules.
-2. User-facing settings are already centralized in `config.py`. Keep it that
-   way and avoid scattering runtime configuration across multiple files.
-3. `pipeline.py` was reviewed and intentionally kept as-is for now because it
-   is still mostly orchestration. Split it further only if it stops being a
-   clear stage-order file.
-4. `MAX_INDIVIDUAL_PLOTS` is now enforced. Keep it if output volume needs to
-   stay bounded, or revise the value in `config.py` if users want a different
-   cap.
-5. One regression path now exists through an external local `.bdf` fixture.
-   Extend that path when you need stronger before/after validation on real
-   data.
-
 ## Testing
 
-Run the unit tests from the repository root with:
+Testing is mainly for development work when the code is being changed. It is
+not something you need for normal day-to-day analysis runs in PyCharm.
+
+If you are changing processing logic, structure, or outputs, run the unit tests
+from the repository root with:
 
 `python -m pytest -q`
 
