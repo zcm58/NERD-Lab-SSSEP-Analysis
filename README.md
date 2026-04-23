@@ -1,33 +1,27 @@
-# SSSEP Batch Package
+# NERD Lab SSSEP Analysis
 
 ## Introduction
 
-Dylan (or anyone else working on SSSEP in the future)
-
-This package contains the BioSemi `.bdf` SSSEP batch processor as a structured
-set of smaller modules instead of one monolithic script. That design makes the
-code easier to inspect, maintain, test, and extend because configuration,
+This repository contains the BioSemi `.bdf` SSSEP batch processor as a
+structured package instead of one monolithic script. That design makes the code
+easier to inspect, maintain, test, and extend because configuration,
 preprocessing, event handling, spectral analysis, plotting, and output writing
-now live in separate focused files. It's good coding practice to keep files under
-400 lines or so if possible. Makes debugging easier. 
+now live in separate focused files.
 
-This package design should speed up processing as well. It downsamples data to
-`256 Hz` to reduce memory use and processing cost before later analysis stages,
+The current design also improves processing speed. It downsamples data to
+`256 Hz` before later analysis stages to reduce memory use and processing cost,
 and it supports file-level parallel processing so multiple `.bdf` files can be
 processed at the same time on machines with enough memory.
 
-It also corrects several pipeline and filtering issues that could affect result
-quality or reliability. In particular, trigger events are now detected before
-downsampling and carried forward through resampling, the FIR filter
-(the high pass and low pass filters ) edge-exclusion rule
-helps avoid using epochs contaminated by filter boundary transients, and the
-parallel runner now applies explicit thread limits so multi-process runs do not
-melt your CPU. You're welcome. 
+It also fixes several correctness issues from the earlier pipeline design. In
+particular, trigger events are now detected before downsampling and carried
+forward through resampling, epochs near FIR filter boundaries are excluded from
+analysis, and parallel runs now enforce native thread limits so worker
+processes do not oversubscribe the machine.
 
-Before you start, set up a virtual environment, then 
-run this command in the terminal: pip install -r requirements.txt
+Before you start, create or activate your local virtual environment and run:
 
-That will install all of the libraries you need to run in this .venv. 
+`pip install -r requirements.txt`
 
 ## Current Role
 
@@ -58,12 +52,12 @@ Do not run package modules directly. The intended user entrypoint is
 Parallel processing here is across files only. Each worker is a separate
 process handling one `.bdf` file at a time.
 
-Increasing `BATCH_WORKERS` does not always make runs faster. On low-RAM systems,
-memory pressure can rise quickly because each worker may hold a full recording
-and several intermediate arrays during filtering, interpolation, FFT/Welch,
-plotting, and report generation. If you have a 16 gig laptop (which is most common 
-as of 2026) just leave this at 3 or consider lowering to 2 if you experience issues.
-
+Increasing `BATCH_WORKERS` does not always make runs faster. On low-RAM
+systems, memory pressure can rise quickly because each worker may hold a full
+recording and several intermediate arrays during filtering, interpolation,
+FFT/Welch, plotting, and report generation. On a typical 16 GB system, start
+with `3` and do not increase above `3` unless you have tested memory headroom
+and stability.
 
 ## Intended Repository Structure
 
@@ -71,9 +65,9 @@ The intended long-term shape of this repository is:
 
 ```text
 C:\Users\zcm58\PycharmProjects\Dylan SSSEP\
+  README.md
   sssep_bdf_batch_processor.py
   sssep_batch\
-    README.md
     __init__.py
     batch.py
     pipeline.py
@@ -114,48 +108,35 @@ C:\Users\zcm58\PycharmProjects\Dylan SSSEP\
 - `config.py`
   Holds all experiment settings, trigger maps, analysis constants, and output
   toggles.
-
 - `models.py`
   Holds small shared data containers such as `EpochSet` and `Spectrum`.
-
 - `logging_utils.py`
   Holds folder creation and batch/per-file logging helpers.
-
 - `batch.py`
   Discovers `.bdf` files, runs the per-file pipeline, and writes the batch
   summary.
-
 - `pipeline.py`
   Defines the processing order for a single `.bdf` file. This file should stay
   orchestration-focused and avoid absorbing low-level implementation details.
-
 - `outputs.py`
   Writes summary CSVs, processing reports, and error reports.
-
 - `analysis/metrics.py`
   Computes target-frequency metrics, SNR, and baseline comparison values.
-
 - `analysis/spectra.py`
   Computes the averaged-epoch FFT and Welch PSD spectra.
-
 - `analysis/plotting.py`
   Converts spectra to tabular output and writes diagnostic plots.
-
 - `events/status.py`
   Parses trigger labels and extracts intended events from the BioSemi `Status`
   channel.
-
 - `events/epochs.py`
   Cuts fixed analysis windows from detected events and enforces edge exclusion.
-
 - `preprocess/channels.py`
   Validates channels, applies reference handling, keeps the intended channels,
   and assigns montage/channel types.
-
 - `preprocess/filtering.py`
   Handles downsampling, finite-value cleanup, FIR filtering, notch filtering,
   filter validation, and the FIR edge margin rule.
-
 - `preprocess/bad_channels.py`
   Detects bad channels by kurtosis and runs interpolation.
 
@@ -189,7 +170,8 @@ The package split is in place, but these are the next logical cleanup steps:
    stay bounded, or revise the value in `config.py` if users want a different
    cap.
 5. One regression path now exists through an external local `.bdf` fixture.
-   Extend that path when you need stronger before/after validation on real data.
+   Extend that path when you need stronger before/after validation on real
+   data.
 
 ## Testing
 

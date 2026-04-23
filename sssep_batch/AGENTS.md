@@ -6,6 +6,9 @@
 to keep the old monolithic script split into focused modules with small,
 dedicated responsibilities.
 
+The main human-facing repository overview now lives in the root `README.md`.
+Use that file for project-level workflow, structure, and validation context.
+
 The package is organized around these boundaries:
 
 - `batch.py`

@@ -50,7 +50,7 @@ These are not optional cleanups. They are part of the current intended design:
 
 ## Before Making Structural Changes
 
-Read `sssep_batch/README.md` first. It contains the intended package structure,
+Read `README.md` first. It contains the intended package structure,
 module responsibilities, and safety checklist.
 
 If you change processing code, validate at minimum:
