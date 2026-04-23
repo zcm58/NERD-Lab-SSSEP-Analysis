@@ -8,9 +8,9 @@ modules with dedicated responsibilities.
 
 How to run in PyCharm
 ---------------------
-1. Edit settings in `sssep_batch/config.py`.
-2. In the PyCharm Project pane, right-click `sssep_bdf_batch_processor.py`.
-3. Click `Run 'sssep_bdf_batch_processor'`.
+1. In the PyCharm Project pane, right-click `sssep_bdf_batch_processor.py`.
+2. Click `Run 'sssep_bdf_batch_processor'`.
+3. Choose input and output folders in the launcher, then click Process Data.
 """
 
 import os
@@ -24,8 +24,8 @@ for env_name in (
 ):
     os.environ[env_name] = "1"
 
-from sssep_batch.batch import main
+from sssep_batch.gui import launch_gui
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(launch_gui())

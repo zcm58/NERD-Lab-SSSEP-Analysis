@@ -25,31 +25,41 @@ Before you start, create or activate your local virtual environment and run:
 The above command will install the libraries directly into your virtual environment rather than
 across your whole machine. This is good coding practice - keeping projects and their dependencies separate from each other. 
 
+The PyCharm entrypoint now opens a small folder-selection launcher. The
+launcher lets you choose input and output folders, save those folders for the
+next run, start processing, and open the output folder when processing is done.
+
 ## Project Layout
 
 - `sssep_bdf_batch_processor.py` is THE file. It's like Dr. D.
 
   In PyCharm, this is the file you'll run to actually process/analyze the data. 
 - `sssep_batch` contains the implementation.
-- `sssep_batch.batch.main()` is the batch runner used by the wrapper.
+- `sssep_batch.gui.launch_gui()` opens the basic launcher used by the wrapper.
+- `sssep_batch.batch.run_batch()` is the batch runner used by the launcher.
 - `sssep_batch.pipeline.process_one_bdf()` is the per-file orchestration layer.
 
 ## How To Run In PyCharm
 
 Use this exact workflow:
 
-1. Open [config.py](<C:/Users/zcm58/PycharmProjects/Dylan SSSEP/sssep_batch/config.py>) and edit the settings you want to use.
-   `BATCH_WORKERS = 3` controls how many `.bdf` files run at once.
-   Start with `3`. On typical 16 GB machines, values above `3` are not
-   recommended unless you have tested memory headroom and stability.
+1. Create or activate the project virtual environment and run
+   `pip install -r requirements.txt`.
+2. In the PyCharm Project pane, locate
+   [sssep_bdf_batch_processor.py](sssep_bdf_batch_processor.py).
+3. Right-click `sssep_bdf_batch_processor.py`.
+4. Click `Run 'sssep_bdf_batch_processor'`.
+5. In the launcher, choose the input folder containing `.bdf` files and the
+   output folder where results should be saved.
+6. Leave `Save folders for next time` checked if you want the launcher to
+   remember those folders locally, then click `Process Data`.
+7. When processing finishes, click `View Output` to open the output folder.
 
-   Trust me. Your PC may scream at you if you do not obey.
-
-3. In the PyCharm Project pane, locate [sssep_bdf_batch_processor.py](<C:/Users/zcm58/PycharmProjects/Dylan SSSEP/sssep_bdf_batch_processor.py>).
-4. Right-click `sssep_bdf_batch_processor.py`.
-5. Click `Run 'sssep_bdf_batch_processor'`.
-
-See if it works. Idk yet. 
+Do not run package modules directly. The intended user entrypoint is
+[sssep_bdf_batch_processor.py](sssep_bdf_batch_processor.py). Advanced
+experiment constants and fallback defaults live in
+[config.py](sssep_batch/config.py), but routine folder selection is handled by
+the launcher.
 
 ## Parallel Processing
 
@@ -75,6 +85,7 @@ C:\Users\zcm58\PycharmProjects\Dylan SSSEP\
   sssep_batch\
     __init__.py
     batch.py
+    gui.py
     pipeline.py
     config.py
     models.py
@@ -111,15 +122,18 @@ C:\Users\zcm58\PycharmProjects\Dylan SSSEP\
 ## Here's what each file does 
 
 - `config.py`
-  Holds all experiment settings, trigger maps, analysis constants, and output
-  toggles.
+  Holds experiment settings, trigger maps, analysis constants, output toggles,
+  and optional fallback folders.
 - `models.py`
   Holds small shared data containers such as `EpochSet` and `Spectrum`.
 - `logging_utils.py`
   Holds folder creation and batch/per-file logging helpers.
+- `gui.py`
+  Opens the basic PySide6 launcher, saves local folder defaults, and starts the
+  batch runner in a background thread.
 - `batch.py`
-  Discovers `.bdf` files, runs the per-file pipeline, and writes the batch
-  summary.
+  Validates selected folders, discovers `.bdf` files, runs the per-file
+  pipeline, logs batch progress, and writes the batch summary.
 - `pipeline.py`
   Defines the processing order for a single `.bdf` file. This file should stay
   orchestration-focused and avoid absorbing low-level implementation details.
@@ -150,15 +164,16 @@ C:\Users\zcm58\PycharmProjects\Dylan SSSEP\
 If you're editing this repo in the future, follow these rules: 
 
 1. `pipeline.py` defines stage order.
-2. `config.py` remains the single source of truth for settings.
+2. `config.py` remains the single source of truth for experiment settings.
 3. Avoid adding a generic `utils.py`.
 4. Keep new code in the most specific module that matches its responsibility.
 5. Prefer pure functions in submodules and keep file I/O concentrated in
    `batch.py`, `pipeline.py`, and `outputs.py`.
 6. Preserve mathematical output unless a change is explicitly intended and
    validated.
-7. The intended user-edit surface is `config.py`, not command-line arguments.
-8. Keep each file below 400 lines if possible. The smaller each file is, the easier it is to understand
+7. The intended user entrypoint is the PyCharm launcher, not command-line
+   arguments.
+8. Keep each file below 400 lines if possible. The smaller each file is, the easier it is to understand.
 
 ## Testing
 

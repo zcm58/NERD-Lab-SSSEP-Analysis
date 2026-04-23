@@ -1,7 +1,10 @@
 """Project settings and experiment constants."""
 
-INPUT_FOLDER = r"C:\Users\dacul\OneDrive\Desktop\EEG"
-OUTPUT_ROOT = r"C:\Users\dacul\OneDrive\Desktop\EEG\Output"
+# Optional fallback folders used when no saved GUI folders exist.
+# The normal PyCharm workflow prompts for these folders in the launcher and can
+# save them locally in .sssep_gui_settings.json without editing this file.
+INPUT_FOLDER = ""
+OUTPUT_ROOT = ""
 # Number of .bdf files to process at the same time.
 # This is file-level parallelism across separate recordings. It does not split
 # filtering, FFT, plotting, or any other work inside a single file across
