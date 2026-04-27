@@ -1,142 +1,208 @@
 # NERD Lab SSSEP Analysis
 
-## Overview
+## First-Time Setup On A New PC
 
-This repository contains the BioSemi `.bdf` SSSEP batch processor as a
-structured package instead of one monolithic script. That design makes the code
-easier to inspect, maintain, test, and extend because configuration,
-preprocessing, event handling, spectral analysis, plotting, and output writing
-now live in separate focused files.
+You only need to do this setup once per computer.
 
-The current design also improves processing speed. It downsamples data to
-`256 Hz` before later analysis stages to reduce memory use and processing cost,
-and it supports file-level parallel processing so multiple `.bdf` files can be
-processed at the same time. Yay for multi-core CPUs. 
+### 1. Install Python (or update it)
 
-It also fixes several issues from Dylan's earlier design (no hate, just trying to help)
-In particular, trigger IDs are now detected before downsampling and carried
-forward through resampling, epochs near FIR filter boundaries are excluded from
-analysis, and parallel processing was implemented and is designed for potato laptops with 16 gigs of ram. 
+Install Python 3.13.5 from:
 
-Before you start, create or activate your local virtual environment and run:
+https://www.python.org/downloads/
 
-`pip install -r requirements.txt`
+During installation, check the box that says `Add python.exe to PATH` if it is
+shown.
 
-The above command will install the libraries directly into your virtual environment rather than
-across your whole machine. This is good coding practice - keeping projects and their dependencies separate from each other. 
+### 2. Install PyCharm (if you don't have it installed)
 
-The PyCharm entrypoint now opens a small folder-selection launcher. The
-launcher lets you choose input and output folders, save those folders for the
-next run, start processing, and open the output folder when processing is done.
+Install PyCharm Community Edition from:
+
+https://www.jetbrains.com/pycharm/download/
+
+### 3. Get This Project Onto The Computer
+
+Put this project folder somewhere easy to find, for example:
+
+```text
+C:\Users\YourName\PycharmProjects\Dylan SSSEP
+```
+
+Do not put `.bdf` data files inside the project folder. Keep data in a separate
+folder such as:
+
+```text
+C:\Users\YourName\Desktop\SSSEP Data
+```
+
+### 4. Open The Project In PyCharm
+
+1. Open PyCharm.
+2. Click `Open`.
+3. Choose the `Dylan SSSEP` project folder.
+4. Wait for PyCharm to finish loading the project.
+
+### 5. Create The Project Virtual Environment
+
+A virtual environment is a private Python setup for this project. It keeps this
+project's libraries separate from the rest of the computer.
+
+In PyCharm:
+
+1. Open `File` > `Settings`.
+2. Go to `Project: Dylan SSSEP` > `Python Interpreter`.
+3. Click `Add Interpreter`.
+4. Choose `Add Local Interpreter`.
+5. Choose `Virtualenv Environment`.
+6. Select `New`.
+7. Use `.venv` as the environment folder name.
+8. Click `OK` or `Create`.
+
+### 6. Install The Required Libraries
+
+In PyCharm:
+
+1. Open the `Terminal` tab at the bottom of the window.
+2. Run this command:
+
+```powershell
+pip install -r requirements.txt
+```
+
+This may take several minutes. It installs the scientific Python libraries used
+by the analysis pipeline, including MNE, NumPy, SciPy, pandas, matplotlib, and
+PySide6.
+
+If the command fails, first check that the PyCharm terminal shows `(.venv)` near
+the start of the line. If it does not, the virtual environment is not active.
+
+## Running The Analysis
+
+Use this exact workflow for normal analysis runs:
+
+1. In the PyCharm Project pane, find `sssep_bdf_batch_processor.py`.
+2. Right-click `sssep_bdf_batch_processor.py`.
+3. Click `Run 'sssep_bdf_batch_processor'`.
+4. In the launcher, choose the input folder that contains your `.bdf` files.
+5. Choose the output folder where results should be saved.
+6. Leave `Save folders for next time` checked if you want the launcher to
+   remember those folders on this computer.
+7. Click `Process Data`.
+8. When processing finishes, click `View Output`.
+
+Do not run files inside `sssep_batch` directly. The intended entrypoint is:
+
+```text
+sssep_bdf_batch_processor.py
+```
+
+## What The Output Files Mean
+
+The output folder will contain a batch-level summary and one folder per `.bdf`
+file.
+
+Start with:
+
+```text
+batch_processing_summary.csv
+```
+
+This tells you whether each `.bdf` file finished successfully or failed. If a
+file failed, check the `error` and `error_file` columns.
+
+Each successfully processed `.bdf` file also gets its own output folder. Inside
+that folder, the most useful files are:
+
+- `*_sssep_event_summary.csv`
+  Main results table for each trigger condition.
+- `*_processing_report.txt`
+  Human-readable processing log for that file.
+- `plots\`
+  Diagnostic frequency plots for a limited number of trigger conditions.
+
+Important columns in `*_sssep_event_summary.csv`:
+
+- `trigger_code`
+  Numeric event code found in the BioSemi `Status` channel.
+- `trigger_label`
+  Human-readable condition label.
+- `expected_frequency_hz`
+  Stimulation frequency expected for that trigger.
+- `usable_epochs`
+  Number of usable repetitions found for that trigger.
+- `epoch_count_ok`
+  Whether the expected number of repetitions was found.
+- `status`
+  Whether that trigger condition was analyzed successfully.
+- `sssep_fft_*`
+  Primary SSSEP FFT metrics.
+- `welch_*`
+  Supplemental Welch PSD metrics.
+- `*_baseline_*`
+  Comparison against the gap/break baseline trigger.
+
+If `epoch_count_ok` is `False`, the result may still exist, but fewer usable
+epochs were available than expected. Check the processing report for details.
+
+## Common Problems
+
+### The launcher says PySide6 is missing
+
+The required libraries were not installed in the active virtual environment.
+Open the PyCharm terminal and run:
+
+```powershell
+pip install -r requirements.txt
+```
+
+### The launcher says no `.bdf` files were found
+
+Choose the folder that directly contains the `.bdf` files. The program looks
+for files ending in `.bdf` in the selected folder.
+
+### The run is slow
+
+Large EEG files can take time. The project processes multiple files at once
+using `BATCH_WORKERS` in `sssep_batch/config.py`. On a typical 16 GB computer,
+leave this set to `3` unless you know the computer has enough memory for more.
+
+### A file failed but the rest finished
+
+Open `batch_processing_summary.csv`, find the failed file, then open the
+`ERROR.txt` file listed in the failed file's output folder.
 
 ## Project Layout
 
-- `sssep_bdf_batch_processor.py` is THE file. It's like Dr. D.
-
-  In PyCharm, this is the file you'll run to actually process/analyze the data. 
-- `sssep_batch` contains the implementation.
-- `sssep_batch.gui.launch_gui()` opens the basic launcher used by the wrapper.
-- `sssep_batch.batch.run_batch()` is the batch runner used by the launcher.
-- `sssep_batch.pipeline.process_one_bdf()` is the per-file orchestration layer.
-
-## How To Run In PyCharm
-
-Use this exact workflow:
-
-1. Create or activate the project virtual environment and run
-   `pip install -r requirements.txt`.
-2. In the PyCharm Project pane, locate
-   [sssep_bdf_batch_processor.py](sssep_bdf_batch_processor.py).
-3. Right-click `sssep_bdf_batch_processor.py`.
-4. Click `Run 'sssep_bdf_batch_processor'`.
-5. In the launcher, choose the input folder containing `.bdf` files and the
-   output folder where results should be saved.
-6. Leave `Save folders for next time` checked if you want the launcher to
-   remember those folders locally, then click `Process Data`.
-7. When processing finishes, click `View Output` to open the output folder.
-
-Do not run package modules directly. The intended user entrypoint is
-[sssep_bdf_batch_processor.py](sssep_bdf_batch_processor.py). Advanced
-experiment constants and fallback defaults live in
-[config.py](sssep_batch/config.py), but routine folder selection is handled by
-the launcher.
-
-## Parallel Processing
-
-Parallel processing just lets you process more than one file at a time. Should speed up analysis. 
-
-The 'batch worker' count sets how many files you wwant to process at once. 
-
-Increasing `BATCH_WORKERS` does not always make runs faster. On low-RAM
-systems, memory pressure can rise quickly because each worker may hold a full
-recording and several intermediate arrays during filtering, interpolation,
-FFT/Welch, plotting, and report generation. On a typical 16 GB system, start
-with `3` and do not increase above `3` unless you have tested memory headroom
-and stability.
-
-## Repository Structure
-
-The intended long-term shape of this repository is:
-
-```text
-C:\Users\zcm58\PycharmProjects\Dylan SSSEP\
-  README.md
-  sssep_bdf_batch_processor.py
-  sssep_batch\
-    __init__.py
-    batch.py
-    gui.py
-    pipeline.py
-    config.py
-    models.py
-    logging_utils.py
-    outputs.py
-    analysis\
-      __init__.py
-      metrics.py
-      plotting.py
-      spectra.py
-    events\
-      __init__.py
-      epochs.py
-      status.py
-    preprocess\
-      __init__.py
-      bad_channels.py
-      channels.py
-      filtering.py
-  tests\
-    test_pipeline.py
-    test_regression_external_bdf.py
-    analysis\
-      test_metrics.py
-      test_spectra.py
-    events\
-      test_epochs.py
-      test_status.py
-    preprocess\
-      test_channels.py
-      test_filtering.py
-```
-
-## Here's what each file does 
-
-- `config.py`
+- `sssep_bdf_batch_processor.py`
+  The file to run in PyCharm for normal analysis.
+- `sssep_batch`
+  The implementation package.
+- `sssep_batch/gui.py`
+  Opens the folder-selection launcher.
+- `sssep_batch/batch.py`
+  Finds `.bdf` files, runs the batch, logs progress, and writes the batch
+  summary.
+- `sssep_batch/pipeline.py`
+  Runs the processing steps for one `.bdf` file.
+- `sssep_batch/config.py`
   Holds experiment settings, trigger maps, analysis constants, output toggles,
   and optional fallback folders.
+
+## Analysis Notes
+
+The pipeline detects `Status` events before downsampling and carries those
+events through resampling. Epochs near FIR filter boundaries are excluded from
+analysis. The pipeline downsamples recordings to `256 Hz` before later analysis
+stages to reduce memory use and processing time.
+
+Parallel processing is across files. It does not split filtering, FFT, plotting,
+or any other work inside a single file across multiple workers.
+
+## File Reference
+
 - `models.py`
   Holds small shared data containers such as `EpochSet` and `Spectrum`.
 - `logging_utils.py`
   Holds folder creation and batch/per-file logging helpers.
-- `gui.py`
-  Opens the basic PySide6 launcher, saves local folder defaults, and starts the
-  batch runner in a background thread.
-- `batch.py`
-  Validates selected folders, discovers `.bdf` files, runs the per-file
-  pipeline, logs batch progress, and writes the batch summary.
-- `pipeline.py`
-  Defines the processing order for a single `.bdf` file. This file should stay
-  orchestration-focused and avoid absorbing low-level implementation details.
 - `outputs.py`
   Writes summary CSVs, processing reports, and error reports.
 - `analysis/metrics.py`
@@ -159,9 +225,27 @@ C:\Users\zcm58\PycharmProjects\Dylan SSSEP\
 - `preprocess/bad_channels.py`
   Detects bad channels by kurtosis and runs interpolation.
 
-## Design Rules
+## Testing
 
-If you're editing this repo in the future, follow these rules: 
+Testing is mainly for development work when the code is being changed. It is
+not needed for normal day-to-day analysis runs in PyCharm.
+
+If you are changing processing logic, structure, or outputs, run the unit tests
+from the repository root with:
+
+```powershell
+python -m pytest -q
+```
+
+The regression test uses an external local `.bdf` fixture on purpose so the
+repository does not need to store binary EEG data. To enable it, set the
+`SSSEP_TEST_BDF` environment variable to a local `.bdf` path before running
+pytest. If `SSSEP_TEST_BDF` is not set, that regression test skips cleanly by
+default.
+
+## Developer Rules
+
+If you edit this repo in the future, follow these rules:
 
 1. `pipeline.py` defines stage order.
 2. `config.py` remains the single source of truth for experiment settings.
@@ -173,23 +257,7 @@ If you're editing this repo in the future, follow these rules:
    validated.
 7. The intended user entrypoint is the PyCharm launcher, not command-line
    arguments.
-8. Keep each file below 400 lines if possible. The smaller each file is, the easier it is to understand.
-
-## Testing
-
-Testing is mainly for development work when the code is being changed. It is
-not something you need for normal day-to-day analysis runs in PyCharm.
-
-If you are changing processing logic, structure, or outputs, run the unit tests
-from the repository root with:
-
-`python -m pytest -q`
-
-The regression test uses an external local `.bdf` fixture on purpose so the
-repository does not need to store binary EEG data. To enable it, set the
-`SSSEP_TEST_BDF` environment variable to a local `.bdf` path before running
-pytest. If `SSSEP_TEST_BDF` is not set, that regression test skips cleanly by
-default.
+8. Keep each file below 400 lines if possible.
 
 ## Refactor Safety Checklist
 
