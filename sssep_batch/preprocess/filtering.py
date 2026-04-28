@@ -1,4 +1,11 @@
-"""Downsampling and filtering."""
+"""Downsample, clean, and filter EEG data before epoch extraction.
+
+This module owns preprocessing steps that can affect analysis correctness:
+event-aware downsampling, finite-value cleanup, bandpass filtering, optional
+notch filtering, and the FIR edge margin calculation. The pipeline detects
+Status events before downsampling and passes those events here so MNE can keep
+their sample positions aligned with the resampled recording.
+"""
 
 from typing import Callable
 
@@ -21,7 +28,7 @@ from sssep_batch.config import (
 
 
 def validate_filter_settings(sfreq: float) -> None:
-    """Make sure filter settings cannot remove target SSSEP frequencies."""
+    """Stop if configured filter cutoffs would remove target SSSEP frequencies."""
     target_freqs = sorted(set(TRIGGER_HZ_MAP.values()))
     lowest_target = min(target_freqs)
     highest_target = max(target_freqs)
@@ -119,7 +126,7 @@ def replace_nonfinite_values(
     raw: mne.io.BaseRaw,
     log_func: Callable[[str], None],
 ) -> None:
-    """Replace NaN or infinite EEG values using public MNE operations."""
+    """Replace NaN or infinite EEG values with zero before filtering."""
     eeg_picks = mne.pick_types(raw.info, eeg=True, stim=False, exclude=[])
     if len(eeg_picks) == 0:
         raise RuntimeError("No EEG channels available for finite-value check.")
@@ -132,6 +139,7 @@ def replace_nonfinite_values(
     log_func("NaN/Inf values found in EEG data. Replacing them with 0 using MNE apply_function.")
 
     def _nan_to_num(channel_data: np.ndarray) -> np.ndarray:
+        """Return one EEG channel with NaN/Inf values replaced by zero."""
         return np.nan_to_num(channel_data, nan=0.0, posinf=0.0, neginf=0.0)
 
     raw.apply_function(
@@ -179,7 +187,7 @@ def apply_basic_fir_filter(
     log_func: Callable[[str], None],
     debug_enabled: bool = False,
 ) -> None:
-    """Apply the Basic FIR bandpass filter used by the preprocessing reference code."""
+    """Apply the fixed FIR bandpass filter used by the reference preprocessing."""
     l_freq = hp if (hp is not None and hp > 0) else None
     h_freq = lp
     if l_freq or h_freq:
@@ -304,7 +312,7 @@ def apply_notch_filter(
     filename_for_log: str,
     log_func: Callable[[str], None],
 ) -> None:
-    """Apply an optional 60 Hz notch filter to EEG channels."""
+    """Apply the optional line-noise notch filter to EEG channels."""
     if not APPLY_NOTCH:
         log_func(f"Skipping notch filter for {filename_for_log} because APPLY_NOTCH=False.")
         return

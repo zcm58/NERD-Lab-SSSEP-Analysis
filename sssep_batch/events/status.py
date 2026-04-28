@@ -1,4 +1,10 @@
-"""Status-channel event handling."""
+"""Find and document trigger events from the BioSemi `Status` channel.
+
+BioSemi recordings store trigger codes in a special stimulus channel named
+`Status`. This module extracts those events before downsampling, keeps only the
+active trigger codes and the Gap/Break baseline code, and writes a small audit
+CSV so users can see which raw trigger codes were present.
+"""
 
 from pathlib import Path
 from typing import Callable
@@ -17,7 +23,7 @@ from sssep_batch.preprocess.channels import require_channels
 
 
 def parse_trigger_label(label: str) -> tuple[str, str]:
-    """Split a trigger label into condition and finger words."""
+    """Split labels like `Think Thumb` into condition and finger parts."""
     parts = label.split(maxsplit=1)
     if len(parts) == 2:
         return parts[0], parts[1]
@@ -32,6 +38,11 @@ def find_status_events(
 ) -> tuple[np.ndarray, np.ndarray, list[int]]:
     """
     Find trigger events from the BioSemi Status channel and keep intended codes.
+
+    The returned tuple contains all raw Status events, the subset used by this
+    analysis, and a sorted list of every trigger code found in the file. The
+    processing pipeline carries the intended events through resampling so event
+    timing stays aligned with the downsampled recording.
     """
 
     require_channels(raw, [STIM_CHANNEL], "Status-channel event detection")

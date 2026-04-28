@@ -1,4 +1,10 @@
-"""Epoch extraction for trigger codes."""
+"""Cut fixed-length EEG windows around trigger events.
+
+For each trigger code, the pipeline needs repeated windows of EEG data with the
+same duration and channel order. This module turns event sample numbers into a
+3-D epoch array and records why any event was skipped, such as being too close
+to the file boundary or inside the FIR filter edge margin.
+"""
 
 import mne
 import numpy as np
@@ -17,6 +23,11 @@ def extract_epochs_for_code(
 ) -> EpochSet:
     """
     Extract fixed-length EEG windows after each event of one trigger code.
+
+    `events` uses the standard MNE event shape: sample number, previous value,
+    trigger code. Each usable event becomes one epoch with shape
+    `(n_channels, n_times)`. The returned `EpochSet` keeps both the data and the
+    skip counts so reports can explain missing repetitions.
     """
 
     sfreq = float(raw.info["sfreq"])

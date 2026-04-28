@@ -1,4 +1,14 @@
-"""Per-file SSSEP processing pipeline."""
+"""Orchestrate all processing stages for one BioSemi `.bdf` file.
+
+This module is the stage-order map for one recording. It loads the file, detects
+events before downsampling, prepares channels, filters data, extracts epochs,
+computes spectra/metrics, writes outputs, and returns a compact result row for
+the batch summary.
+
+Keep low-level logic in domain modules (`events`, `preprocess`, `analysis`, and
+`outputs`). `process_one_bdf()` should stay readable as a top-to-bottom story of
+what happens to one file.
+"""
 
 import traceback
 from pathlib import Path
@@ -58,7 +68,12 @@ def process_one_bdf(
     bdf_file: str | Path,
     output_root: str | Path,
 ) -> dict[str, object]:
-    """Process one BioSemi BDF file from loading through output saving."""
+    """Process one BioSemi BDF file from loading through output saving.
+
+    The `stage` variable is updated before each major step so that if an error
+    occurs, `ERROR.txt` can tell a beginner where the run failed. On success,
+    the returned dictionary becomes one row in `batch_processing_summary.csv`.
+    """
 
     bdf_path = Path(bdf_file)
     file_stem = bdf_path.stem
@@ -72,6 +87,7 @@ def process_one_bdf(
     stage = "starting"
 
     try:
+        # File loading: read the raw BDF data into memory so MNE can operate on it.
         log_func("=" * 78)
         log_func(f"Processing: {bdf_path.name}")
         log_func("=" * 78)
@@ -84,6 +100,7 @@ def process_one_bdf(
             f"sfreq={original_sfreq:.3f} Hz, duration={raw.times[-1]:.2f} sec."
         )
 
+        # Channel setup: verify the BioSemi channel layout and apply references.
         stage = "validating_channels"
         scalp_channels = get_scalp_channels(raw)
         require_channels(raw, ("EXG1", "EXG2"), "fixed EXG1/EXG2 reference")
@@ -95,6 +112,7 @@ def process_one_bdf(
         keep_scalp_and_status_channels(raw, scalp_channels, bdf_path.name, log_func)
         apply_biosemi_montage(raw, log_func)
 
+        # Event timing: detect Status triggers before resampling changes samples.
         stage = "status_event_detection"
         _all_events, intended_events, found_codes = find_status_events(
             raw=raw,
@@ -103,6 +121,7 @@ def process_one_bdf(
             log_func=log_func,
         )
 
+        # Preprocessing: downsample, validate filters, clean values, and filter EEG.
         stage = "downsampling"
         intended_events = downsample_if_needed(
             raw=raw,
@@ -157,6 +176,7 @@ def process_one_bdf(
             "numerically inside the file."
         )
 
+        # Bad-channel handling: detect unusual channels and interpolate if possible.
         stage = "kurtosis_bad_channel_detection"
         bad_metrics = detect_and_interpolate_bad_channels_by_kurtosis(
             raw=raw,
@@ -167,6 +187,7 @@ def process_one_bdf(
         )
         n_bad_by_kurtosis = int(bad_metrics["bad_by_kurtosis"].sum()) if not bad_metrics.empty else 0
 
+        # Analysis setup: choose channels and calculate the epoch window length.
         stage = "analysis_channel_validation"
         analysis_channels = validate_analysis_channels(raw)
         log_func(f"Using analysis channels ({len(analysis_channels)}): {analysis_channels}")
@@ -179,6 +200,7 @@ def process_one_bdf(
             f"total={analysis_window_sec:.3f}s."
         )
 
+        # Baseline processing: prepare Gap/Break spectra for active comparisons.
         stage = "baseline_epoch_extraction"
         baseline_epochs = extract_epochs_for_code(
             raw=raw,
@@ -217,6 +239,7 @@ def process_one_bdf(
                 "Baseline ratio columns will be NaN."
             )
 
+        # Active trigger analysis: build one output row per configured trigger.
         stage = "active_sssep_analysis"
         summary_rows: list[dict[str, object]] = []
         plotted_trigger_count = 0
@@ -365,6 +388,7 @@ def process_one_bdf(
                 )
                 plotted_trigger_count += 1
 
+        # Output writing: save CSVs/reports after all trigger rows are assembled.
         stage = "saving_outputs"
         summary_path = write_summary_csv(output_folder, file_stem, summary_rows)
 
@@ -384,6 +408,8 @@ def process_one_bdf(
             filter_edge_margin_sec=filter_edge_margin_sec,
             analysis_channels=analysis_channels,
             report_lines=report_lines,
+            summary_rows=summary_rows,
+            summary_csv_path=summary_path,
         )
 
         return {
@@ -397,6 +423,7 @@ def process_one_bdf(
         }
 
     except Exception as exc:
+        # Error output: keep failed-file diagnostics durable for the batch summary.
         error_path = output_folder / "ERROR.txt"
         error_text = traceback.format_exc()
         write_error_report(

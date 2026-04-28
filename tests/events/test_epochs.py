@@ -1,9 +1,16 @@
+"""Tests for cutting fixed analysis windows from event sample numbers.
+
+The raw data is synthetic and small, which lets the tests directly check how
+many epochs are kept, rejected as out-of-bounds, or excluded by the FIR margin.
+"""
+
 import numpy as np
 
 from sssep_batch.events.epochs import extract_epochs_for_code
 
 
 def test_extract_epochs_for_code_keeps_in_bounds_windows(raw_builder):
+    """Events with complete in-bounds windows should become usable epochs."""
     raw = raw_builder(["Cz", "Pz"], ["eeg", "eeg"], sfreq=10.0, n_times=100)
     events = np.array([[20, 0, 1], [40, 0, 1]], dtype=int)
 
@@ -22,6 +29,7 @@ def test_extract_epochs_for_code_keeps_in_bounds_windows(raw_builder):
 
 
 def test_extract_epochs_for_code_tracks_out_of_bounds_and_edge_exclusions(raw_builder):
+    """Skipped epochs should record whether they failed bounds or edge checks."""
     raw = raw_builder(["Cz", "Pz"], ["eeg", "eeg"], sfreq=10.0, n_times=100)
     events = np.array([[5, 0, 1], [20, 0, 1], [95, 0, 1]], dtype=int)
 

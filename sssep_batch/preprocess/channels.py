@@ -1,4 +1,10 @@
-"""Channel validation and setup."""
+"""Validate and prepare channel metadata before filtering and analysis.
+
+Beginners can think of this module as the "make sure the recording looks like
+the expected BioSemi setup" step. It checks required channels, tells MNE which
+channels are EEG versus stimulus channels, applies the EXG reference, keeps the
+intended scalp channels, and applies the BioSemi electrode layout.
+"""
 
 from typing import Callable, Iterable
 
@@ -14,7 +20,7 @@ from sssep_batch.config import (
 
 
 def require_channels(raw: mne.io.BaseRaw, required: Iterable[str], purpose: str) -> None:
-    """Confirm that required channels exist in the BDF file."""
+    """Stop early if a required channel is missing from the recording."""
     missing = [name for name in required if name not in raw.ch_names]
     if missing:
         raise RuntimeError(
@@ -24,7 +30,7 @@ def require_channels(raw: mne.io.BaseRaw, required: Iterable[str], purpose: str)
 
 
 def get_scalp_channels(raw: mne.io.BaseRaw) -> list[str]:
-    """Return the first 64 channel names as scalp EEG channels."""
+    """Return the first 64 channel names, which this experiment treats as scalp EEG."""
     if len(raw.ch_names) < SCALP_CHANNEL_COUNT:
         raise RuntimeError(
             f"Expected at least {SCALP_CHANNEL_COUNT} channels, but found "
@@ -34,7 +40,7 @@ def get_scalp_channels(raw: mne.io.BaseRaw) -> list[str]:
 
 
 def validate_analysis_channels(raw: mne.io.BaseRaw) -> list[str]:
-    """Check which EEG channels should be used for the final SSSEP analysis."""
+    """Return the final analysis channels or stop if a requested channel is absent."""
     if ANALYSIS_CHANNELS:
         found = [ch for ch in ANALYSIS_CHANNELS if ch in raw.ch_names]
         missing = [ch for ch in ANALYSIS_CHANNELS if ch not in raw.ch_names]
@@ -60,7 +66,7 @@ def set_known_channel_types(
     scalp_channels: list[str],
     log_func: Callable[[str], None],
 ) -> None:
-    """Tell MNE which channels are EEG and which channel is the stimulus channel."""
+    """Tell MNE which channels are EEG references/scalp channels and which is Status."""
     ch_type_map: dict[str, str] = {}
     for ch in scalp_channels:
         ch_type_map[ch] = "eeg"
@@ -80,7 +86,7 @@ def apply_exg_reference_and_drop(
     filename_for_log: str,
     log_func: Callable[[str], None],
 ) -> None:
-    """Apply EXG1/EXG2 as the EEG reference and then drop those channels."""
+    """Apply the EXG1/EXG2 reference pair, then remove those reference channels."""
     require_channels(raw, REFERENCE_CHANNELS, "EXG1/EXG2 referencing")
 
     log_func(
@@ -112,7 +118,7 @@ def keep_scalp_and_status_channels(
     filename_for_log: str,
     log_func: Callable[[str], None],
 ) -> None:
-    """Keep the 64 scalp EEG channels and the Status channel."""
+    """Drop unrelated channels so later steps see scalp EEG plus Status only."""
     keep = [ch for ch in scalp_channels if ch in raw.ch_names]
     if STIM_CHANNEL in raw.ch_names:
         keep.append(STIM_CHANNEL)
@@ -130,7 +136,7 @@ def apply_biosemi_montage(
     raw: mne.io.BaseRaw,
     log_func: Callable[[str], None],
 ) -> None:
-    """Apply the standard BioSemi 64-channel electrode layout."""
+    """Attach the standard BioSemi 64-channel electrode positions to the data."""
     montage = mne.channels.make_standard_montage(MONTAGE_NAME)
     raw.set_montage(montage, on_missing="ignore", verbose=False)
     log_func(f"Applied {MONTAGE_NAME} montage for scalp electrode positions.")

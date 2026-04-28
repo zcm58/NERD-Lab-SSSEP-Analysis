@@ -1,4 +1,10 @@
-"""Plot and CSV helpers for spectra."""
+"""Convert spectra into optional per-trigger CSV files and plots.
+
+The main event summary CSV is written elsewhere. This module handles the more
+detailed frequency output for a single trigger condition: a table of power at
+each frequency and, when enabled, a diagnostic PNG plot. Plot limits must never
+change which metrics are computed.
+"""
 
 from pathlib import Path
 
@@ -14,7 +20,7 @@ def spectrum_to_dataframe(
     active: Spectrum,
     baseline: Spectrum | None,
 ) -> pd.DataFrame:
-    """Convert an active spectrum, and optionally baseline spectrum, to a table."""
+    """Convert active and optional baseline spectra into one frequency table."""
 
     df = pd.DataFrame(
         {
@@ -34,7 +40,7 @@ def plot_spectrum(
     outpath: Path,
     target_hz: float | None,
 ) -> None:
-    """Save a spectrum plot for one trigger condition."""
+    """Save a PNG plot showing active power, optional baseline, and target lines."""
 
     plt.figure(figsize=(14, 6))
     plt.plot(active.freqs, active.power, linewidth=1.8, label="Active")

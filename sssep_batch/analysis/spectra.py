@@ -1,4 +1,19 @@
-"""Spectrum computation functions."""
+"""Compute frequency spectra from extracted EEG epochs.
+
+An epoch is one fixed-length EEG window after a trigger. The processing pipeline
+collects repeated epochs for a condition, then this module converts those time
+series into frequency-domain power values.
+
+Two spectrum styles are produced:
+
+- the primary SSSEP FFT, where repeated epochs are averaged first and then a
+  fast Fourier transform is computed; and
+- a supplemental Welch PSD, which estimates power by averaging shorter
+  overlapping segments across epochs and channels.
+
+These functions are math-sensitive. Their output feeds the exported metrics, so
+docstring changes are safe but formula changes should always be tested.
+"""
 
 import numpy as np
 from scipy.signal import welch
@@ -15,6 +30,11 @@ def compute_sssep_fft_from_averaged_epochs(
 ) -> Spectrum:
     """
     Compute the primary SSSEP spectrum by averaging epochs first, then FFT.
+
+    Shape reminder for beginners: `epochs` must be a 3-D array with dimensions
+    `(n_epochs, n_channels, n_times)`. The function averages repeated trials,
+    removes each channel's mean offset, applies a Hann window, computes power,
+    then keeps only frequencies between `fmin` and `fmax`.
     """
 
     if epochs.ndim != 3 or epochs.shape[0] == 0:
@@ -50,6 +70,10 @@ def compute_welch_psd_average(
 ) -> Spectrum:
     """
     Compute a supplemental Welch PSD averaged across epochs and channels.
+
+    Welch PSD is not the primary SSSEP metric here; it is an additional view of
+    the same data. It divides each epoch into short overlapping pieces, computes
+    power for those pieces, then averages the result for a smoother spectrum.
     """
 
     if epochs.ndim != 3 or epochs.shape[0] == 0:

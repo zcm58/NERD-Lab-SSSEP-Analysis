@@ -68,9 +68,9 @@ In PyCharm:
 pip install -r requirements.txt
 ```
 
-This may take several minutes. It installs the scientific Python libraries used
-by the analysis pipeline, including MNE, NumPy, SciPy, pandas, matplotlib, and
-PySide6.
+This may take several minutes. It installs the Python libraries used by the
+analysis pipeline and launcher, including MNE, NumPy, SciPy, pandas,
+matplotlib, PySide6, and PyYAML.
 
 If the command fails, first check that the PyCharm terminal shows `(.venv)` near
 the start of the line. If it does not, the virtual environment is not active.
@@ -169,6 +169,12 @@ leave this set to `3` unless you know the computer has enough memory for more.
 
 Open `batch_processing_summary.csv`, find the failed file, then open the
 `ERROR.txt` file listed in the failed file's output folder.
+
+For a longer checklist, see:
+
+```text
+docs\troubleshooting.md
+```
 
 ## Project Layout
 

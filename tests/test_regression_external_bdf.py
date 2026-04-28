@@ -1,3 +1,10 @@
+"""Optional real-data regression test for a user-provided `.bdf` file.
+
+The repository intentionally does not store EEG binary fixtures. This test only
+runs when `SSSEP_TEST_BDF` points to a local file, so normal development and CI
+can run the suite without private data.
+"""
+
 import os
 from pathlib import Path
 
@@ -9,6 +16,7 @@ from sssep_batch.pipeline import process_one_bdf
 
 
 def test_external_bdf_regression_fixture(tmp_path):
+    """Process one external `.bdf` file and check core output files/columns."""
     fixture_path = os.environ.get("SSSEP_TEST_BDF")
     if not fixture_path:
         pytest.skip("Set SSSEP_TEST_BDF to run the external .bdf regression test.")

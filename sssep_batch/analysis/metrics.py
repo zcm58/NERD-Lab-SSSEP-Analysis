@@ -1,4 +1,18 @@
-"""Spectrum-derived metrics."""
+"""Turn frequency spectra into beginner-readable SSSEP numbers.
+
+This module does not create spectra. It receives a `Spectrum`, which is already
+an array of frequencies plus an array of power values, and extracts the values
+that users see in the event summary CSV:
+
+- power nearest the expected stimulation frequency,
+- average and summed power in a narrow target band,
+- local noise power around the target, excluding the target itself,
+- signal-to-noise ratio (SNR), and
+- active-vs-baseline ratios.
+
+The functions are intentionally small because changes here directly affect the
+math in the exported CSV files.
+"""
 
 import numpy as np
 
@@ -12,14 +26,14 @@ from sssep_batch.models import Spectrum
 
 
 def safe_ratio(numerator: float, denominator: float) -> float:
-    """Divide two numbers while protecting against divide-by-zero errors."""
+    """Divide two numbers and return NaN when the ratio would be misleading."""
     if not np.isfinite(denominator) or abs(denominator) < EPS:
         return float("nan")
     return float(numerator / denominator)
 
 
 def ratio_to_db(ratio: float) -> float:
-    """Convert a power ratio to decibels."""
+    """Convert a positive power ratio to decibels, using NaN for invalid input."""
     if not np.isfinite(ratio) or ratio <= 0:
         return float("nan")
     return float(10.0 * np.log10(ratio))
@@ -31,6 +45,12 @@ def extract_target_metrics(
 ) -> dict[str, float]:
     """
     Measure power at and around the expected target frequency.
+
+    For a beginner: `target_hz` is the stimulation frequency expected for one
+    trigger code, such as 10 Hz for a thumb condition. This function looks for
+    the nearest measured frequency bin, summarizes the target band around it,
+    estimates nearby non-target noise, and returns values ready to write into a
+    CSV row.
     """
 
     freqs = spectrum.freqs
@@ -85,6 +105,11 @@ def add_baseline_comparison(
 ) -> None:
     """
     Add baseline comparison values to a summary row.
+
+    The active trigger and the Gap/Break baseline are measured separately. This
+    helper adds columns that compare those two measurements without changing the
+    rest of the row. Missing baseline data becomes NaN so downstream CSV readers
+    can distinguish "not available" from a real zero.
     """
 
     active_power = row.get(f"{active_prefix}_nearest_power", float("nan"))

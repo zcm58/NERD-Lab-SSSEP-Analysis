@@ -1,3 +1,9 @@
+"""Tests for BioSemi Status-channel trigger parsing.
+
+These tests build a tiny synthetic Status channel and verify that raw trigger
+codes are discovered while only configured analysis/baseline codes are kept.
+"""
+
 import numpy as np
 
 from sssep_batch.config import ACTIVE_EVENT_CODES, BASELINE_EVENT_CODE
@@ -5,11 +11,13 @@ from sssep_batch.events.status import find_status_events, parse_trigger_label
 
 
 def test_parse_trigger_label_splits_condition_and_finger():
+    """Two-word labels should split into condition and finger text."""
     assert parse_trigger_label("Think Thumb") == ("Think", "Thumb")
     assert parse_trigger_label("Gap/Break") == ("Gap/Break", "")
 
 
 def test_find_status_events_filters_to_intended_codes(raw_builder, tmp_path):
+    """Status events should be audited while analysis keeps only intended codes."""
     active_code = ACTIVE_EVENT_CODES[0]
     status = np.zeros(120, dtype=float)
     status[10] = active_code

@@ -1,3 +1,10 @@
+"""Tests for downsampling and filter-safety helpers.
+
+These tests protect key preprocessing rules without running the full pipeline:
+configured filters must keep target frequencies, FIR edge margins must remain
+stable, and resampling must carry event codes forward.
+"""
+
 import numpy as np
 import pytest
 
@@ -5,6 +12,7 @@ from sssep_batch.preprocess import filtering
 
 
 def test_validate_filter_settings_accepts_safe_cutoffs(monkeypatch):
+    """Filter cutoffs that surround all target frequencies should pass."""
     monkeypatch.setattr(filtering, "LOWCUT", 3.0)
     monkeypatch.setattr(filtering, "HIGHCUT", 50.0)
     monkeypatch.setattr(filtering, "TRIGGER_HZ_MAP", {1: 10.0, 2: 45.0})
@@ -13,6 +21,7 @@ def test_validate_filter_settings_accepts_safe_cutoffs(monkeypatch):
 
 
 def test_validate_filter_settings_rejects_highcut_below_target(monkeypatch):
+    """A highcut below any target frequency should be rejected before processing."""
     monkeypatch.setattr(filtering, "LOWCUT", 3.0)
     monkeypatch.setattr(filtering, "HIGHCUT", 40.0)
     monkeypatch.setattr(filtering, "TRIGGER_HZ_MAP", {1: 10.0, 2: 45.0})
@@ -22,11 +31,13 @@ def test_validate_filter_settings_rejects_highcut_below_target(monkeypatch):
 
 
 def test_get_fir_edge_margin_samples_matches_half_filter_length():
+    """The FIR edge margin should remain half of the configured filter length."""
     assert filtering.get_fir_edge_margin_samples(256.0, 3.0, 50.0) == 4224
     assert filtering.get_fir_edge_margin_samples(256.0, None, None) == 0
 
 
 def test_downsample_if_needed_returns_original_events_when_no_resample(raw_builder):
+    """If raw data is already slow enough, event samples should be unchanged."""
     raw = raw_builder(["Cz"], ["eeg"], sfreq=128.0, n_times=256)
     events = np.array([[64, 0, 1]], dtype=int)
     log_lines: list[str] = []
@@ -44,6 +55,7 @@ def test_downsample_if_needed_returns_original_events_when_no_resample(raw_build
 
 
 def test_downsample_if_needed_resamples_raw_and_events(raw_builder):
+    """When raw data is downsampled, event codes should survive resampling."""
     raw = raw_builder(["Cz"], ["eeg"], sfreq=512.0, n_times=512)
     events = np.array([[128, 0, 1], [384, 0, 2]], dtype=int)
     log_lines: list[str] = []

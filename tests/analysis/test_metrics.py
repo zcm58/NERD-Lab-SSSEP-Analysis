@@ -1,3 +1,10 @@
+"""Tests for converting spectra into SSSEP metric values.
+
+These tests use tiny hand-built spectra so the expected values can be checked
+directly. That makes the math behavior easier to understand and protects the
+CSV metric contract.
+"""
+
 import math
 
 import numpy as np
@@ -13,12 +20,14 @@ from sssep_batch.models import Spectrum
 
 
 def test_safe_ratio_and_ratio_to_db_handle_invalid_inputs():
+    """Invalid ratios should become NaN instead of crashing or returning infinity."""
     assert math.isnan(safe_ratio(1.0, 0.0))
     assert math.isnan(ratio_to_db(0.0))
     assert ratio_to_db(10.0) == pytest.approx(10.0)
 
 
 def test_extract_target_metrics_uses_target_band_and_local_noise_floor():
+    """Target metrics should use the configured target and local-noise bands."""
     spectrum = Spectrum(
         freqs=np.array([9.0, 9.8, 10.0, 10.2, 11.0]),
         power=np.array([2.0, 4.0, 10.0, 6.0, 8.0]),
@@ -38,6 +47,7 @@ def test_extract_target_metrics_uses_target_band_and_local_noise_floor():
 
 
 def test_add_baseline_comparison_populates_ratios_and_nan_defaults():
+    """Baseline comparison columns should be filled or set to NaN when absent."""
     row = {
         "sssep_fft_nearest_power": 8.0,
         "sssep_fft_target_band_sum_power": 20.0,

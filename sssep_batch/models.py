@@ -1,4 +1,9 @@
-"""Shared data containers."""
+"""Small shared data containers used across the pipeline.
+
+These dataclasses do not perform analysis themselves. They give a clear shape
+to data passed between modules: `EpochSet` for repeated time-domain EEG windows
+and `Spectrum` for frequency-domain power values.
+"""
 
 from dataclasses import dataclass
 

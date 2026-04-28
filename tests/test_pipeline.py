@@ -1,3 +1,10 @@
+"""Tests for high-level per-file pipeline orchestration.
+
+The pipeline is normally heavy because it loads `.bdf` files and runs signal
+processing. This test replaces those heavy pieces with stubs so it can verify
+stage behavior, especially that plot limits do not limit CSV/metric rows.
+"""
+
 from pathlib import Path
 
 import numpy as np
@@ -8,21 +15,29 @@ from sssep_batch.pipeline import process_one_bdf
 
 
 class _RawStub:
+    """Tiny object with the raw attributes used by this pipeline test."""
+
     def __init__(self) -> None:
+        """Create a synthetic raw-like object with a fixed sampling rate."""
         self.info = {"sfreq": 256.0}
         self.ch_names = ["Cz", "Pz", "Status"]
         self.times = np.linspace(0.0, 9.0, 10)
 
 
 class _CsvStub:
+    """Capture `to_csv()` calls without writing real spectrum CSV contents."""
+
     def __init__(self, counter: list[Path]) -> None:
+        """Store the shared list used to collect requested output paths."""
         self.counter = counter
 
     def to_csv(self, path: Path, index: bool = False) -> None:
+        """Record the path that would have been written by pandas."""
         self.counter.append(path)
 
 
 def test_process_one_bdf_enforces_max_individual_plots(monkeypatch, tmp_path):
+    """Plot limits should not reduce metrics, CSV summaries, or trigger rows."""
     import sssep_batch.pipeline as pipeline
 
     raw = _RawStub()
@@ -64,6 +79,7 @@ def test_process_one_bdf_enforces_max_individual_plots(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "validate_analysis_channels", lambda raw_obj: ["Cz", "Pz"])
 
     def fake_extract_epochs_for_code(*, code: int, picks: list[str], window_sec: float, **kwargs):
+        """Return five synthetic epochs for every requested trigger code."""
         epochs = np.ones((5, len(picks), 8), dtype=float)
         return EpochSet(
             code=code,
