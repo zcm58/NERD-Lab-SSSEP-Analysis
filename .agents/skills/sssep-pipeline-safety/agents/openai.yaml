@@ -1,0 +1,4 @@
+interface:
+  display_name: "SSSEP Pipeline Safety"
+  short_description: "Guard SSSEP processing order and math stability."
+  default_prompt: "Use $sssep-pipeline-safety to plan and verify a behavior-preserving SSSEP processing change."

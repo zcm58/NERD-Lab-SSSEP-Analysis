@@ -1,0 +1,4 @@
+interface:
+  display_name: "PySide6 GUI Cleanup"
+  short_description: "Maintain the PySide6 launcher without blocking processing."
+  default_prompt: "Use $pyside6-gui-cleanup before changing the SSSEP PySide6 launcher."

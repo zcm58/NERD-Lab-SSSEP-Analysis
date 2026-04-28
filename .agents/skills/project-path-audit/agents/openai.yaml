@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Path Audit"
+  short_description: "Review folder, BDF, and output path handling."
+  default_prompt: "Use $project-path-audit to audit SSSEP input, output, settings, or generated-file paths."

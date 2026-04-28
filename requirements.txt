@@ -5,3 +5,4 @@ matplotlib
 pandas
 PySide6
 pytest
+PyYAML

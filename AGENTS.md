@@ -14,12 +14,17 @@ for that. `config.py` is the intended configuration surface.
 
 ## Repo Layout
 
+- `architecture.md`
+  Compact module map and dependency guidance. Read this before broad changes.
 - `sssep_bdf_batch_processor.py`
   Thin entrypoint wrapper. Keep it simple.
 - `sssep_batch/`
   Actual implementation package.
 - `tests/`
   Unit tests plus one optional external-fixture regression test.
+- `.agents/skills/`
+  Repo-local repeatable Codex workflows. Use the narrowest matching skill for
+  pipeline, GUI, path, or output-format work.
 - `requirements.txt`
   Project dependency list for the local `.venv`.
 
@@ -50,8 +55,19 @@ These are not optional cleanups. They are part of the current intended design:
 
 ## Before Making Structural Changes
 
-Read `README.md` first. It contains the intended package structure,
-module responsibilities, and safety checklist.
+Read `README.md` and `architecture.md` first. They contain the intended
+workflow, package structure, module responsibilities, and safety checklist.
+
+Use repo-local skills when they match the task:
+
+- `$sssep-pipeline-safety` for processing-order, math, event, preprocessing, or
+  parallelism changes.
+- `$pyside6-gui-cleanup` for launcher, widget, dialog, worker-thread, or
+  GUI-status changes.
+- `$project-path-audit` for input/output folders, saved GUI settings, `.bdf`
+  discovery, generated files, or Windows path handling.
+- `$sssep-output-format-review` for CSV, report, plot, summary, or output-field
+  changes.
 
 If you change processing code, validate at minimum:
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "SSSEP Output Format Review"
+  short_description: "Protect CSV, report, and plot output contracts."
+  default_prompt: "Use $sssep-output-format-review before changing SSSEP output fields, reports, plots, or summaries."
