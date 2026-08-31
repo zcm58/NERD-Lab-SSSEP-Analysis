@@ -1,9 +1,8 @@
-"""Convert spectra into optional per-trigger CSV files and plots.
+"""Write full per-electrode FFT amplitude tables and selected-channel plots.
 
-The main event summary CSV is written elsewhere. This module handles the more
-detailed frequency output for a single trigger condition: a table of power at
-each frequency and, when enabled, a diagnostic PNG plot. Plot limits must never
-change which metrics are computed.
+Frequency tables retain every supplied FFT bin. Plots show the arithmetic
+mean of the selected electrodes' amplitudes in FMIN/FMAX; plotting limits do
+not change the FFT, tables, or summary calculations.
 """
 
 from pathlib import Path
@@ -16,21 +15,57 @@ from sssep_batch.config import FIXED_HZ_LINES, FMAX, FMIN
 from sssep_batch.models import Spectrum
 
 
+def _mean_selected_amplitude(
+    spectrum: Spectrum,
+    channel_names: list[str],
+    analysis_channels: list[str],
+) -> np.ndarray:
+    """Select electrodes by name and average their already-computed amplitudes."""
+    if spectrum.amplitude_uv.shape != (len(channel_names), len(spectrum.freqs)):
+        raise ValueError("Channel names and frequency bins must match the amplitude array.")
+    if len(set(channel_names)) != len(channel_names):
+        raise ValueError("Channel names must be unique in amplitude outputs.")
+    if not analysis_channels:
+        raise ValueError("Select at least one analysis channel for amplitude outputs.")
+    missing = [channel for channel in analysis_channels if channel not in channel_names]
+    if missing:
+        raise ValueError(f"Analysis channels are missing from the spectrum: {missing}")
+    indices = [channel_names.index(channel) for channel in analysis_channels]
+    return np.mean(spectrum.amplitude_uv[indices], axis=0)
+
+
+def _check_baseline_alignment(active: Spectrum, baseline: Spectrum) -> None:
+    """Reject incompatible spectra instead of silently combining mismatched bins."""
+    if (
+        not np.array_equal(active.freqs, baseline.freqs)
+        or active.amplitude_uv.shape != baseline.amplitude_uv.shape
+    ):
+        raise ValueError("Active and baseline spectra must have matching channels and frequency bins.")
+
+
 def spectrum_to_dataframe(
     active: Spectrum,
     baseline: Spectrum | None,
+    channel_names: list[str],
+    analysis_channels: list[str],
 ) -> pd.DataFrame:
-    """Convert active and optional baseline spectra into one frequency table."""
-
-    df = pd.DataFrame(
-        {
-            "frequency_hz": active.freqs,
-            "active_power": active.power,
-        }
-    )
-    if baseline is not None and len(baseline.freqs) == len(active.freqs):
-        df["baseline_power"] = baseline.power
-    return df
+    """Return full-frequency microvolt amplitudes for each electrode and ROI mean."""
+    columns = {
+        "frequency_hz": active.freqs,
+        "active_mean_amplitude_uv": _mean_selected_amplitude(
+            active, channel_names, analysis_channels
+        ),
+    }
+    if baseline is not None:
+        _check_baseline_alignment(active, baseline)
+        columns["baseline_mean_amplitude_uv"] = _mean_selected_amplitude(
+            baseline, channel_names, analysis_channels
+        )
+    for index, channel in enumerate(channel_names):
+        columns[f"active_{channel}_amplitude_uv"] = active.amplitude_uv[index]
+        if baseline is not None:
+            columns[f"baseline_{channel}_amplitude_uv"] = baseline.amplitude_uv[index]
+    return pd.DataFrame(columns)
 
 
 def plot_spectrum(
@@ -39,49 +74,49 @@ def plot_spectrum(
     title: str,
     outpath: Path,
     target_hz: float | None,
+    channel_names: list[str],
+    analysis_channels: list[str],
 ) -> None:
-    """Save a PNG plot showing active power, optional baseline, and target lines."""
+    """Save selected-electrode mean FFT amplitudes in microvolts as a PNG."""
+    active_mean = _mean_selected_amplitude(active, channel_names, analysis_channels)
+    baseline_mean = None
+    if baseline is not None:
+        _check_baseline_alignment(active, baseline)
+        baseline_mean = _mean_selected_amplitude(baseline, channel_names, analysis_channels)
+    visible = (active.freqs >= FMIN) & (active.freqs <= FMAX)
+    if not np.any(visible):
+        raise ValueError("The spectrum contains no bins in the plot frequency range.")
+    y_max = float(np.max(active_mean[visible]))
+    if baseline_mean is not None:
+        y_max = max(y_max, float(np.max(baseline_mean[visible])))
 
     plt.figure(figsize=(14, 6))
-    plt.plot(active.freqs, active.power, linewidth=1.8, label="Active")
-
-    if baseline is not None and len(baseline.freqs) == len(active.freqs):
-        plt.plot(
-            baseline.freqs,
-            baseline.power,
-            linestyle="--",
-            linewidth=1.4,
-            label="Gap/Break baseline",
-        )
-
-    y_max = float(np.nanmax(active.power)) if len(active.power) else 1.0
-    if baseline is not None and len(baseline.power):
-        y_max = max(y_max, float(np.nanmax(baseline.power)))
-    y_text = y_max * 0.98 if y_max > 0 else 1.0
-
-    for hz in FIXED_HZ_LINES:
-        plt.axvline(hz, linestyle=":", linewidth=1.0)
-        plt.text(hz + 0.10, y_text, f"{hz:g} Hz", rotation=90, va="top", fontsize=8)
-
-    if target_hz is not None:
-        plt.axvline(target_hz, linestyle="-", linewidth=1.8)
-        plt.text(
-            target_hz + 0.15,
-            y_max * 0.88 if y_max > 0 else 1.0,
-            f"Expected {target_hz:g} Hz",
-            rotation=90,
-            va="top",
-            fontsize=9,
-        )
-
-    plt.title(title)
-    plt.xlabel("Frequency (Hz)")
-    plt.ylabel("Power")
-    plt.xlim(FMIN, FMAX)
-    plt.ylim(0, y_max * 1.08 if y_max > 0 else 1.0)
-    plt.xticks(np.arange(np.ceil(FMIN), np.floor(FMAX) + 1, 1))
-    plt.grid(True, axis="y", alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(outpath, dpi=300)
-    plt.close()
+    try:
+        plt.plot(active.freqs, active_mean, linewidth=1.8, label="Active")
+        if baseline_mean is not None:
+            plt.plot(
+                baseline.freqs, baseline_mean, linestyle="--", linewidth=1.4,
+                label="Gap/Break baseline",
+            )
+        y_text = y_max * 0.98 if y_max > 0 else 1.0
+        for hz in FIXED_HZ_LINES:
+            plt.axvline(hz, linestyle=":", linewidth=1.0)
+            plt.text(hz + 0.10, y_text, f"{hz:g} Hz", rotation=90, va="top", fontsize=8)
+        if target_hz is not None:
+            plt.axvline(target_hz, linestyle="-", linewidth=1.8)
+            plt.text(
+                target_hz + 0.15, y_max * 0.88 if y_max > 0 else 1.0,
+                f"Expected {target_hz:g} Hz", rotation=90, va="top", fontsize=9,
+            )
+        plt.title(title)
+        plt.xlabel("Frequency (Hz)")
+        plt.ylabel("FFT amplitude (µV)")
+        plt.xlim(FMIN, FMAX)
+        plt.ylim(0, y_max * 1.08 if y_max > 0 else 1.0)
+        plt.xticks(np.arange(np.ceil(FMIN), np.floor(FMAX) + 1, 1))
+        plt.grid(True, axis="y", alpha=0.3)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(outpath, dpi=300)
+    finally:
+        plt.close()

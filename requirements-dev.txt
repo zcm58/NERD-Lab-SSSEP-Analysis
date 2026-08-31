@@ -1,0 +1,3 @@
+-r requirements.txt
+pytest==9.0.1
+edfio==0.4.16

@@ -15,7 +15,7 @@ import json
 import sys
 from pathlib import Path
 
-from sssep_batch.batch import BatchValidationError, run_batch, run_preflight_checks
+from sssep_batch.batch import BatchValidationError, run_batch
 from sssep_batch.config import INPUT_FOLDER, OUTPUT_ROOT
 
 
@@ -130,11 +130,11 @@ def launch_gui() -> int:
 
         progress_changed = Signal(str, int, int)
         batch_finished = Signal(object)
-        batch_failed = Signal(str)
+        batch_failed = Signal(object)
 
-        def __init__(self, input_folder: str, output_root: str) -> None:
+        def __init__(self, input_folder: str, output_root: str, parent: QWidget) -> None:
             """Remember the selected folders for the background run."""
-            super().__init__()
+            super().__init__(parent)
             self.input_folder = input_folder
             self.output_root = output_root
 
@@ -147,7 +147,7 @@ def launch_gui() -> int:
                     progress_callback=self._handle_progress,
                 )
             except Exception as exc:
-                self.batch_failed.emit(str(exc))
+                self.batch_failed.emit(exc)
             else:
                 self.batch_finished.emit(result)
 
@@ -195,7 +195,6 @@ def launch_gui() -> int:
             output_default = saved.get("output_root") or OUTPUT_ROOT
             self.input_edit.setText(input_default)
             self.output_edit.setText(output_default)
-            self.output_folder = output_default
 
         def _build_layout(self) -> None:
             """Assemble the small form-style launcher layout."""
@@ -248,41 +247,38 @@ def launch_gui() -> int:
             )
             if folder:
                 self.output_edit.setText(folder)
-                self.output_folder = folder
 
         def _start_processing(self) -> None:
-            """Run preflight checks, save defaults if requested, and start work."""
+            """Start setup checks and processing off the UI thread."""
+            if self.worker is not None:
+                return
             input_folder = self.input_edit.text().strip()
             output_root = self.output_edit.text().strip()
-
-            try:
-                preflight = run_preflight_checks(input_folder, output_root)
-            except BatchValidationError as exc:
-                message = str(exc)
-                self.status_label.setText(message.splitlines()[0])
-                QMessageBox.warning(self, "Setup Needs Attention", message)
-                return
-
-            if self.save_checkbox.isChecked():
-                try:
-                    save_folder_defaults(input_folder, output_root)
-                except OSError as exc:
-                    QMessageBox.warning(
-                        self,
-                        "Could Not Save Folders",
-                        f"Processing will continue, but folder defaults were not saved.\n\n{exc}",
-                    )
-
-            self.output_folder = output_root
+            self.output_folder = ""
             self._set_running(True)
-            self.status_label.setText(
-                f"Setup checks passed. Starting {preflight['bdf_file_count']} file(s)..."
-            )
-            self.worker = BatchWorker(input_folder, output_root)
+            self.status_label.setText("Checking folders, packages, and settings...")
+            self.worker = BatchWorker(input_folder, output_root, self)
             self.worker.progress_changed.connect(self._update_progress)
             self.worker.batch_finished.connect(self._processing_finished)
             self.worker.batch_failed.connect(self._processing_failed)
+            self.worker.finished.connect(self._worker_finished)
+            self.worker.finished.connect(self.worker.deleteLater)
             self.worker.start()
+
+        def closeEvent(self, event) -> None:
+            """Keep the launcher alive until its processing thread has stopped."""
+            if self.worker is not None and self.worker.isRunning():
+                event.ignore()
+                self.status_label.setText(
+                    "Processing is still running. Keep this window open until it finishes."
+                )
+                return
+            super().closeEvent(event)
+
+        def _worker_finished(self) -> None:
+            """Release the stopped worker before accepting another run."""
+            self.worker = None
+            self._set_running(False)
 
         def _set_running(self, running: bool) -> None:
             """Enable or disable controls while the background worker runs."""
@@ -302,9 +298,8 @@ def launch_gui() -> int:
                 self.status_label.setText(message)
 
         def _processing_finished(self, result: dict[str, object]) -> None:
-            """Show final batch status and re-enable output viewing."""
-            self._set_running(False)
-            self.view_output_button.setEnabled(True)
+            """Show batch results while retaining the thread until it finishes."""
+            self.output_folder = str(result["output_folder"])
             failed = int(result.get("failed", 0) or 0)
             total = int(result.get("total_files", 0) or 0)
             summary_csv = result.get("summary_csv", "")
@@ -318,13 +313,25 @@ def launch_gui() -> int:
                     f"Processing complete: {total} file(s) processed. "
                     f"Batch summary: {summary_csv}"
                 )
-            self.worker = None
+            if self.save_checkbox.isChecked():
+                try:
+                    save_folder_defaults(
+                        self.input_edit.text().strip(), self.output_edit.text().strip()
+                    )
+                except OSError as exc:
+                    QMessageBox.warning(
+                        self,
+                        "Could Not Save Folders",
+                        f"Processing finished, but folder defaults were not saved.\n\n{exc}",
+                    )
 
-        def _processing_failed(self, message: str) -> None:
+        def _processing_failed(self, exc: Exception) -> None:
             """Show a top-level failure message if the whole batch could not run."""
-            self._set_running(False)
-            self.view_output_button.setEnabled(False)
+            message = str(exc) or type(exc).__name__
             self.status_label.setText(message.splitlines()[0])
+            if isinstance(exc, BatchValidationError):
+                QMessageBox.warning(self, "Setup Needs Attention", message)
+                return
             QMessageBox.critical(
                 self,
                 "Processing Failed",
@@ -332,12 +339,11 @@ def launch_gui() -> int:
                 "What to try next: check that the selected folders still exist, "
                 "then review any ERROR.txt file in the output folder.",
             )
-            self.worker = None
 
         def _view_output(self) -> None:
             """Open the selected output folder in the Windows file browser."""
             output_path = Path(self.output_folder)
-            if not output_path.exists():
+            if not output_path.is_dir():
                 QMessageBox.warning(
                     self,
                     "Output Folder Not Found",

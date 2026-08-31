@@ -11,10 +11,13 @@ inside `pipeline.py` and its domain-specific helper modules.
 """
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import datetime
 import importlib.util
+from math import isfinite
 from numbers import Real
 import os
 from pathlib import Path
+from tempfile import NamedTemporaryFile, mkdtemp
 from typing import Callable
 
 import pandas as pd
@@ -54,8 +57,6 @@ REQUIRED_PACKAGE_IMPORTS = {
     "matplotlib": "matplotlib",
     "pandas": "pandas",
     "PySide6": "PySide6",
-    "pytest": "pytest",
-    "PyYAML": "yaml",
 }
 
 
@@ -98,7 +99,7 @@ def discover_bdf_files(input_folder: str | Path | None) -> list[Path]:
             f"BioSemi .bdf files.\n\nSelected path: {input_path}"
         )
 
-    bdf_files = sorted(input_path.glob("*.bdf"))
+    bdf_files = sorted(path for path in input_path.glob("*.bdf") if path.is_file())
     if not bdf_files:
         raise BatchValidationError(
             "No .bdf files were found in the selected input folder. Choose a "
@@ -135,19 +136,27 @@ def validate_config_settings() -> None:
     if not isinstance(BATCH_WORKERS, int) or BATCH_WORKERS < 1:
         problems.append("BATCH_WORKERS must be a whole number of 1 or more.")
     if DOWNSAMPLE_RATE is not None and (
-        not isinstance(DOWNSAMPLE_RATE, Real) or DOWNSAMPLE_RATE <= 0
+        not isinstance(DOWNSAMPLE_RATE, Real)
+        or not isfinite(DOWNSAMPLE_RATE) or DOWNSAMPLE_RATE < 0
     ):
-        problems.append("DOWNSAMPLE_RATE must be a positive number.")
-    filter_values_are_numbers = isinstance(LOWCUT, Real) and isinstance(HIGHCUT, Real)
-    metric_values_are_numbers = isinstance(FMIN, Real) and isinstance(FMAX, Real)
-    if not filter_values_are_numbers:
-        problems.append("LOWCUT and HIGHCUT must be numbers.")
-    elif LOWCUT <= 0 or HIGHCUT <= LOWCUT:
-        problems.append("LOWCUT must be positive and HIGHCUT must be greater than LOWCUT.")
-    if not metric_values_are_numbers:
-        problems.append("FMIN and FMAX must be numbers.")
-    elif filter_values_are_numbers and (FMIN < LOWCUT or FMAX > HIGHCUT or FMAX <= FMIN):
-        problems.append("FMIN/FMAX must stay inside the LOWCUT/HIGHCUT filter range.")
+        problems.append("DOWNSAMPLE_RATE must be positive, or 0/None to disable downsampling.")
+    lowcut_valid = LOWCUT is None or (
+        isinstance(LOWCUT, Real) and isfinite(LOWCUT) and LOWCUT >= 0
+    )
+    highcut_valid = HIGHCUT is None or (
+        isinstance(HIGHCUT, Real) and isfinite(HIGHCUT) and HIGHCUT > 0
+    )
+    if not lowcut_valid:
+        problems.append("LOWCUT must be positive, or 0/None to disable the high-pass filter.")
+    if not highcut_valid:
+        problems.append("HIGHCUT must be positive, or None to disable the low-pass filter.")
+    if lowcut_valid and highcut_valid and LOWCUT is not None and HIGHCUT is not None:
+        if LOWCUT >= HIGHCUT:
+            problems.append("HIGHCUT must be greater than LOWCUT.")
+    if not all(isinstance(value, Real) and isfinite(value) for value in (FMIN, FMAX)):
+        problems.append("FMIN and FMAX must be finite numbers.")
+    elif FMIN < 0 or FMAX <= FMIN:
+        problems.append("FMIN must be nonnegative and FMAX must be greater than FMIN.")
     if (
         not isinstance(EXPECTED_REPETITIONS_PER_TRIGGER, int)
         or EXPECTED_REPETITIONS_PER_TRIGGER < 1
@@ -181,11 +190,11 @@ def validate_config_settings() -> None:
 
 def ensure_output_folder_ready(output_path: Path) -> None:
     """Create and probe the output folder so permission errors are clear."""
-    probe_path = output_path / ".sssep_write_test.tmp"
     try:
         ensure_folder(output_path)
-        probe_path.write_text("ok\n", encoding="utf-8")
-        probe_path.unlink()
+        with NamedTemporaryFile(prefix=".sssep_write_test_", dir=output_path) as probe:
+            probe.write(b"ok\n")
+            probe.flush()
     except OSError as exc:
         raise BatchValidationError(
             "The output folder could not be created or written to. Choose a "
@@ -193,6 +202,12 @@ def ensure_output_folder_ready(output_path: Path) -> None:
             f"Selected folder: {output_path}\n"
             f"System error: {exc}"
         ) from exc
+
+
+def create_run_output_folder(output_root: Path) -> Path:
+    """Atomically create a new run folder without reusing earlier results."""
+    prefix = datetime.now().strftime("run_%Y%m%d_%H%M%S_")
+    return Path(mkdtemp(prefix=prefix, dir=output_root))
 
 
 def validate_batch_request(
@@ -289,6 +304,9 @@ def run_batch(
     """
     Run the full batch processor for the selected folders.
 
+    Every run writes into a new child folder of the selected output root.
+    The returned output_folder identifies that run, not the selected root.
+
     The batch runner uses a process pool for file-level parallelism: each
     worker processes one `.bdf` file at a time, and no analysis stage inside a
     single file is parallelized here. The effective worker count is
@@ -301,7 +319,7 @@ def run_batch(
     configure_native_thread_limits()
     preflight = run_preflight_checks(input_folder, output_root)
     input_path = Path(str(preflight["input_folder"]))
-    output_path = Path(str(preflight["output_folder"]))
+    output_path = create_run_output_folder(Path(str(preflight["output_folder"])))
     bdf_files = [Path(path) for path in preflight["bdf_files"]]
     logger = setup_batch_logger(output_path)
 

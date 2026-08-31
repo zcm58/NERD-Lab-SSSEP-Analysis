@@ -20,7 +20,7 @@ OUTPUT_ROOT = ""
 #
 # Start with 3. On typical 16 GB systems, 3 workers is the recommended maximum
 # because each worker may hold a full raw recording plus intermediate arrays for
-# filtering, interpolation, FFT/Welch, plotting, and report generation.
+# filtering, interpolation, FFT, plotting, and report generation.
 # Increasing above 3 is possible, but it is not recommended on typical 16 GB
 # machines unless you have tested memory headroom and stability.
 BATCH_WORKERS = 3
@@ -30,16 +30,16 @@ BATCH_WORKERS = 3
 SCALP_CHANNEL_COUNT = 64
 REFERENCE_CHANNELS = ("EXG1", "EXG2")
 STIM_CHANNEL = "Status"
-MONTAGE_NAME = "biosemi64"
+MONTAGE_NAME = "standard_1005"
 
 # Advanced analysis settings. These values affect math and should stay aligned
 # with the experiment plan.
+# Use 0 or None to disable downsampling.
 DOWNSAMPLE_RATE = 256
 
-LOWCUT = 3.0
+# LOWCUT: 0/None disables the high-pass; HIGHCUT: None disables the low-pass.
+LOWCUT = 0.1
 HIGHCUT = 50.0
-APPLY_NOTCH = True
-NOTCH_FREQ = 60.0
 
 FIR_LOW_TRANS_BW = 0.1
 FIR_HIGH_TRANS_BW = 0.1
@@ -55,18 +55,15 @@ POST_EVENT_SEC_IF_INCLUDED = 2.5
 EXPECTED_REPETITIONS_PER_TRIGGER = 5
 
 BASELINE_EVENT_CODE = 100
-TRIGGER_MASK = 0xFF
 
-# Frequency-domain metric settings.
+# Plot and peak-search limits; full per-electrode FFT tables retain every bin.
+# These limits may extend beyond the filter cutoffs (for example, 0 to 128 Hz).
 FMIN = 3.0
 FMAX = 50.0
 TARGET_BAND_HALF_WIDTH_HZ = 0.20
 LOCAL_NOISE_HALF_WIDTH_HZ = 1.00
 LOCAL_NOISE_EXCLUSION_HALF_WIDTH_HZ = 0.20
 EPS = 1e-20
-
-N_PER_SEG_SEC = 2.0
-N_OVERLAP_FRAC = 0.5
 
 KURTOSIS_REJECT_Z = 5.0
 KURTOSIS_TRIM_PROPORTION = 0.10
@@ -77,6 +74,8 @@ SAVE_PLOTS = True
 MAX_INDIVIDUAL_PLOTS = 5
 
 # Channels included in SSSEP metric calculations after preprocessing.
+# The FFT retains every good scalp electrode; plots/summaries average amplitudes
+# over these channels only, after the full-scalp final average reference.
 ANALYSIS_CHANNELS = [
     "Pz", "P2", "P4", "P6",
     "CPz", "CP2", "CP4", "CP6",
@@ -133,3 +132,7 @@ TRIGGER_HZ_MAP = {
 
 # Frequencies drawn as reference lines in diagnostic plots.
 FIXED_HZ_LINES = [10.0, 17.0, 23.0, 34.0, 45.0]
+
+# Reference for the implemented preprocessing and per-electrode FFT formula.
+FPVS_REFERENCE_COMMIT = "185d803f0056daebee04e5f28cc6b554c47336ce"
+PROCESSING_METHOD = "fpvs_amplitude_v1"

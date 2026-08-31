@@ -2,7 +2,7 @@
 
 These dataclasses do not perform analysis themselves. They give a clear shape
 to data passed between modules: `EpochSet` for repeated time-domain EEG windows
-and `Spectrum` for frequency-domain power values.
+and `Spectrum` for per-electrode FFT amplitudes.
 """
 
 from dataclasses import dataclass
@@ -29,8 +29,8 @@ class EpochSet:
         Number of events rejected because the requested analysis window extended
         outside the recording.
     edge_excluded_epochs:
-        Number of events rejected because the analysis window overlapped the
-        conservative FIR edge-transient margin near the start or end.
+        Legacy report field. The FPVS-aligned path does not apply an additional
+        FIR epoch exclusion and records zero here.
     """
 
     code: int
@@ -44,18 +44,18 @@ class EpochSet:
 @dataclass
 class Spectrum:
     """
-    Store one frequency spectrum.
+    Store per-electrode FFT amplitudes in microvolts.
 
     Attributes
     ----------
     freqs:
         Frequency values in Hz.
-    power:
-        Average power value at each frequency.
+    amplitude_uv:
+        FFT amplitudes with shape (n_channels, n_frequency_bins), in microvolts.
     method:
         Text label describing how the spectrum was computed.
     """
 
     freqs: np.ndarray
-    power: np.ndarray
+    amplitude_uv: np.ndarray
     method: str

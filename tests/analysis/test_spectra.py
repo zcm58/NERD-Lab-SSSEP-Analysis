@@ -1,64 +1,89 @@
-"""Tests for FFT and Welch spectrum generation.
-
-The tests generate simple sine-wave epochs with a known 10 Hz peak. If the
-spectrum code is working, the largest power should appear near that frequency.
-"""
+"""Numerical checks for the FPVS amplitude FFT contract."""
 
 import numpy as np
 import pytest
 
-from sssep_batch.analysis.spectra import (
-    compute_sssep_fft_from_averaged_epochs,
-    compute_welch_psd_average,
-)
+from sssep_batch.analysis.spectra import compute_sssep_fft_from_averaged_epochs
 
 
-def make_sine_epochs(
-    *,
-    n_epochs: int = 3,
-    n_channels: int = 2,
-    sfreq: float = 256.0,
-    seconds: float = 1.0,
-    target_hz: float = 10.0,
-) -> np.ndarray:
-    """Create repeated sine-wave epochs with shape `(epochs, channels, times)`."""
-    times = np.arange(int(sfreq * seconds)) / sfreq
-    channel = np.sin(2 * np.pi * target_hz * times)
-    epoch = np.tile(channel, (n_channels, 1))
-    return np.stack([epoch] * n_epochs, axis=0)
+def test_fft_preserves_each_electrodes_microvolt_amplitude_without_taper():
+    times = np.arange(256) / 256.0
+    signal = np.sin(2 * np.pi * 10 * times)
+    one_epoch = np.array([2e-6 * signal, 5e-6 * signal])
+    epochs = np.stack([one_epoch] * 5)
+
+    spectrum = compute_sssep_fft_from_averaged_epochs(epochs, sfreq=256.0)
+
+    assert spectrum.amplitude_uv.shape == (2, 129)
+    np.testing.assert_array_equal(spectrum.freqs, np.arange(129))
+    np.testing.assert_allclose(spectrum.amplitude_uv[:, 10], [2.0, 5.0], atol=1e-12)
+    assert np.max(spectrum.amplitude_uv[:, [9, 11]]) < 1e-12
+    assert "FPVS Toolbox amplitude FFT" in spectrum.method
 
 
-def test_compute_sssep_fft_from_averaged_epochs_returns_bounded_spectrum():
-    """The primary FFT spectrum should stay inside the requested frequency range."""
-    epochs = make_sine_epochs()
+def test_fft_matches_fpvs_doubling_of_dc_and_nyquist_without_demeaning():
+    samples = np.arange(8)
+    epoch = (3e-6 + 4e-6 * (-1.0) ** samples)[None, :]
 
-    spectrum = compute_sssep_fft_from_averaged_epochs(epochs, sfreq=256.0, fmin=5.0, fmax=15.0)
+    spectrum = compute_sssep_fft_from_averaged_epochs(epoch[None, :, :], sfreq=8.0)
 
-    assert spectrum.method == "SSSEP FFT after averaging repeated epochs"
-    assert spectrum.freqs.min() >= 5.0
-    assert spectrum.freqs.max() <= 15.0
-    assert spectrum.freqs[np.argmax(spectrum.power)] == pytest.approx(10.0)
+    np.testing.assert_allclose(spectrum.amplitude_uv[0], [6, 0, 0, 0, 8], atol=1e-12)
 
 
-def test_compute_welch_psd_average_returns_bounded_spectrum():
-    """The supplemental Welch spectrum should keep the expected 10 Hz peak."""
-    epochs = make_sine_epochs(seconds=2.0)
+def test_fft_does_not_pad_odd_sample_counts():
+    n_times = 255
+    signal = 3e-6 * np.cos(2 * np.pi * 16 * np.arange(n_times) / n_times)
 
-    spectrum = compute_welch_psd_average(epochs, sfreq=256.0, fmin=5.0, fmax=15.0)
+    spectrum = compute_sssep_fft_from_averaged_epochs(signal[None, None, :], sfreq=256.0)
 
-    assert spectrum.method == "Welch PSD averaged across epochs and channels"
-    assert spectrum.freqs.min() >= 5.0
-    assert spectrum.freqs.max() <= 15.0
-    assert spectrum.freqs[np.argmax(spectrum.power)] == pytest.approx(10.0, abs=0.5)
+    assert spectrum.amplitude_uv.shape == (1, 128)
+    assert spectrum.freqs[-1] == pytest.approx(127 * 256 / 255)
+    assert spectrum.amplitude_uv[0, 16] == pytest.approx(3.0)
+    other_bins = np.delete(spectrum.amplitude_uv[0], 16)
+    assert np.max(other_bins) < 1e-12
 
 
-@pytest.mark.parametrize(
-    "func",
-    [compute_sssep_fft_from_averaged_epochs, compute_welch_psd_average],
-)
-def test_spectrum_functions_reject_empty_epoch_sets(func):
-    """Spectrum functions need at least one epoch to produce meaningful power."""
-    empty_epochs = np.empty((0, 2, 256), dtype=float)
+def test_trial_averaging_precedes_fft_and_cancels_opposite_phases():
+    signal = 2e-6 * np.sin(2 * np.pi * 10 * np.arange(256) / 256)
+    epochs = np.stack([signal, -signal])[:, None, :]
 
-    with pytest.raises(ValueError):
-        func(empty_epochs, sfreq=256.0, fmin=5.0, fmax=15.0)
+    spectrum = compute_sssep_fft_from_averaged_epochs(epochs, sfreq=256.0)
+
+    np.testing.assert_array_equal(spectrum.amplitude_uv, np.zeros((1, 129)))
+
+
+def test_float32_epochs_are_promoted_before_trial_averaging():
+    # A float32 trial mean loses the small middle trial during cancellation.
+    epochs = np.repeat(np.array([1.0, 1e-8, -1.0], dtype=np.float32)[:, None, None], 8, axis=2)
+    expected_dc_uv = (1.0 + float(epochs[1, 0, 0]) - 1.0) / 3.0 * 1e6 * 2
+
+    spectrum = compute_sssep_fft_from_averaged_epochs(epochs, sfreq=8.0)
+
+    assert spectrum.amplitude_uv.dtype == np.float64
+    assert spectrum.amplitude_uv[0, 0] == pytest.approx(expected_dc_uv, abs=1e-14)
+    assert spectrum.amplitude_uv[0, 0] > 0
+
+
+def test_output_frequency_selection_does_not_change_amplitudes():
+    epochs = np.random.default_rng(63).normal(scale=1e-6, size=(3, 2, 255))
+    full = compute_sssep_fft_from_averaged_epochs(epochs, sfreq=256.0)
+    selected = compute_sssep_fft_from_averaged_epochs(epochs, sfreq=256.0, fmin=5.0, fmax=15.0)
+    keep = (full.freqs >= 5.0) & (full.freqs <= 15.0)
+
+    np.testing.assert_array_equal(selected.freqs, full.freqs[keep])
+    np.testing.assert_array_equal(selected.amplitude_uv, full.amplitude_uv[:, keep])
+
+
+def test_nonfinite_epoch_values_are_not_silently_replaced():
+    epochs = np.ones((1, 1, 8))
+    epochs[0, 0, 2] = np.nan
+
+    spectrum = compute_sssep_fft_from_averaged_epochs(epochs, sfreq=8.0)
+
+    assert np.isnan(spectrum.amplitude_uv).all()
+
+
+@pytest.mark.parametrize("shape", [(0, 2, 256), (1, 0, 256), (1, 2, 0), (2, 256)])
+def test_fft_rejects_missing_epoch_dimensions(shape):
+    with pytest.raises(ValueError, match="at least one epoch"):
+        compute_sssep_fft_from_averaged_epochs(np.empty(shape), sfreq=256.0)

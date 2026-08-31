@@ -43,4 +43,10 @@ def test_external_bdf_regression_fixture(tmp_path):
         "trigger_label",
         "status",
         "usable_epochs",
+        "processing_method",
+        "sssep_fft_nearest_amplitude_uv",
+        "fft_channels",
     }.issubset(summary_df.columns)
+    assert (summary_df["processing_method"] == "fpvs_amplitude_v1").all()
+    assert (summary_df["status"] == "success").any()
+    assert not any("power" in field or "welch" in field for field in summary_df.columns)

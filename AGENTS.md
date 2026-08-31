@@ -21,12 +21,17 @@ for that. `config.py` is the intended configuration surface.
 - `sssep_batch/`
   Actual implementation package.
 - `tests/`
-  Unit tests plus one optional external-fixture regression test.
+  Synthetic unit tests, isolated GUI lifecycle checks, and optional external
+  reference/recording regression checks.
 - `.agents/skills/`
   Repo-local repeatable Codex workflows. Use the narrowest matching skill for
   pipeline, GUI, path, or output-format work.
 - `requirements.txt`
-  Project dependency list for the local `.venv`.
+  Pinned runtime dependencies for the local `.venv`; `requirements-dev.txt`
+  adds pytest 9.0.1 and edfio 0.4.16 for tests and generated BDF fixtures.
+  Use Python 3.13; verification used 3.13.5.
+- `docs/fpvs-parity.md`
+  FPVS reference, method boundary, and comparison evidence.
 
 ## Critical Project Rules
 
@@ -40,18 +45,36 @@ for that. `config.py` is the intended configuration surface.
 
 ## Known Pipeline Constraints
 
-These are not optional cleanups. They are part of the current intended design:
+The authorized `fpvs_amplitude_v1` method replaces the former SSSEP power/Welch
+pipeline. Preserve this current design unless a further change is authorized:
 
-- Detect `Status` events before downsampling, then carry those events through
-  resampling.
-- Preserve the FIR edge-exclusion rule for epochs near the start and end of the
-  filtered recording.
+- Use the reference-compatible loader and `standard_1005` montage before
+  preprocessing, then EXG reference/drop and retention of 64 scalp channels
+  plus `Status`.
+- Filter at the original sampling rate with the scaled-duration 0.1–50 Hz FIR,
+  then downsample to 256 Hz, screen/interpolate bad channels, and apply the
+  final average reference. Preserve the reference's explicitly logged
+  warning-and-continue paths; do not add silent fallbacks.
+- Detect `Status` events after preprocessing with the reference MNE options.
+  Keep SSSEP onset windows (7.5 seconds by default), with no extra FIR edge
+  exclusion or EEG zero replacement. Do not import the FPVS 1.2 Hz marker crop.
+- Average trials in float64 per electrode and calculate the reference
+  microvolt amplitude FFT, `abs(FFT(mean_epoch_uv)) / N * 2`, retaining its
+  DC/Nyquist scaling. No Hann taper, detrending, power, or Welch PSD.
+- Exclude unresolved bad channels before the FFT. Average the resulting
+  electrode amplitudes for ROI plots/summaries and report actual channel lists.
+- Keep full per-electrode nonnegative-frequency amplitude CSVs and method
+  metadata. The old power/Welch schema is intentionally retired.
 - Keep file-level parallelism in `batch.py`. Parallelism is across files, not
   inside a single file.
 - Keep native thread limits at `1` per worker to avoid oversubscription during
   parallel batch runs.
 - Enforce `MAX_INDIVIDUAL_PLOTS` only for plot creation. Do not let it affect
-  metrics or CSV summaries.
+  metrics or CSV summaries; the default 5 means five amplitude PNGs per file.
+- Keep each batch in a newly created, unique run subfolder. Preserve previous
+  runs and the GUI's parent-root saved setting.
+- Retain GUI workers until `QThread.finished` and block window close while a
+  batch is active. Keep setup checks and processing off the UI thread.
 
 ## Before Making Structural Changes
 
@@ -71,12 +94,15 @@ Use repo-local skills when they match the task:
 
 If you change processing code, validate at minimum:
 
-1. `python -m py_compile` still passes.
-2. `python -m pytest -q` still passes.
+1. Compilation with `.\.venv\Scripts\python.exe -m py_compile` still passes.
+2. `.\.venv\Scripts\python.exe -m pytest -q` still passes.
 3. The PyCharm entrypoint still runs through `sssep_bdf_batch_processor.py`.
 4. Output field names remain stable unless the user asked to revise them.
 5. If math was not meant to change, compare results on a known local `.bdf`
    file when available.
+6. For FPVS parity, use the pinned source selected by `FPVS_REFERENCE_ROOT`
+   and optional recording selected by `SSSEP_TEST_BDF`; report any skipped
+   checks. Compare matching methods and settings, not old SSSEP power outputs.
 
 ## Scope Discipline
 

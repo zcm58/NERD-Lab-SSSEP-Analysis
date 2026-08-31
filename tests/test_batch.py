@@ -4,6 +4,7 @@ These tests use empty `.bdf` placeholder files and monkeypatched workers. They
 verify batch orchestration behavior without loading real EEG data.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,7 @@ def test_discover_bdf_files_returns_sorted_bdf_paths(tmp_path):
     second = tmp_path / "b_file.bdf"
     first = tmp_path / "a_file.bdf"
     tmp_path.joinpath("notes.txt").write_text("ignore me", encoding="utf-8")
+    tmp_path.joinpath("not_a_recording.bdf").mkdir()
     second.write_text("", encoding="utf-8")
     first.write_text("", encoding="utf-8")
 
@@ -52,6 +54,36 @@ def test_run_preflight_checks_creates_output_folder_and_counts_bdfs(tmp_path):
     assert output_folder.is_dir()
 
 
+def test_output_probe_preserves_existing_files(tmp_path):
+    """Checking permissions must not overwrite a file in the selected root."""
+    existing_file = tmp_path / ".sssep_write_test.tmp"
+    existing_file.write_text("keep these contents", encoding="utf-8")
+
+    batch.ensure_output_folder_ready(tmp_path)
+
+    assert existing_file.read_text(encoding="utf-8") == "keep these contents"
+    assert list(tmp_path.iterdir()) == [existing_file]
+
+
+def test_create_run_output_folder_is_unique_under_concurrent_calls(tmp_path):
+    """Simultaneous launches must never share a run folder."""
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        folders = list(executor.map(batch.create_run_output_folder, [tmp_path] * 8))
+
+    assert len(set(folders)) == 8
+    assert all(folder.is_dir() and folder.parent == tmp_path for folder in folders)
+
+
+def test_runtime_preflight_does_not_require_development_packages(monkeypatch):
+    """Analysis should not fail because pytest or unused YAML support is absent."""
+    monkeypatch.setattr(
+        batch.importlib.util, "find_spec",
+        lambda name: None if name in {"pytest", "yaml"} else object(),
+    )
+
+    batch.validate_required_packages()
+
+
 def test_validate_config_settings_reports_missing_trigger_metadata(monkeypatch):
     """Trigger codes without labels/frequencies should be beginner-visible errors."""
     monkeypatch.setattr(batch, "ACTIVE_EVENT_CODES", [999])
@@ -59,6 +91,36 @@ def test_validate_config_settings_reports_missing_trigger_metadata(monkeypatch):
     monkeypatch.setattr(batch, "TRIGGER_HZ_MAP", {})
 
     with pytest.raises(batch.BatchValidationError, match="TRIGGER_LABELS"):
+        batch.validate_config_settings()
+
+
+@pytest.mark.parametrize(
+    "lowcut,highcut,downsample",
+    [(0.0, 50.0, 0), (None, 50.0, None), (0.1, None, 256),
+     (None, None, 0), (0.1, 50.0, 256)],
+)
+def test_preflight_accepts_disabled_fpvs_stages_and_full_fft_plot_range(
+    monkeypatch, lowcut, highcut, downsample
+):
+    monkeypatch.setattr(batch, "LOWCUT", lowcut)
+    monkeypatch.setattr(batch, "HIGHCUT", highcut)
+    monkeypatch.setattr(batch, "DOWNSAMPLE_RATE", downsample)
+    monkeypatch.setattr(batch, "FMIN", 0.0)
+    monkeypatch.setattr(batch, "FMAX", 128.0)
+    batch.validate_config_settings()
+
+
+@pytest.mark.parametrize(
+    "setting,value",
+    [("LOWCUT", -0.1), ("LOWCUT", 50.0), ("LOWCUT", 51.0),
+     ("LOWCUT", float("nan")), ("HIGHCUT", 0), ("HIGHCUT", "text"),
+     ("DOWNSAMPLE_RATE", -1), ("DOWNSAMPLE_RATE", float("inf")),
+     ("FMIN", -1), ("FMIN", 50.0), ("FMAX", 2.0),
+     ("FMAX", float("nan")), ("FMIN", None)],
+)
+def test_preflight_rejects_invalid_filter_and_plot_settings(monkeypatch, setting, value):
+    monkeypatch.setattr(batch, setting, value)
+    with pytest.raises(batch.BatchValidationError, match=setting):
         batch.validate_config_settings()
 
 
@@ -137,11 +199,31 @@ def test_run_batch_reports_progress_and_writes_summary(monkeypatch, tmp_path):
     assert result["total_files"] == 2
     assert result["succeeded"] == 1
     assert result["failed"] == 1
-    assert (output_folder / "batch_processing_summary.csv").exists()
+    run_folder = Path(result["output_folder"])
+    summary_path = Path(result["summary_csv"])
+    assert run_folder.parent == output_folder
+    assert summary_path == run_folder / "batch_processing_summary.csv"
+    assert summary_path.exists()
+    assert all(Path(row["output_folder"]).parent == run_folder for row in result["results"])
 
-    log_text = (output_folder / "sssep_batch_processing.log").read_text(encoding="utf-8")
+    log_path = run_folder / "sssep_batch_processing.log"
+    log_text = log_path.read_text(encoding="utf-8")
     assert "QUEUED 1/2: a_file.bdf" in log_text
     assert "QUEUED 2/2: b_file.bdf" in log_text
     assert "COMPLETED 1/2: a_file.bdf" in log_text
     assert "FAILED 2/2: b_file.bdf" in log_text
     assert any(event["phase"] == "complete" for event in progress_events)
+
+    summary_bytes = summary_path.read_bytes()
+    old_error = run_folder / "ERROR.txt"
+    old_error.write_text("previous run only", encoding="utf-8")
+    next_result = batch.run_batch(input_folder, output_folder)
+    next_folder = Path(next_result["output_folder"])
+
+    assert next_folder != run_folder
+    assert next_folder.parent == output_folder
+    assert Path(next_result["summary_csv"]).parent == next_folder
+    assert summary_path.read_bytes() == summary_bytes
+    assert log_path.read_text(encoding="utf-8") == log_text
+    assert old_error.read_text(encoding="utf-8") == "previous run only"
+    assert not (next_folder / "ERROR.txt").exists()

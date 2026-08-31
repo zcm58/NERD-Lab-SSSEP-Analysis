@@ -13,23 +13,46 @@ explicitly asks for an analysis change.
 ## Workflow
 
 1. Read `AGENTS.md`, `architecture.md`, `sssep_batch/AGENTS.md`, and the
-   relevant module tests before editing.
+   relevant module tests before editing. For reference-method work, also read
+   `docs/fpvs-parity.md`.
 2. State whether the task is intended to change mathematical output. If unclear,
    stop and ask.
 3. Identify the smallest module that owns the behavior. Keep `pipeline.py` as
    orchestration only.
 4. Preserve these invariants:
-   - `Status` events are detected before downsampling.
-   - Resampling carries event sample positions to the post-resample grid.
-   - FIR edge-exclusion behavior is preserved.
+   - The current method is `fpvs_amplitude_v1`, based on FPVS commit
+     `185d803f0056daebee04e5f28cc6b554c47336ce`; the old power/Welch method was
+     intentionally replaced.
+   - Load the reference BioSemi channel subset and apply `standard_1005`
+     before preprocessing, then EXG reference/drop and scalp-plus-Status
+     retention.
+   - Apply the scaled-duration 0.1–50 Hz FIR at the original sampling rate,
+     downsample to 256 Hz, screen/interpolate bad channels at kurtosis threshold
+     5, and apply the final average reference. Keep the reference's logged
+     warning-and-continue behavior explicit.
+   - Detect `Status` events after preprocessing with the reference MNE options.
+     Retain SSSEP onset windows (default 7.5 seconds), with no extra FIR edge
+     exclusion, EEG zero replacement, or FPVS 1.2 Hz marker crop.
+   - Exclude unresolved bad channels. Average trials in float64 per electrode,
+     convert to microvolts, and compute the first `N // 2 + 1` bins of
+     `abs(FFT(mean_epoch_uv)) / N * 2`, including reference DC/Nyquist scaling.
+     Do not add a Hann taper, detrending, power squaring, or Welch PSD.
+   - Preserve full per-electrode nonnegative-frequency amplitude CSVs.
+     Plots/summaries average the configured ROI's available electrode
+     amplitudes afterward and report actual channel lists.
    - File-level parallelism stays in `batch.py`.
    - Native thread caps stay at `1` per worker.
-   - `MAX_INDIVIDUAL_PLOTS` affects plot creation only, not metrics or CSVs.
+   - `MAX_INDIVIDUAL_PLOTS` affects amplitude PNGs only, not metrics or CSVs.
+   - Each batch creates a unique run folder and preserves past results.
 5. Add or update focused tests for changed math, event timing, filtering, epoch,
    spectrum, metric, or batch behavior.
-6. Run `python -m py_compile` and `python -m pytest -q` when code changes.
+6. Compile touched modules with `.\.venv\Scripts\python.exe -m py_compile`
+   and run `.\.venv\Scripts\python.exe -m pytest -q` when code changes.
 7. If math was not meant to change and a local `.bdf` fixture is available, run
-   the external regression path or compare representative outputs.
+   the external regression path or compare representative outputs. Optional
+   checks use `SSSEP_TEST_BDF` and `FPVS_REFERENCE_ROOT`; keep both external and
+   the reference checkout read-only. Do not launch its GUI/offscreen Qt for
+   numerical verification. Compare matching methods, not old power outputs.
 
 ## Return
 

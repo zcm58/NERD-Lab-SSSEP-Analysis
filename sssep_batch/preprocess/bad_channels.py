@@ -3,8 +3,8 @@
 This module uses excess kurtosis as a simple automatic bad-channel detector.
 Channels with very unusual kurtosis are marked bad, written to
 `bad_channel_metrics.csv`, and interpolated if the recording has a montage.
-Interpolation estimates a bad channel from nearby good channels so the final
-analysis can keep a stable channel set.
+Interpolation uses spherical splines and the positions of all retained good
+EEG channels to estimate each bad channel's signal.
 """
 
 from pathlib import Path
@@ -26,6 +26,12 @@ def detect_and_interpolate_bad_channels_by_kurtosis(
     debug_enabled: bool = False,
 ) -> pd.DataFrame:
     """Detect high-kurtosis EEG channels, interpolate them, and save metrics."""
+
+    if not KURTOSIS_REJECT_Z:
+        log_func(f"Skip Kurtosis for {filename_for_log} (no threshold).")
+        metrics = pd.DataFrame()
+        metrics.to_csv(output_folder / "bad_channel_metrics.csv", index=False)
+        return metrics
 
     log_func(
         f"Kurtosis rejection for {filename_for_log} "

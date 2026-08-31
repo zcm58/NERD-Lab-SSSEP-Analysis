@@ -1,9 +1,4 @@
-"""Tests for converting spectra into SSSEP metric values.
-
-These tests use tiny hand-built spectra so the expected values can be checked
-directly. That makes the math behavior easier to understand and protects the
-CSV metric contract.
-"""
+"""Checks for amplitude summaries, ratios, and stable missing-data columns."""
 
 import math
 
@@ -19,56 +14,70 @@ from sssep_batch.analysis.metrics import (
 from sssep_batch.models import Spectrum
 
 
-def test_safe_ratio_and_ratio_to_db_handle_invalid_inputs():
-    """Invalid ratios should become NaN instead of crashing or returning infinity."""
+def test_amplitude_ratio_decibels_and_invalid_inputs():
     assert math.isnan(safe_ratio(1.0, 0.0))
+    assert math.isnan(safe_ratio(float("inf"), 1.0))
     assert math.isnan(ratio_to_db(0.0))
-    assert ratio_to_db(10.0) == pytest.approx(10.0)
+    assert ratio_to_db(10.0) == pytest.approx(20.0)
+    assert ratio_to_db(2.0) == pytest.approx(6.020599913)
 
 
-def test_extract_target_metrics_uses_target_band_and_local_noise_floor():
-    """Target metrics should use the configured target and local-noise bands."""
-    spectrum = Spectrum(
-        freqs=np.array([9.0, 9.8, 10.0, 10.2, 11.0]),
-        power=np.array([2.0, 4.0, 10.0, 6.0, 8.0]),
+def make_spectrum():
+    return Spectrum(
+        freqs=np.array([0.0, 9.0, 9.8, 10.0, 10.2, 11.0, 128.0]),
+        amplitude_uv=np.array([
+            [1000.0, 2.0, 4.0, 10.0, 6.0, 8.0, 2000.0],
+            [3000.0, 6.0, 12.0, 30.0, 18.0, 24.0, 6000.0],
+        ]),
         method="test",
     )
 
-    metrics = extract_target_metrics(spectrum, target_hz=10.0)
+
+def test_metrics_use_mean_selected_amplitudes_and_sssep_noise_band():
+    metrics = extract_target_metrics(make_spectrum(), target_hz=10.0)
 
     assert metrics["nearest_freq_hz"] == 10.0
-    assert metrics["nearest_power"] == 10.0
-    assert metrics["target_band_mean_power"] == np.mean([4.0, 10.0, 6.0])
-    assert metrics["target_band_sum_power"] == 20.0
-    assert metrics["local_noise_floor"] == np.mean([2.0, 8.0])
-    assert metrics["snr"] == 2.0
+    assert metrics["nearest_amplitude_uv"] == 20.0
+    assert metrics["target_band_mean_amplitude_uv"] == pytest.approx(40 / 3)
+    assert metrics["target_band_sum_amplitude_uv"] == 40.0
+    assert metrics["local_noise_mean_amplitude_uv"] == 10.0
+    assert metrics["local_amplitude_snr"] == 2.0
+    assert metrics["local_amplitude_snr_db"] == pytest.approx(6.020599913)
     assert metrics["peak_frequency_hz"] == 10.0
-    assert metrics["peak_power"] == 10.0
+    assert metrics["peak_amplitude_uv"] == 20.0
+    assert not any("power" in name for name in metrics)
 
 
-def test_add_baseline_comparison_populates_ratios_and_nan_defaults():
-    """Baseline comparison columns should be filled or set to NaN when absent."""
-    row = {
-        "sssep_fft_nearest_power": 8.0,
-        "sssep_fft_target_band_sum_power": 20.0,
-    }
-    baseline_metrics = {
-        "nearest_power": 2.0,
-        "target_band_sum_power": 4.0,
-    }
+def test_metrics_can_select_one_electrode_without_averaging_other_channels():
+    metrics = extract_target_metrics(make_spectrum(), target_hz=10.0, channel_indices=[0])
+    assert metrics["nearest_amplitude_uv"] == 10.0
+    assert metrics["target_band_sum_amplitude_uv"] == 20.0
+    with pytest.raises(ValueError, match="at least one channel"):
+        extract_target_metrics(make_spectrum(), target_hz=10.0, channel_indices=[])
 
-    add_baseline_comparison(row, "sssep_fft", baseline_metrics)
 
-    assert row["baseline_sssep_fft_nearest_power"] == 2.0
-    assert row["sssep_fft_active_vs_baseline_ratio"] == 4.0
-    assert row["sssep_fft_band_sum_active_vs_baseline_ratio"] == 5.0
-    assert row["sssep_fft_active_vs_baseline_db"] == pytest.approx(6.0205999)
+def test_absent_spectrum_has_the_same_complete_schema():
+    missing = extract_target_metrics(None, target_hz=10.0)
+    present = extract_target_metrics(make_spectrum(), target_hz=10.0)
+    assert missing.keys() == present.keys()
+    assert all(math.isnan(value) for value in missing.values())
 
-    no_baseline_row = {
-        "welch_nearest_power": 3.0,
-        "welch_target_band_sum_power": 9.0,
-    }
-    add_baseline_comparison(no_baseline_row, "welch", None)
 
-    assert math.isnan(no_baseline_row["baseline_welch_nearest_power"])
-    assert math.isnan(no_baseline_row["welch_active_vs_baseline_ratio"])
+def test_baseline_comparison_uses_amplitude_ratios_and_twenty_log10():
+    row = {"sssep_fft_nearest_amplitude_uv": 8.0, "sssep_fft_target_band_sum_amplitude_uv": 20.0}
+    baseline = {"nearest_amplitude_uv": 2.0, "target_band_sum_amplitude_uv": 4.0}
+
+    add_baseline_comparison(row, "sssep_fft", baseline)
+
+    assert row["baseline_sssep_fft_nearest_amplitude_uv"] == 2.0
+    assert row["sssep_fft_active_vs_baseline_amplitude_ratio"] == 4.0
+    assert row["sssep_fft_active_vs_baseline_amplitude_db"] == pytest.approx(12.041199826)
+    assert row["sssep_fft_band_sum_active_vs_baseline_amplitude_ratio"] == 5.0
+    assert row["sssep_fft_band_sum_active_vs_baseline_amplitude_db"] == pytest.approx(13.979400087)
+
+    no_baseline_row = {"sssep_fft_nearest_amplitude_uv": 8.0, "sssep_fft_target_band_sum_amplitude_uv": 20.0}
+    add_baseline_comparison(no_baseline_row, "sssep_fft", None)
+    assert row.keys() == no_baseline_row.keys()
+    comparison_names = set(row) - {"sssep_fft_nearest_amplitude_uv", "sssep_fft_target_band_sum_amplitude_uv"}
+    assert len(comparison_names) == 6
+    assert all(math.isnan(no_baseline_row[name]) for name in comparison_names)

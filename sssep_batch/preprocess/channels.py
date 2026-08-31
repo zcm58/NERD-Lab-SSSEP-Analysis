@@ -6,6 +6,9 @@ channels are EEG versus stimulus channels, applies the EXG reference, keeps the
 intended scalp channels, and applies the BioSemi electrode layout.
 """
 
+import ast
+import re
+import warnings
 from typing import Callable, Iterable
 
 import mne
@@ -61,24 +64,53 @@ def validate_analysis_channels(raw: mne.io.BaseRaw) -> list[str]:
     return [raw.ch_names[idx] for idx in eeg_picks]
 
 
+def get_fft_channels(raw: mne.io.BaseRaw) -> list[str]:
+    """Use FPVS's complete BioSemi order, otherwise preserve actual good labels.
+
+    A complete recognized montage is ordered like FPVS's 64-channel export.
+    Subsets and unknown labels keep their recording order. Unlike FPVS's legacy
+    unknown-64 branch, this never replaces unknown electrode names with guessed
+    BioSemi labels.
+    """
+    picks = mne.pick_types(raw.info, eeg=True, exclude="bads")
+    names = [raw.ch_names[index] for index in picks]
+    standard = mne.channels.make_standard_montage("biosemi64").ch_names
+    if len(names) == len(standard) and set(names) == set(standard):
+        return standard
+    return names
+
+
 def set_known_channel_types(
     raw: mne.io.BaseRaw,
     scalp_channels: list[str],
     log_func: Callable[[str], None],
 ) -> None:
-    """Tell MNE which channels are EEG references/scalp channels and which is Status."""
-    ch_type_map: dict[str, str] = {}
-    for ch in scalp_channels:
-        ch_type_map[ch] = "eeg"
-    for ch in REFERENCE_CHANNELS:
-        ch_type_map[ch] = "eeg"
-    ch_type_map[STIM_CHANNEL] = "stim"
+    """Match FPVS's EXG/stim typing while preserving other loaded channel types.
 
-    raw.set_channel_types(ch_type_map, verbose=False)
-    log_func(
-        "Channel types set: first 64 channels=EEG, "
-        f"{REFERENCE_CHANNELS}=EEG references, {STIM_CHANNEL}=stim."
-    )
+    ``scalp_channels`` remains accepted by existing callers; the FPVS loader
+    does not override the types of the first 64 channels as a group.
+    """
+    present = {name.casefold(): name for name in raw.ch_names}
+    refs = {present[name.casefold()] for name in REFERENCE_CHANNELS if name.casefold() in present}
+    exg = {present[f"exg{index}"] for index in range(1, 9) if f"exg{index}" in present}
+    to_misc = {name: "misc" for name in exg - refs}
+    to_eeg = {name: "eeg" for name in refs}
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message=r"The unit for channel\(s\) .* has changed from .* to .*\.",
+                category=RuntimeWarning,
+            )
+            if to_misc:
+                raw.set_channel_types(to_misc)
+            if to_eeg:
+                raw.set_channel_types(to_eeg)
+            stim = present.get(STIM_CHANNEL.casefold())
+            if stim:
+                raw.set_channel_types({stim: "stim"})
+        log_func(f"EXG typing: EEG references={sorted(refs)}; misc={sorted(to_misc)}.")
+    except Exception as exc:
+        log_func(f"Warning: EXG/stim typing adjustment failed: {exc}")
 
 
 def apply_exg_reference_and_drop(
@@ -87,23 +119,23 @@ def apply_exg_reference_and_drop(
     log_func: Callable[[str], None],
 ) -> None:
     """Apply the EXG1/EXG2 reference pair, then remove those reference channels."""
-    require_channels(raw, REFERENCE_CHANNELS, "EXG1/EXG2 referencing")
-
-    log_func(
-        f"Applying reference pair [{REFERENCE_CHANNELS[0]}, "
-        f"{REFERENCE_CHANNELS[1]}] on {filename_for_log}..."
-    )
-    raw.set_eeg_reference(
-        ref_channels=list(REFERENCE_CHANNELS),
-        projection=False,
-        verbose=False,
-    )
-
-    custom_ref_flag = raw.info.get("custom_ref_applied", None)
-    log_func(
-        f"AUDIT: custom_ref_applied={custom_ref_flag} "
-        f"pair=[{REFERENCE_CHANNELS[0]},{REFERENCE_CHANNELS[1]}]"
-    )
+    if all(ch in raw.ch_names for ch in REFERENCE_CHANNELS):
+        try:
+            ch_types = dict(zip(raw.ch_names, raw.get_channel_types()))
+            to_eeg = {ch: "eeg" for ch in REFERENCE_CHANNELS if ch_types[ch] != "eeg"}
+            if to_eeg:
+                raw.set_channel_types(to_eeg)
+            log_func(f"Applying reference pair {list(REFERENCE_CHANNELS)} on {filename_for_log}...")
+            raw.set_eeg_reference(
+                ref_channels=list(REFERENCE_CHANNELS),
+                projection=False,
+                verbose=False,
+            )
+            log_func(f"AUDIT: custom_ref_applied=True pair={list(REFERENCE_CHANNELS)}")
+        except Exception as exc:
+            log_func(f"Warn: Initial reference failed for {filename_for_log}: {exc}")
+    else:
+        log_func(f"Skip initial referencing for {filename_for_log}: reference channels missing.")
 
     refs_to_drop = [ch for ch in REFERENCE_CHANNELS if ch in raw.ch_names]
     if refs_to_drop:
@@ -120,15 +152,14 @@ def keep_scalp_and_status_channels(
 ) -> None:
     """Drop unrelated channels so later steps see scalp EEG plus Status only."""
     keep = [ch for ch in scalp_channels if ch in raw.ch_names]
-    if STIM_CHANNEL in raw.ch_names:
+    if STIM_CHANNEL in raw.ch_names and STIM_CHANNEL not in keep:
         keep.append(STIM_CHANNEL)
-    else:
-        raise RuntimeError(f"Cannot keep channels because {STIM_CHANNEL} is missing.")
 
-    raw.pick_channels(keep, ordered=True)
+    raw.pick_channels(keep, ordered=False)
+    eeg_count = raw.get_channel_types().count("eeg")
     log_func(
-        f"Kept {len(keep)} channels for {filename_for_log}: "
-        f"{len(keep) - 1} scalp EEG + {STIM_CHANNEL}."
+        f"Kept {len(raw.ch_names)} channels for {filename_for_log}: "
+        f"{eeg_count} EEG; {STIM_CHANNEL} present={STIM_CHANNEL in raw.ch_names}."
     )
 
 
@@ -136,7 +167,36 @@ def apply_biosemi_montage(
     raw: mne.io.BaseRaw,
     log_func: Callable[[str], None],
 ) -> None:
-    """Attach the standard BioSemi 64-channel electrode positions to the data."""
-    montage = mne.channels.make_standard_montage(MONTAGE_NAME)
-    raw.set_montage(montage, on_missing="ignore", verbose=False)
-    log_func(f"Applied {MONTAGE_NAME} montage for scalp electrode positions.")
+    """Apply the configured FPVS montage before initial reference and channel drop."""
+    try:
+        montage = mne.channels.make_standard_montage(MONTAGE_NAME)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            raw.set_montage(montage, on_missing="warn", match_case=False, verbose=False)
+        for warning in caught:
+            match = re.search(r"channels missing from the montage are:\s*(\[[^\]]*\])", str(warning.message))
+            missing = set(ast.literal_eval(match.group(1))) if match else set()
+            if missing and missing.issubset(REFERENCE_CHANNELS):
+                continue
+            warnings.warn(warning.message, category=warning.category, stacklevel=2)
+        log_func(f"Applied {MONTAGE_NAME} montage for scalp electrode positions.")
+    except Exception as exc:
+        log_func(f"Warning: Montage error: {exc}")
+
+
+def apply_final_average_reference(
+    raw: mne.io.BaseRaw,
+    filename_for_log: str,
+    log_func: Callable[[str], None],
+) -> None:
+    """Apply the FPVS final average-reference projector after interpolation."""
+    try:
+        eeg_picks = mne.pick_types(raw.info, eeg=True, exclude=raw.info["bads"])
+        if len(eeg_picks) > 0:
+            raw.set_eeg_reference(ref_channels="average", projection=True, verbose=False)
+            raw.apply_proj(verbose=False)
+            log_func(f"Average reference applied to {filename_for_log}.")
+        else:
+            log_func(f"Skip average ref for {filename_for_log}: No good EEG channels.")
+    except Exception as exc:
+        log_func(f"Warn: Average reference failed for {filename_for_log}: {exc}")

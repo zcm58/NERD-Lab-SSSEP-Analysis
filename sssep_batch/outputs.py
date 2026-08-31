@@ -15,12 +15,13 @@ import pandas as pd
 
 from sssep_batch.config import (
     ACTIVE_EVENT_CODES,
-    APPLY_NOTCH,
     BASELINE_EVENT_CODE,
     HIGHCUT,
     KURTOSIS_REJECT_Z,
     LOWCUT,
-    NOTCH_FREQ,
+    FPVS_REFERENCE_COMMIT,
+    MONTAGE_NAME,
+    PROCESSING_METHOD,
     REFERENCE_CHANNELS,
     STIM_CHANNEL,
 )
@@ -95,10 +96,10 @@ def write_processing_report(
     active_missing = [c for c in ACTIVE_EVENT_CODES if c not in found_codes]
     successful_rows = _count_summary_rows(summary_rows, status="success")
     no_epoch_rows = _count_summary_rows(summary_rows, status="no_complete_epochs")
-    short_epoch_rows = sum(
+    unexpected_epoch_rows = sum(
         1 for row in summary_rows if row.get("epoch_count_ok") is False
     )
-    warning_count = sum(1 for line in report_lines if line.startswith("WARNING:"))
+    warning_count = sum(1 for line in report_lines if line.upper().startswith(("WARNING:", "WARN:")))
     plots_folder = report_path.parent / "plots"
 
     with open(report_path, "w", encoding="utf-8") as report_file:
@@ -106,7 +107,10 @@ def write_processing_report(
         report_file.write("=" * 44 + "\n\n")
         report_file.write("Beginner summary\n")
         report_file.write("-" * 16 + "\n")
-        report_file.write("Result: Finished processing this file.\n")
+        if successful_rows:
+            report_file.write("Result: Finished processing this file.\n")
+        else:
+            report_file.write("Result: No usable active-condition epochs.\n")
         report_file.write(f"File processed: {bdf_path.name}\n")
         report_file.write(f"Event summary CSV: {summary_csv_path}\n")
         report_file.write(f"Plots folder: {plots_folder}\n")
@@ -118,20 +122,25 @@ def write_processing_report(
         )
         report_file.write(f"Successful trigger rows: {successful_rows}\n")
         report_file.write(f"Rows with no complete epochs: {no_epoch_rows}\n")
-        report_file.write(f"Rows with fewer epochs than expected: {short_epoch_rows}\n")
+        report_file.write(f"Rows with a different epoch count than expected: {unexpected_epoch_rows}\n")
         report_file.write(f"Warnings in processing log: {warning_count}\n\n")
         report_file.write("Detailed settings and processing log\n")
         report_file.write("-" * 36 + "\n")
         report_file.write(f"File: {bdf_path.name}\n")
         report_file.write(f"Full path: {bdf_path}\n")
+        report_file.write(f"Processing method: {PROCESSING_METHOD}\n")
+        report_file.write(f"FPVS reference commit: {FPVS_REFERENCE_COMMIT}\n")
+        report_file.write("FFT: float64 trial mean, volts to uV, abs(FFT) / N * 2; no taper or detrending.\n")
+        report_file.write(f"Electrode montage: {MONTAGE_NAME}\n")
         report_file.write(f"Original sampling rate: {original_sfreq:.3f} Hz\n")
         report_file.write(f"Final sampling rate: {final_sfreq:.3f} Hz\n")
         report_file.write(f"Reference channels: {REFERENCE_CHANNELS}\n")
-        report_file.write("Reference channels dropped after reference: Yes\n")
+        report_file.write("Selected reference channels are dropped when present; see log for applied/skipped reference status.\n")
         report_file.write(f"Stim channel: {STIM_CHANNEL}\n")
         report_file.write(f"Lowcut: {LOWCUT} Hz\n")
         report_file.write(f"Highcut: {HIGHCUT} Hz\n")
-        report_file.write(f"Notch requested: {APPLY_NOTCH}, {NOTCH_FREQ} Hz\n")
+        report_file.write("Filter before downsample; no additional notch or EEG zero replacement.\n")
+        report_file.write("Final reference requested: average projection over retained good EEG, after interpolation; see log for outcome.\n")
         report_file.write(f"Kurtosis rejection Z threshold: {KURTOSIS_REJECT_Z}\n")
         report_file.write(f"Bad channels by kurtosis: {n_bad_by_kurtosis}\n")
         report_file.write(f"Active triggers found: {[c for c in ACTIVE_EVENT_CODES if c in found_codes]}\n")
@@ -139,7 +148,7 @@ def write_processing_report(
         report_file.write(f"Baseline trigger {BASELINE_EVENT_CODE} found: {BASELINE_EVENT_CODE in found_codes}\n")
         report_file.write(f"Analysis window seconds: {analysis_window_sec}\n")
         report_file.write(
-            "FIR edge exclusion margin: "
+            "Additional SSSEP FIR epoch exclusion (disabled in FPVS method): "
             f"{filter_edge_margin_samples} samples "
             f"({filter_edge_margin_sec:.3f} sec)\n"
         )

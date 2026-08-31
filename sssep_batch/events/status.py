@@ -1,7 +1,7 @@
 """Find and document trigger events from the BioSemi `Status` channel.
 
 BioSemi recordings store trigger codes in a special stimulus channel named
-`Status`. This module extracts those events before downsampling, keeps only the
+`Status`. This module extracts those events after preprocessing, keeps only the
 active trigger codes and the Gap/Break baseline code, and writes a small audit
 CSV so users can see which raw trigger codes were present.
 """
@@ -17,9 +17,7 @@ from sssep_batch.config import (
     ACTIVE_EVENT_CODES,
     BASELINE_EVENT_CODE,
     STIM_CHANNEL,
-    TRIGGER_MASK,
 )
-from sssep_batch.preprocess.channels import require_channels
 
 
 def parse_trigger_label(label: str) -> tuple[str, str]:
@@ -41,22 +39,17 @@ def find_status_events(
 
     The returned tuple contains all raw Status events, the subset used by this
     analysis, and a sorted list of every trigger code found in the file. The
-    processing pipeline carries the intended events through resampling so event
-    timing stays aligned with the downsampled recording.
+    event samples are on the final sampling grid, matching FPVS's active runner.
     """
 
-    require_channels(raw, [STIM_CHANNEL], "Status-channel event detection")
-
-    all_events = mne.find_events(
-        raw,
-        stim_channel=STIM_CHANNEL,
-        shortest_event=1,
-        consecutive=True,
-        uint_cast=True,
-        mask=TRIGGER_MASK,
-        mask_type="and",
-        verbose=False,
-    )
+    try:
+        all_events = mne.find_events(
+            raw, stim_channel=STIM_CHANNEL, shortest_event=1, verbose=False,
+        )
+    except Exception:
+        # The active FPVS runner uses MNE's default annotation mapping here.
+        all_events, _ = mne.events_from_annotations(raw, verbose=False)
+        log_func("Status event detection failed; using annotation events as in FPVS.")
 
     if len(all_events) == 0:
         raise RuntimeError(f"No trigger events found in {STIM_CHANNEL}.")

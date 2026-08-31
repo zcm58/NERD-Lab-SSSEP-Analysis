@@ -1,23 +1,17 @@
-"""Turn frequency spectra into beginner-readable SSSEP numbers.
+"""Summarize SSSEP electrode amplitudes and gap/break comparisons.
 
-This module does not create spectra. It receives a `Spectrum`, which is already
-an array of frequencies plus an array of power values, and extracts the values
-that users see in the event summary CSV:
-
-- power nearest the expected stimulation frequency,
-- average and summed power in a narrow target band,
-- local noise power around the target, excluding the target itself,
-- signal-to-noise ratio (SNR), and
-- active-vs-baseline ratios.
-
-The functions are intentionally small because changes here directly affect the
-math in the exported CSV files.
+These summaries average the selected electrodes' amplitudes after FFT. The
+local amplitude SNR uses the SSSEP frequency bands below; it is not the FPVS
+Toolbox's neighboring-bin SNR method. These calculations do not change the
+per-electrode amplitude spectra.
 """
 
 import numpy as np
 
 from sssep_batch.config import (
     EPS,
+    FMAX,
+    FMIN,
     LOCAL_NOISE_EXCLUSION_HALF_WIDTH_HZ,
     LOCAL_NOISE_HALF_WIDTH_HZ,
     TARGET_BAND_HALF_WIDTH_HZ,
@@ -25,76 +19,88 @@ from sssep_batch.config import (
 from sssep_batch.models import Spectrum
 
 
+AMPLITUDE_METRIC_FIELDS = (
+    "nearest_freq_hz", "nearest_amplitude_uv", "target_band_half_width_hz",
+    "target_band_mean_amplitude_uv", "target_band_sum_amplitude_uv",
+    "local_noise_half_width_hz", "local_noise_exclusion_half_width_hz",
+    "local_noise_mean_amplitude_uv", "local_amplitude_snr",
+    "local_amplitude_snr_db", "peak_frequency_hz", "peak_amplitude_uv",
+)
+
+
 def safe_ratio(numerator: float, denominator: float) -> float:
-    """Divide two numbers and return NaN when the ratio would be misleading."""
-    if not np.isfinite(denominator) or abs(denominator) < EPS:
+    """Divide finite values, returning NaN when the denominator is near zero."""
+    if not np.isfinite(numerator) or not np.isfinite(denominator) or abs(denominator) < EPS:
         return float("nan")
     return float(numerator / denominator)
 
 
 def ratio_to_db(ratio: float) -> float:
-    """Convert a positive power ratio to decibels, using NaN for invalid input."""
+    """Convert a positive amplitude ratio to decibels using 20 log10."""
     if not np.isfinite(ratio) or ratio <= 0:
         return float("nan")
-    return float(10.0 * np.log10(ratio))
+    return float(20.0 * np.log10(ratio))
 
 
 def extract_target_metrics(
-    spectrum: Spectrum,
+    spectrum: Spectrum | None,
     target_hz: float,
+    channel_indices: list[int] | None = None,
 ) -> dict[str, float]:
-    """
-    Measure power at and around the expected target frequency.
+    """Summarize mean electrode amplitude near the expected SSSEP frequency.
 
-    For a beginner: `target_hz` is the stimulation frequency expected for one
-    trigger code, such as 10 Hz for a thumb condition. This function looks for
-    the nearest measured frequency bin, summarizes the target band around it,
-    estimates nearby non-target noise, and returns values ready to write into a
-    CSV row.
+    The peak search stays inside FMIN/FMAX, as in the original summary. The
+    input spectrum may retain the entire nonnegative FFT frequency range.
+    A missing spectrum returns the same fields with NaN values.
     """
-
+    if spectrum is None:
+        return {field: float("nan") for field in AMPLITUDE_METRIC_FIELDS}
     freqs = spectrum.freqs
-    power = spectrum.power
+    amplitudes = spectrum.amplitude_uv
+    if channel_indices is not None:
+        if len(channel_indices) == 0:
+            raise ValueError("Select at least one channel for amplitude summaries.")
+        amplitudes = amplitudes[channel_indices]
+    amplitude_uv = np.mean(amplitudes, axis=0)
 
     nearest_idx = int(np.argmin(np.abs(freqs - target_hz)))
-    nearest_freq = float(freqs[nearest_idx])
-    nearest_power = float(power[nearest_idx])
-
+    nearest_amplitude = float(amplitude_uv[nearest_idx])
     target_band = np.abs(freqs - target_hz) <= TARGET_BAND_HALF_WIDTH_HZ
     if np.any(target_band):
-        band_mean_power = float(np.mean(power[target_band]))
-        band_sum_power = float(np.sum(power[target_band]))
+        band_mean_amplitude = float(np.mean(amplitude_uv[target_band]))
+        band_sum_amplitude = float(np.sum(amplitude_uv[target_band]))
     else:
-        band_mean_power = float("nan")
-        band_sum_power = float("nan")
+        band_mean_amplitude = float("nan")
+        band_sum_amplitude = float("nan")
 
     local_noise_band = (
         (np.abs(freqs - target_hz) <= LOCAL_NOISE_HALF_WIDTH_HZ)
         & (np.abs(freqs - target_hz) > LOCAL_NOISE_EXCLUSION_HALF_WIDTH_HZ)
     )
-    if np.any(local_noise_band):
-        local_noise_floor = float(np.mean(power[local_noise_band]))
-    else:
-        local_noise_floor = float("nan")
+    local_noise_amplitude = (
+        float(np.mean(amplitude_uv[local_noise_band]))
+        if np.any(local_noise_band) else float("nan")
+    )
+    amplitude_snr = safe_ratio(nearest_amplitude, local_noise_amplitude)
 
-    snr = safe_ratio(nearest_power, local_noise_floor)
-    snr_db = ratio_to_db(snr)
-
-    peak_idx = int(np.argmax(power))
+    peak_bins = np.flatnonzero((freqs >= FMIN) & (freqs <= FMAX))
+    if not len(peak_bins):
+        raise ValueError("The spectrum contains no bins in the summary frequency range.")
+    peak_idx = int(peak_bins[np.argmax(amplitude_uv[peak_bins])])
 
     return {
-        "nearest_freq_hz": nearest_freq,
-        "nearest_power": nearest_power,
+        "nearest_freq_hz": float(freqs[nearest_idx]),
+        "nearest_amplitude_uv": nearest_amplitude,
         "target_band_half_width_hz": TARGET_BAND_HALF_WIDTH_HZ,
-        "target_band_mean_power": band_mean_power,
-        "target_band_sum_power": band_sum_power,
+        "target_band_mean_amplitude_uv": band_mean_amplitude,
+        "target_band_sum_amplitude_uv": band_sum_amplitude,
         "local_noise_half_width_hz": LOCAL_NOISE_HALF_WIDTH_HZ,
         "local_noise_exclusion_half_width_hz": LOCAL_NOISE_EXCLUSION_HALF_WIDTH_HZ,
-        "local_noise_floor": local_noise_floor,
-        "snr": snr,
-        "snr_db": snr_db,
+        "local_noise_mean_amplitude_uv": local_noise_amplitude,
+        "local_amplitude_snr": amplitude_snr,
+        "local_amplitude_snr_db": ratio_to_db(amplitude_snr),
         "peak_frequency_hz": float(freqs[peak_idx]),
-        "peak_power": float(power[peak_idx]),
+        "peak_amplitude_uv": float(amplitude_uv[peak_idx]),
     }
 
 
@@ -103,36 +109,20 @@ def add_baseline_comparison(
     active_prefix: str,
     baseline_metrics: dict[str, float] | None,
 ) -> None:
+    """Add amplitude ratios to the separately measured gap/break baseline.
+
+    Missing baseline values remain NaN. Both nearest-bin and band-sum ratios
+    use amplitude units, so their decibel conversion is 20 log10.
     """
-    Add baseline comparison values to a summary row.
-
-    The active trigger and the Gap/Break baseline are measured separately. This
-    helper adds columns that compare those two measurements without changing the
-    rest of the row. Missing baseline data becomes NaN so downstream CSV readers
-    can distinguish "not available" from a real zero.
-    """
-
-    active_power = row.get(f"{active_prefix}_nearest_power", float("nan"))
-    active_band_sum = row.get(f"{active_prefix}_target_band_sum_power", float("nan"))
-
-    if baseline_metrics is None:
-        row[f"baseline_{active_prefix}_nearest_power"] = float("nan")
-        row[f"baseline_{active_prefix}_target_band_sum_power"] = float("nan")
-        row[f"{active_prefix}_active_vs_baseline_ratio"] = float("nan")
-        row[f"{active_prefix}_active_vs_baseline_db"] = float("nan")
-        row[f"{active_prefix}_band_sum_active_vs_baseline_ratio"] = float("nan")
-        row[f"{active_prefix}_band_sum_active_vs_baseline_db"] = float("nan")
-        return
-
-    baseline_power = baseline_metrics["nearest_power"]
-    baseline_band_sum = baseline_metrics["target_band_sum_power"]
-
-    nearest_ratio = safe_ratio(float(active_power), baseline_power)
-    band_sum_ratio = safe_ratio(float(active_band_sum), baseline_band_sum)
-
-    row[f"baseline_{active_prefix}_nearest_power"] = baseline_power
-    row[f"baseline_{active_prefix}_target_band_sum_power"] = baseline_band_sum
-    row[f"{active_prefix}_active_vs_baseline_ratio"] = nearest_ratio
-    row[f"{active_prefix}_active_vs_baseline_db"] = ratio_to_db(nearest_ratio)
-    row[f"{active_prefix}_band_sum_active_vs_baseline_ratio"] = band_sum_ratio
-    row[f"{active_prefix}_band_sum_active_vs_baseline_db"] = ratio_to_db(band_sum_ratio)
+    for metric, ratio_label in (
+        ("nearest_amplitude_uv", "active_vs_baseline"),
+        ("target_band_sum_amplitude_uv", "band_sum_active_vs_baseline"),
+    ):
+        active_value = float(row.get(f"{active_prefix}_{metric}", float("nan")))
+        baseline_value = (
+            baseline_metrics[metric] if baseline_metrics is not None else float("nan")
+        )
+        ratio = safe_ratio(active_value, baseline_value)
+        row[f"baseline_{active_prefix}_{metric}"] = baseline_value
+        row[f"{active_prefix}_{ratio_label}_amplitude_ratio"] = ratio
+        row[f"{active_prefix}_{ratio_label}_amplitude_db"] = ratio_to_db(ratio)
