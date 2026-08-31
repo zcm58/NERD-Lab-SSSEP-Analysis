@@ -1,79 +1,97 @@
 # Code map
 
-[Home](README.md) · [Student user guide](docs/user-guide.md) · [Processing method](docs/fpvs-parity.md)
+[Home](README.md) · [Student user guide](docs/user-guide.md) · [Task behavior](docs/task-protocol.md) · [Processing method](docs/fpvs-parity.md)
 
-For normal runs, use `sssep_bdf_batch_processor.py`. For settings, edit
-`sssep_batch/config.py`. Read the map below when changing the program itself.
+Run `sssep_bdf_batch_processor.py` for both participant tasks and recording
+analysis. Keep this entrypoint thin. The PySide6 launcher selects a workflow;
+PsychoPy is used only by the fullscreen participant task.
 
 ## Find the right file
 
 | If you want to change… | Start here |
 | --- | --- |
-| Everyday options or study settings | [config.py](sssep_batch/config.py) |
-| The launcher window, folder choices, or progress messages | [gui.py](sssep_batch/gui.py) |
-| Finding files, running workers, or creating run folders | [batch.py](sssep_batch/batch.py) |
-| The order of processing steps for one recording | [pipeline.py](sssep_batch/pipeline.py) |
+| The two-tab launcher, task fields, folder choices, or progress messages | [gui.py](sssep_batch/gui.py) |
+| Analysis defaults and advanced processing settings | [config.py](sssep_batch/config.py) |
+| Task settings and event records | [experiment/models.py](sssep_batch/experiment/models.py) |
+| Balanced alternating cue order | [experiment/schedule.py](sssep_batch/experiment/schedule.py) |
+| Fullscreen prompts, cue timing, or task CSV log | [experiment/runner.py](sssep_batch/experiment/runner.py) |
+| COM-port connection or one-byte BioSemi markers | [experiment/triggers.py](sssep_batch/experiment/triggers.py) |
+| Finding BDF files, workers, or analysis run folders | [batch.py](sssep_batch/batch.py) |
+| The processing order for one BDF recording | [pipeline.py](sssep_batch/pipeline.py) |
 | Reading a BDF file | [loading.py](sssep_batch/loading.py) |
 | Electrode types, montage, or references | [preprocess/channels.py](sssep_batch/preprocess/channels.py) |
 | Filtering or resampling | [preprocess/filtering.py](sssep_batch/preprocess/filtering.py) |
 | Bad-channel detection or interpolation | [preprocess/bad_channels.py](sssep_batch/preprocess/bad_channels.py) |
-| Trigger detection or trial windows | [events/](sssep_batch/events/) |
+| Recorded trigger detection or trial windows | [events/](sssep_batch/events/) |
 | FFT calculation | [analysis/spectra.py](sssep_batch/analysis/spectra.py) |
-| Target-frequency results or baseline comparisons | [analysis/metrics.py](sssep_batch/analysis/metrics.py) |
-| Graphs or full FFT tables | [analysis/plotting.py](sssep_batch/analysis/plotting.py) |
-| Summary CSVs, reports, or error files | [outputs.py](sssep_batch/outputs.py) |
+| Event codes and durations passed into analysis | [analysis/protocol.py](sssep_batch/analysis/protocol.py) |
+| Existing summary values | [analysis/metrics.py](sssep_batch/analysis/metrics.py) |
+| Single-electrode graphs or full FFT tables | [analysis/plotting.py](sssep_batch/analysis/plotting.py) |
+| Analysis summary CSVs, reports, or error files | [outputs.py](sssep_batch/outputs.py) |
 
-[models.py](sssep_batch/models.py) defines the data containers passed between
-modules. [logging_utils.py](sssep_batch/logging_utils.py) supports file logging.
+[models.py](sssep_batch/models.py) contains analysis data containers.
+[logging_utils.py](sssep_batch/logging_utils.py) supports analysis logs.
 
 ## How the parts connect
 
-`entrypoint → gui → batch → pipeline → preprocessing / events / analysis → outputs`
+Participant task:
 
-`pipeline.py` coordinates stages; low-level work belongs in the relevant
-module. Keep the entrypoint thin and settings in `config.py`. Do not add a
-second launcher, duplicate settings file, or generic utility module.
+`entrypoint → gui → experiment settings → schedule → serial preflight → PsychoPy runner → task CSV`
+
+The runner opens the configured serial port before participant screens. After
+Space starts the task, it draws each cue and schedules its unique `1..255`
+marker with PsychoPy `callOnFlip`, so the one-byte serial write occurs on the
+cue's visible display flip. Escape aborts. TENS control stays outside this
+program. See [task-protocol.md](docs/task-protocol.md) for the runtime contract.
+
+Recording analysis:
+
+`entrypoint → gui task fields → analysis protocol → batch → pipeline → preprocessing / events / FFT → outputs`
 
 The numerical order is load/montage → EXG reference/drop → filter → resample
-→ interpolate → average reference → events → SSSEP epochs → trial mean
-→ per-electrode amplitude FFT → ROI plots and summaries.
+→ interpolate → average reference → recorded events → SSSEP epochs → trial
+mean → per-electrode amplitude FFT → selected-electrode PNG and full FFT CSV.
 
-Epochs must pass through MNE `EpochsArray` with all retained channels and
-default projection before good EEG selection. This preserves FPVS's
-floating-point projector behavior. The full numerical contract and reference
-source are in [fpvs-parity.md](docs/fpvs-parity.md); do not duplicate that
-specification in student instructions.
+`pipeline.py` coordinates analysis stages; low-level work belongs in the
+relevant module. Legacy ROI mean fields remain for output compatibility. New
+ROI comparisons, hemisphere comparisons, scalp topographies, and statistics
+are intentionally left to external analysis.
 
 ## Keep these behaviors
 
-- Preserve the validated FPVS method unless an analysis change is authorized.
-- Keep SSSEP trial timing and output field names stable.
-- Keep data outside the repo and each batch in a fresh run folder.
+- Keep one launcher with separate task and analysis tabs.
+- Keep PsychoPy and live serial output inside `experiment/`, separate from BDF
+  analysis.
+- Open and check the serial port before participant cues; never continue after
+  a trigger failure.
+- Send each cue's marker on the same display flip that reveals that cue.
+- Require an even epoch count and alternate the two cues from a randomized
+  starting cue.
+- Pass the visible condition, duration, epoch count, and cue codes into each
+  analysis batch; do not fall back to unrelated event settings.
+- Preserve the validated FPVS analysis method unless a change is authorized.
+- Keep full per-electrode FFT CSVs; the launcher's electrode selection changes
+  PNGs only (`PLOT_CHANNEL` supplies its default). Skip a PNG without failing
+  the recording when its selected electrode is unavailable.
+- Keep data outside the repo and each analysis batch in a fresh run folder.
 - Parallelize across recordings; cap native threads at one per worker.
-- Retain GUI workers until `QThread.finished`; block close while processing.
-- Limit only PNG creation with `MAX_INDIVIDUAL_PLOTS`, never FFTs or CSVs.
-- Keep warnings and failures visible; do not hide them with silent fallbacks.
+- Keep warnings and failures visible; do not add silent fallbacks.
 
 ## After changing code
 
 1. Change one thing at a time and inspect the diff.
-2. Install the test libraries once, then run the checks from the project folder:
+2. Install test libraries once, then run:
 
    ```powershell
    .\.venv\Scripts\python.exe -m pip install -r .\requirements-dev.txt
    .\.venv\Scripts\python.exe -m pytest -q
    ```
 
-3. Run the usual PyCharm entrypoint and check the affected behavior.
-4. Update the relevant guide if a setting, output, or workflow changed.
+3. Run the PyCharm entrypoint and check the affected tab.
+4. Update the relevant guide when a setting, output, or workflow changes.
 
-Tests mirror the code folders under [tests/](tests/). They use synthetic EEG;
-an unset `FPVS_REFERENCE_ROOT` or `SSSEP_TEST_BDF` skips the corresponding
-optional check. For math changes, also run the
-[FPVS reference comparisons](docs/fpvs-parity.md#verification-and-reproducibility)
-and compare a known recording when available. Do not treat a skipped check
-as a passing comparison.
-
-Use Python 3.13 (3.13.5 tested) and the existing dependency pins. Keep
-`AGENTS.md` as a map for coding assistants, student guides brief, and detailed
-scientific documentation in `docs/fpvs-parity.md`.
+Use Python 3.11 and the existing dependency pins. Synthetic tests do not prove
+hardware timing. Before data collection, verify the sent codes and timing on a
+real BioSemi Status channel. For numerical changes, also use the optional
+[FPVS reference checks](docs/fpvs-parity.md#verification-and-reproducibility)
+and a known recording when available.

@@ -57,7 +57,14 @@ def test_find_events_uses_fpvs_default_transition_rules(raw_builder, tmp_path):
     status[50:60] = BASELINE_EVENT_CODE
     raw = raw_builder(["Status"], ["stim"], n_times=120, data=status[None, :])
     expected = mne.find_events(raw, stim_channel="Status", shortest_event=1, verbose=False)
-    actual, _, _ = find_status_events(raw, "test.bdf", tmp_path, lambda _: None)
+    actual, _, _ = find_status_events(
+        raw,
+        "test.bdf",
+        tmp_path,
+        lambda _: None,
+        active_event_codes=(1,),
+        baseline_event_code=2,
+    )
     np.testing.assert_array_equal(actual, expected)
 
 
@@ -65,5 +72,12 @@ def test_find_events_uses_fpvs_annotation_fallback(raw_builder, tmp_path):
     raw = raw_builder(["Cz"], ["eeg"], n_times=500)
     raw.set_annotations(mne.Annotations([0.1, 0.5], [0.0, 0.0], ["active", "baseline"]))
     expected, _ = mne.events_from_annotations(raw, verbose=False)
-    actual, _, _ = find_status_events(raw, "test.bdf", tmp_path, lambda _: None)
+    actual, _, _ = find_status_events(
+        raw,
+        "test.bdf",
+        tmp_path,
+        lambda _: None,
+        active_event_codes=(1,),
+        baseline_event_code=2,
+    )
     np.testing.assert_array_equal(actual, expected)

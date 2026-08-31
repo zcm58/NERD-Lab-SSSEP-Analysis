@@ -17,6 +17,19 @@ import pytest
 
 from sssep_batch import batch, config, pipeline
 from sssep_batch.loading import load_bdf
+from sssep_batch.models import AnalysisProtocol, AnalysisTrigger
+
+
+TEST_PROTOCOL = AnalysisProtocol(
+    active_triggers=tuple(
+        AnalysisTrigger(code, config.TRIGGER_LABELS[code], 10.0)
+        for code in config.ACTIVE_EVENT_CODES
+    ),
+    event_duration_sec=config.EVENT_DURATION_SEC,
+    expected_repetitions_per_trigger=config.EXPECTED_REPETITIONS_PER_TRIGGER,
+    baseline_event_code=config.BASELINE_EVENT_CODE,
+    baseline_label=config.TRIGGER_LABELS[config.BASELINE_EVENT_CODE],
+)
 
 
 def write_synthetic_bdf(path: Path, sfreq: int = 512) -> dict[str, object]:
@@ -54,7 +67,7 @@ def write_synthetic_bdf(path: Path, sfreq: int = 512) -> dict[str, object]:
             physical_dimension="uV", physical_range=(-100, 100),
         ))
 
-    codes = [1, 2, 11, 21, 100, 1, 100, 9, 100, 1]
+    codes = [11, 12, 21, 22, 100, 11, 100, 9, 100, 11]
     onsets = np.rint((0.125 + 8 * np.arange(len(codes))) * sfreq).astype(int)
     status = np.zeros(len(times), dtype=np.int32)
     for sample, code in zip(onsets, codes):
@@ -70,7 +83,7 @@ def write_synthetic_bdf(path: Path, sfreq: int = 512) -> dict[str, object]:
         "sfreq": sfreq,
         "duration_sec": duration_sec,
         "events": np.column_stack([onsets, np.zeros(len(codes), dtype=int), codes]),
-        "active_counts": {1: 3, 2: 1, 11: 1, 21: 1},
+        "active_counts": {11: 3, 12: 1, 21: 1, 22: 1},
         "baseline_count": 3,
         "probe_channel": scalp_channels[0],
         "probe_samples_uv": probe_samples_uv,
@@ -129,7 +142,7 @@ def _check_processing_outputs(result: dict[str, object], known: dict[str, object
 
     amplitude_files = sorted(output.rglob("*_sssep_fft_amplitude.csv"))
     assert len(amplitude_files) == len(known["active_counts"])
-    frame = pd.read_csv(next(output.rglob("*_trigger_001_sssep_fft_amplitude.csv")))
+    frame = pd.read_csv(next(output.rglob("*_trigger_011_sssep_fft_amplitude.csv")))
     assert len(frame) == 961  # Exactly 1920 samples per 7.5-second trial, not an inclusive extra sample.
     np.testing.assert_allclose(frame["frequency_hz"], np.fft.rfftfreq(1920, 1 / 256))
     active_columns = [f"active_{channel}_amplitude_uv" for channel in known["scalp_channels"]]
@@ -141,7 +154,7 @@ def _check_processing_outputs(result: dict[str, object], known: dict[str, object
     assert frame.loc[nearest, f"active_{known['probe_channel']}_amplitude_uv"] == pytest.approx(
         known["target_amplitude_uv"], rel=0.05,
     )
-    assert summary.loc[1, "sssep_fft_nearest_amplitude_uv"] == pytest.approx(
+    assert summary.loc[11, "sssep_fft_nearest_amplitude_uv"] == pytest.approx(
         frame.loc[nearest, "active_mean_amplitude_uv"],
     )
     assert not list(output.rglob("*welch*"))
@@ -154,7 +167,11 @@ def _check_processing_outputs(result: dict[str, object], known: dict[str, object
 def test_actual_bdf_processing_writes_full_electrode_amplitudes(synthetic_bdf, tmp_path, monkeypatch):
     path, known = synthetic_bdf
     monkeypatch.setattr(pipeline, "SAVE_PLOTS", False)
-    result = pipeline.process_one_bdf(path, tmp_path / "direct_output")
+    result = pipeline.process_one_bdf(
+        path,
+        tmp_path / "direct_output",
+        analysis_protocol=TEST_PROTOCOL,
+    )
     _check_processing_outputs(result, known)
     assert not list(Path(result["output_folder"]).rglob("*.png"))
 
@@ -165,7 +182,11 @@ def test_real_batch_workers_write_pngs_and_keep_reruns_separate(synthetic_bdf, t
     monkeypatch.setenv("MPLBACKEND", "Agg")
     output_root = tmp_path / "batch_output"
 
-    first = batch.run_batch(path.parent, output_root)
+    first = batch.run_batch(
+        path.parent,
+        output_root,
+        analysis_protocol=TEST_PROTOCOL,
+    )
 
     assert first["status"] == "success", first
     assert first["succeeded"] == 2 and first["failed"] == 0
@@ -185,7 +206,11 @@ def test_real_batch_workers_write_pngs_and_keep_reruns_separate(synthetic_bdf, t
     second_input.mkdir()
     shutil.copyfile(path, second_input / path.name)
 
-    second = batch.run_batch(second_input, output_root)
+    second = batch.run_batch(
+        second_input,
+        output_root,
+        analysis_protocol=TEST_PROTOCOL,
+    )
 
     assert second["status"] == "success", second
     assert Path(second["output_folder"]) != first_run

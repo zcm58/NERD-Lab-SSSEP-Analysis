@@ -17,6 +17,9 @@ BATCH_WORKERS = 3
 
 # True saves diagnostic amplitude PNG images; False skips those images.
 SAVE_PLOTS = True
+# Default electrode selected in the launcher's analysis tab. Each run can choose
+# another electrode without editing this file.
+PLOT_CHANNEL = "Cz"
 # Maximum amplitude PNGs per recording. This limits images only, not
 # calculations, condition summaries, or spectrum CSV files.
 MAX_INDIVIDUAL_PLOTS = 5
@@ -37,60 +40,38 @@ OUTPUT_ROOT = ""
 # These describe the experiment and how its results are summarized. Keep them
 # consistent across recordings that will be compared.
 
-# Trigger codes mark conditions in the recording. Every active code needs a
-# label in TRIGGER_LABELS and a stimulation frequency in TRIGGER_HZ_MAP.
-# Active condition triggers to analyze:
-ACTIVE_EVENT_CODES = [
-    1, 2, 3, 4, 5,
-    11, 12, 13, 14, 15,
-    21, 22, 23, 24, 25,
-]
+# Trigger codes mark the prompt that appeared at that instant. These defaults
+# match the participant-task tab. A task analysis started from the GUI uses the
+# values currently shown there, so duration and codes stay synchronized.
+ACTIVE_EVENT_CODES = [11, 12, 21, 22]
 
 # Trigger used for the separately measured Gap/Break baseline.
 # Keep its label in TRIGGER_LABELS; it does not need a stimulation frequency.
 BASELINE_EVENT_CODE = 100
 
-# Human-readable names for each trigger code. Keep BASELINE_EVENT_CODE labeled.
+# Human-readable names for each trigger code. The first word is retained in the
+# legacy `condition` CSV column; the remaining words are retained in the legacy
+# `finger` column even when the named body site is an ankle.
 TRIGGER_LABELS = {
-    1: "Think Thumb",
-    2: "Think Index",
-    3: "Think Middle",
-    4: "Think Ring",
-    5: "Think Pinky",
-    11: "Wiggle Thumb",
-    12: "Wiggle Index",
-    13: "Wiggle Middle",
-    14: "Wiggle Ring",
-    15: "Wiggle Pinky",
-    21: "Touch Thumb",
-    22: "Touch Index",
-    23: "Touch Middle",
-    24: "Touch Ring",
-    25: "Touch Pinky",
+    11: "BothHands Left Hand",
+    12: "BothHands Right Hand",
+    21: "HandAnkle Right Hand",
+    22: "HandAnkle Right Ankle",
     100: "Gap/Break",
 }
 
-# Expected stimulation frequency in hertz (Hz) for each active trigger code.
+# Optional stimulation frequency in hertz (Hz). TENS is controlled externally,
+# so None avoids guessing. The analysis tab can add the correct value for a run.
+STIMULATION_FREQUENCY_HZ = None
 TRIGGER_HZ_MAP = {
-    1: 10.0,
-    2: 17.0,
-    3: 23.0,
-    4: 34.0,
-    5: 45.0,
-    11: 10.0,
-    12: 17.0,
-    13: 23.0,
-    14: 34.0,
-    15: 45.0,
-    21: 10.0,
-    22: 17.0,
-    23: 23.0,
-    24: 34.0,
-    25: 45.0,
+    11: STIMULATION_FREQUENCY_HZ,
+    12: STIMULATION_FREQUENCY_HZ,
+    21: STIMULATION_FREQUENCY_HZ,
+    22: STIMULATION_FREQUENCY_HZ,
 }
 
-# Frequencies drawn as reference lines in diagnostic plots.
-FIXED_HZ_LINES = [10.0, 17.0, 23.0, 34.0, 45.0]
+# Optional extra reference lines drawn on every diagnostic plot.
+FIXED_HZ_LINES = []
 
 # Timing of each analyzed segment, in seconds.
 PRE_EVENT_SEC = 0.0
@@ -100,9 +81,9 @@ POST_EVENT_SEC_IF_INCLUDED = 2.5
 # Expected usable repetitions per active trigger; differences are flagged.
 EXPECTED_REPETITIONS_PER_TRIGGER = 5
 
-# Electrodes included in the region of interest (ROI) for SSSEP summaries.
-# The FFT retains every good scalp electrode; plots/summaries average amplitudes
-# over these channels only, after the full-scalp final average reference.
+# Electrodes included in the region of interest (ROI) for SSSEP summaries and
+# the existing mean columns in spectrum CSVs. PNGs use PLOT_CHANNEL instead.
+# The FFT retains every good scalp electrode after the final average reference.
 ANALYSIS_CHANNELS = [
     "Pz", "P2", "P4", "P6",
     "CPz", "CP2", "CP4", "CP6",

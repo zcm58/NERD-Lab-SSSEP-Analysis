@@ -21,6 +21,10 @@ Keep the default test suite lightweight:
 - `preprocess/`
   Channel/montage/reference behavior, scaled filtering before downsampling,
   bad-channel handling, and reference-compatible warning paths.
+- `experiment/`
+  Task validation, balanced alternating schedules, frame-counted cue timing,
+  one-byte triggers, flip ordering, aborts, and task-event logs using fakes
+  rather than a real display or COM port.
 - `test_pipeline.py`
   High-signal orchestration behavior that can be tested with stubs.
 - `test_regression_external_bdf.py`
@@ -28,9 +32,9 @@ Keep the default test suite lightweight:
 - `test_batch.py`
   Discovery, preflight, worker results, unique run directories, and preservation
   of earlier outputs.
-- `test_gui_settings.py` and `test_gui_lifecycle.py`
-  Saved parent-root settings and real Qt/process-pool shutdown in isolated
-  SSSEP subprocesses. Do not modify the user's actual settings file.
+- `test_gui_settings.py`, `test_gui_lifecycle.py`, and `test_task_gui.py`
+  Saved parent-root settings plus batch and persistent task-worker shutdown in
+  isolated SSSEP subprocesses. Do not modify the user's actual settings file.
 
 ## Regression Fixture Rule
 

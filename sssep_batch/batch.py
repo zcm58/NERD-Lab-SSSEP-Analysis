@@ -22,11 +22,13 @@ from typing import Callable
 
 import pandas as pd
 
+from sssep_batch.analysis.protocol import default_analysis_protocol
 from sssep_batch.config import (
     ACTIVE_EVENT_CODES,
     BATCH_WORKERS,
     BASELINE_EVENT_CODE,
     DOWNSAMPLE_RATE,
+    EVENT_DURATION_SEC,
     EXPECTED_REPETITIONS_PER_TRIGGER,
     FMAX,
     FMIN,
@@ -35,10 +37,12 @@ from sssep_batch.config import (
     LOWCUT,
     MAX_INDIVIDUAL_PLOTS,
     OUTPUT_ROOT,
+    PLOT_CHANNEL,
     TRIGGER_HZ_MAP,
     TRIGGER_LABELS,
 )
 from sssep_batch.logging_utils import ensure_folder, setup_batch_logger
+from sssep_batch.models import AnalysisProtocol
 
 
 THREAD_LIMIT_ENV_VARS = (
@@ -162,10 +166,21 @@ def validate_config_settings() -> None:
         or EXPECTED_REPETITIONS_PER_TRIGGER < 1
     ):
         problems.append("EXPECTED_REPETITIONS_PER_TRIGGER must be 1 or more.")
+    if (
+        not isinstance(EVENT_DURATION_SEC, Real)
+        or isinstance(EVENT_DURATION_SEC, bool)
+        or not isfinite(EVENT_DURATION_SEC)
+        or EVENT_DURATION_SEC <= 0
+    ):
+        problems.append("EVENT_DURATION_SEC must be a finite number above zero.")
     if not isinstance(MAX_INDIVIDUAL_PLOTS, int) or MAX_INDIVIDUAL_PLOTS < 0:
         problems.append("MAX_INDIVIDUAL_PLOTS cannot be negative.")
+    if not isinstance(PLOT_CHANNEL, str) or not PLOT_CHANNEL.strip():
+        problems.append("PLOT_CHANNEL must be a non-empty electrode label, such as 'Cz'.")
     if not ACTIVE_EVENT_CODES:
         problems.append("ACTIVE_EVENT_CODES must include at least one trigger code.")
+    elif len(ACTIVE_EVENT_CODES) != len(set(ACTIVE_EVENT_CODES)):
+        problems.append("ACTIVE_EVENT_CODES must not contain duplicate trigger codes.")
 
     missing_labels = [code for code in ACTIVE_EVENT_CODES if code not in TRIGGER_LABELS]
     missing_freqs = [code for code in ACTIVE_EVENT_CODES if code not in TRIGGER_HZ_MAP]
@@ -173,6 +188,23 @@ def validate_config_settings() -> None:
         problems.append(f"TRIGGER_LABELS is missing active trigger code(s): {missing_labels}.")
     if missing_freqs:
         problems.append(f"TRIGGER_HZ_MAP is missing active trigger code(s): {missing_freqs}.")
+    invalid_freqs = [
+        code
+        for code in ACTIVE_EVENT_CODES
+        if code in TRIGGER_HZ_MAP
+        and TRIGGER_HZ_MAP[code] is not None
+        and (
+            not isinstance(TRIGGER_HZ_MAP[code], Real)
+            or isinstance(TRIGGER_HZ_MAP[code], bool)
+            or not isfinite(TRIGGER_HZ_MAP[code])
+            or TRIGGER_HZ_MAP[code] <= 0
+        )
+    ]
+    if invalid_freqs:
+        problems.append(
+            "TRIGGER_HZ_MAP values must be positive finite numbers or None; "
+            f"check code(s): {invalid_freqs}."
+        )
     if BASELINE_EVENT_CODE not in TRIGGER_LABELS:
         problems.append(
             f"TRIGGER_LABELS is missing baseline trigger code {BASELINE_EVENT_CODE}."
@@ -186,6 +218,33 @@ def validate_config_settings() -> None:
             "What to try next: undo the last config edit or compare this file "
             "against the documented examples in config.py."
         )
+
+
+def validate_plot_channel_selection(plot_channel: object) -> str:
+    """Return a clean electrode label or raise a beginner-visible error."""
+    if not isinstance(plot_channel, str) or not plot_channel.strip():
+        raise BatchValidationError(
+            "The FFT plot electrode must be a channel label such as 'Cz', 'C3', or 'C4'."
+        )
+    return plot_channel.strip()
+
+
+def validate_analysis_protocol_selection(
+    analysis_protocol: AnalysisProtocol | None,
+) -> AnalysisProtocol:
+    """Return explicit batch event settings or the validated config defaults."""
+
+    try:
+        selected = analysis_protocol or default_analysis_protocol()
+    except (TypeError, ValueError, KeyError) as exc:
+        raise BatchValidationError(
+            f"The task analysis settings are invalid: {exc}"
+        ) from exc
+    if not isinstance(selected, AnalysisProtocol):
+        raise BatchValidationError(
+            "The task analysis settings must be an AnalysisProtocol value."
+        )
+    return selected
 
 
 def ensure_output_folder_ready(output_path: Path) -> None:
@@ -300,6 +359,8 @@ def run_batch(
     input_folder: str | Path | None,
     output_root: str | Path | None,
     progress_callback: ProgressCallback | None = None,
+    plot_channel: str = PLOT_CHANNEL,
+    analysis_protocol: AnalysisProtocol | None = None,
 ) -> dict[str, object]:
     """
     Run the full batch processor for the selected folders.
@@ -316,6 +377,8 @@ def run_batch(
     to confirm that successes and failures were counted correctly.
     """
 
+    selected_plot_channel = validate_plot_channel_selection(plot_channel)
+    selected_protocol = validate_analysis_protocol_selection(analysis_protocol)
     configure_native_thread_limits()
     preflight = run_preflight_checks(input_folder, output_root)
     input_path = Path(str(preflight["input_folder"]))
@@ -326,6 +389,13 @@ def run_batch(
     total_files = len(bdf_files)
     logger.info(f"Input folder: {input_path}")
     logger.info(f"Output folder: {output_path}")
+    logger.info(f"FFT plot electrode: {selected_plot_channel}")
+    logger.info(
+        "Task analysis protocol: triggers=%s, duration=%g s, expected repetitions=%d",
+        list(selected_protocol.active_event_codes),
+        selected_protocol.event_duration_sec,
+        selected_protocol.expected_repetitions_per_trigger,
+    )
     logger.info("Preflight checks passed: folders, packages, and config are ready.")
     logger.info(f"Found {total_files} .bdf file(s) in {input_path}.")
     _notify_progress(
@@ -354,7 +424,13 @@ def run_batch(
                 completed=0,
                 total=total_files,
             )
-            future = executor.submit(process_one_bdf, bdf_file, output_path)
+            future = executor.submit(
+                process_one_bdf,
+                bdf_file,
+                output_path,
+                selected_plot_channel,
+                selected_protocol,
+            )
             future_to_file[future] = (index, bdf_file)
 
         completed_count = 0

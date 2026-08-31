@@ -110,25 +110,26 @@ Parity means identical preprocessing and per-electrode amplitude FFTs for
 identical input data, settings, electrode labels, and epoch samples. These
 experiment-specific choices remain:
 
-- SSSEP's trigger codes, expected frequencies, and 7.5-second onset windows.
-  At 256 Hz this is exactly 1920 samples, with a stop-exclusive slice and no
+- SSSEP's trigger codes and cue duration come from the launcher. The default
+  7.5-second window is exactly 1920 samples at 256 Hz. Other durations use
+  `round(duration * sampling_rate)` samples, with a stop-exclusive slice and no
   extra endpoint. Event indices account for MNE's `raw.first_samp`.
 - FPVS's visual-oddball marker-55 crop and 1.2 Hz exact-bin restrictions do not
   apply to this experiment. The full FPVS export function requires that crop;
   the reference test executes its actual FFT assignments after supplying the
   SSSEP epochs. It does not pretend to run an unchanged FPVS experiment.
-- At 7.5 seconds the bin spacing is 0.133333… Hz. SSSEP's 17, 23, and 45 Hz
-  targets fall between bins. Existing nearest-bin and target-band summaries
-  remain explicitly SSSEP summaries; changing duration would change the
-  experiment's analysis window.
+- FFT bin spacing is the reciprocal of the analyzed duration. The optional
+  stimulation frequency shown in the launcher adds expected-frequency markers
+  and SSSEP summary values. Leaving it blank leaves those target summaries
+  unavailable while preserving the full per-electrode FFT.
 - Recognized complete 64-channel sets are ordered exactly as FPVS's default
   BioSemi name list. Smaller or unfamiliar sets keep their actual labels.
   SSSEP deliberately does not copy FPVS's fallback that relabels an unfamiliar
   64-channel set with default names.
 - Local amplitude SNR and Gap/Break comparisons occur after the FFT. They are
-  not FPVS's neighboring-bin SNR, BCA, or Z-score exports. Plots display the
-  mean of per-electrode amplitudes over the configured ROI, with actual
-  contributing channels recorded in the summary.
+  not FPVS's neighboring-bin SNR, BCA, or Z-score exports. Existing summary
+  values and CSV mean columns use the configured ROI, with actual contributing
+  channels recorded. PNGs display one electrode selected in the launcher.
 
 For parity, FPVS's logged warning-and-continue behavior is preserved for
 reference/filter/resampling/interpolation failures. Successful completion
@@ -144,8 +145,10 @@ active epochs is reported as failed.
 - Each usable active condition gets `*_sssep_fft_amplitude.csv` when CSV
   spectra are enabled, containing every retained EEG electrode and the full
   nonnegative spectrum (0–128 Hz with default settings).
-- Amplitude PNGs plot active and available baseline ROI means in µV over
-  3–50 Hz. The five-plot cap affects PNG creation only.
+- Amplitude PNGs plot active and available baseline amplitudes for the selected
+  electrode in µV over 3–50 Hz. The five-plot cap affects PNG creation only. If
+  that electrode is unavailable in one recording, its PNGs are skipped while
+  its FFT tables and summaries continue.
 - New summary fields use explicit `*_amplitude_uv` names. Amplitude ratios use
   `20 * log10(ratio)`. Missing active/baseline measurements remain unavailable.
 - Old power and Welch outputs are retired. Do not combine them with the new
@@ -153,17 +156,22 @@ active epochs is reported as failed.
 
 ## Verification and reproducibility
 
-The tested environment is Python 3.13.5 on Windows with MNE 1.9.0, NumPy 2.3.1,
-SciPy 1.16.0, pandas 2.3.0, matplotlib 3.10.3, and PySide6 6.9.1. Runtime pins
-are in `requirements.txt`; `requirements-dev.txt` adds pytest and edfio for
-deterministic, generated BDF fixtures. Different numerical-library versions
-or platforms are not assumed to be bitwise identical.
+The numerical parity environment uses Python 3.13.5 on Windows with
+MNE 1.9.0, NumPy 2.3.1, SciPy 1.16.0, pandas 2.3.0, matplotlib 3.10.3, and
+PySide6 6.9.1. PsychoPy is not installed in that older local environment. The
+combined task-and-analysis application installs on Python 3.11 because the
+pinned PsychoPy does not support Python 3.13. A clean Python 3.11.9 resolver
+check accepted every pin in `requirements.txt`, including PsychoPy 2026.2.3
+and pyserial 3.5. Different versions or platforms are not assumed to be
+bitwise identical.
 
-Verified on 2026-08-31: **111 repository tests passed, one optional participant-recording
-test skipped** with the reference comparisons enabled. All 37 tracked Python files
-compiled, `pip check` passed, and the PyCharm wrapper opened and closed the
-actual SSSEP launcher successfully. The remaining 14 test warnings are
-matplotlib/Pyparsing deprecation notices, not numerical comparison failures.
+Verified on 2026-08-31: **173 feature tests passed and one optional
+participant-recording test skipped** with FPVS source comparisons enabled. All
+47 tracked-or-new feature Python files compiled. Isolated Qt subprocess tests
+opened and closed the launcher through normal close, application quit, and
+application exit paths. The remaining 14 warnings are matplotlib/Pyparsing
+deprecation notices, not numerical comparison failures. PsychoPy presentation
+and COM3 marker timing still require the hardware check described below.
 
 From the repository root in PowerShell:
 

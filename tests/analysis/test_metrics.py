@@ -63,6 +63,17 @@ def test_absent_spectrum_has_the_same_complete_schema():
     assert all(math.isnan(value) for value in missing.values())
 
 
+def test_blank_external_stimulation_frequency_keeps_stable_missing_metrics():
+    metrics = extract_target_metrics(make_spectrum(), target_hz=None)
+
+    assert all(math.isnan(value) for value in metrics.values())
+
+
+def test_target_frequency_must_exist_in_the_recording_fft():
+    with pytest.raises(ValueError, match=r"outside this recording's FFT range"):
+        extract_target_metrics(make_spectrum(), target_hz=150.0)
+
+
 def test_baseline_comparison_uses_amplitude_ratios_and_twenty_log10():
     row = {"sssep_fft_nearest_amplitude_uv": 8.0, "sssep_fft_target_band_sum_amplitude_uv": 20.0}
     baseline = {"nearest_amplitude_uv": 2.0, "target_band_sum_amplitude_uv": 4.0}

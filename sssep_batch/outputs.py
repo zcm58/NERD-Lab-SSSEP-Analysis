@@ -90,10 +90,17 @@ def write_processing_report(
     report_lines: list[str],
     summary_rows: list[dict[str, object]],
     summary_csv_path: Path,
+    active_event_codes: tuple[int, ...] | list[int] | None = None,
+    baseline_event_code: int = BASELINE_EVENT_CODE,
 ) -> None:
     """Write a per-file text report with a beginner summary and technical log."""
-    active_found = [c for c in ACTIVE_EVENT_CODES if c in found_codes]
-    active_missing = [c for c in ACTIVE_EVENT_CODES if c not in found_codes]
+    selected_active_codes = (
+        tuple(ACTIVE_EVENT_CODES)
+        if active_event_codes is None
+        else tuple(active_event_codes)
+    )
+    active_found = [c for c in selected_active_codes if c in found_codes]
+    active_missing = [c for c in selected_active_codes if c not in found_codes]
     successful_rows = _count_summary_rows(summary_rows, status="success")
     no_epoch_rows = _count_summary_rows(summary_rows, status="no_complete_epochs")
     unexpected_epoch_rows = sum(
@@ -117,8 +124,8 @@ def write_processing_report(
         report_file.write(f"Active triggers found: {active_found}\n")
         report_file.write(f"Active triggers missing: {active_missing}\n")
         report_file.write(
-            f"Baseline trigger {BASELINE_EVENT_CODE} found: "
-            f"{BASELINE_EVENT_CODE in found_codes}\n"
+            f"Baseline trigger {baseline_event_code} found: "
+            f"{baseline_event_code in found_codes}\n"
         )
         report_file.write(f"Successful trigger rows: {successful_rows}\n")
         report_file.write(f"Rows with no complete epochs: {no_epoch_rows}\n")
@@ -143,9 +150,12 @@ def write_processing_report(
         report_file.write("Final reference requested: average projection over retained good EEG, after interpolation; see log for outcome.\n")
         report_file.write(f"Kurtosis rejection Z threshold: {KURTOSIS_REJECT_Z}\n")
         report_file.write(f"Bad channels by kurtosis: {n_bad_by_kurtosis}\n")
-        report_file.write(f"Active triggers found: {[c for c in ACTIVE_EVENT_CODES if c in found_codes]}\n")
-        report_file.write(f"Active triggers missing: {[c for c in ACTIVE_EVENT_CODES if c not in found_codes]}\n")
-        report_file.write(f"Baseline trigger {BASELINE_EVENT_CODE} found: {BASELINE_EVENT_CODE in found_codes}\n")
+        report_file.write(f"Active triggers found: {active_found}\n")
+        report_file.write(f"Active triggers missing: {active_missing}\n")
+        report_file.write(
+            f"Baseline trigger {baseline_event_code} found: "
+            f"{baseline_event_code in found_codes}\n"
+        )
         report_file.write(f"Analysis window seconds: {analysis_window_sec}\n")
         report_file.write(
             "Additional SSSEP FIR epoch exclusion (disabled in FPVS method): "

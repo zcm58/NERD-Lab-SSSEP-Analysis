@@ -9,19 +9,18 @@ from pathlib import Path
 
 from sssep_batch.analysis.metrics import add_baseline_comparison, extract_target_metrics
 from sssep_batch.analysis.plotting import plot_spectrum, spectrum_to_dataframe
+from sssep_batch.analysis.protocol import default_analysis_protocol
 from sssep_batch.analysis.spectra import compute_sssep_fft_from_averaged_epochs
 from sssep_batch.config import (
-    ACTIVE_EVENT_CODES, BASELINE_EVENT_CODE, DOWNSAMPLE_RATE,
-    EVENT_DURATION_SEC, EXPECTED_REPETITIONS_PER_TRIGGER,
-    FPVS_REFERENCE_COMMIT, HIGHCUT, INCLUDE_POST_STIMULUS, LOWCUT,
+    DOWNSAMPLE_RATE, FPVS_REFERENCE_COMMIT, HIGHCUT, INCLUDE_POST_STIMULUS, LOWCUT,
     MAX_INDIVIDUAL_PLOTS, POST_EVENT_SEC_IF_INCLUDED, PRE_EVENT_SEC,
-    PROCESSING_METHOD, SAVE_CSV_SUMMARIES, SAVE_PLOTS, TRIGGER_HZ_MAP,
-    TRIGGER_LABELS,
+    PLOT_CHANNEL, PROCESSING_METHOD, SAVE_CSV_SUMMARIES, SAVE_PLOTS,
 )
 from sssep_batch.events.epochs import extract_epochs_for_code
 from sssep_batch.events.status import find_status_events, parse_trigger_label
 from sssep_batch.loading import load_bdf
 from sssep_batch.logging_utils import ensure_folder, make_file_log_func
+from sssep_batch.models import AnalysisProtocol
 from sssep_batch.outputs import write_error_report, write_processing_report, write_summary_csv
 from sssep_batch.preprocess.bad_channels import detect_and_interpolate_bad_channels_by_kurtosis
 from sssep_batch.preprocess.channels import (
@@ -35,7 +34,12 @@ from sssep_batch.preprocess.filtering import (
 )
 
 
-def process_one_bdf(bdf_file: str | Path, output_root: str | Path) -> dict[str, object]:
+def process_one_bdf(
+    bdf_file: str | Path,
+    output_root: str | Path,
+    plot_channel: str = PLOT_CHANNEL,
+    analysis_protocol: AnalysisProtocol | None = None,
+) -> dict[str, object]:
     """Process one recording into a fresh per-file directory within a batch run."""
     bdf_path = Path(bdf_file)
     file_stem = bdf_path.stem
@@ -48,6 +52,19 @@ def process_one_bdf(bdf_file: str | Path, output_root: str | Path) -> dict[str, 
     stage = "loading_bdf"
 
     try:
+        stage = "validating_analysis_protocol"
+        protocol = analysis_protocol or default_analysis_protocol()
+        if not isinstance(protocol, AnalysisProtocol):
+            raise RuntimeError("analysis_protocol must be an AnalysisProtocol value.")
+
+        stage = "validating_plot_channel"
+        if not isinstance(plot_channel, str) or not plot_channel.strip():
+            raise RuntimeError(
+                "The FFT plot electrode must be a channel label such as 'Cz', 'C3', or 'C4'."
+            )
+        plot_channel = plot_channel.strip()
+
+        stage = "loading_bdf"
         log_func(f"Processing: {bdf_path.name}")
         log_func(f"Method: {PROCESSING_METHOD}; FPVS reference: {FPVS_REFERENCE_COMMIT}")
         raw = load_bdf(bdf_path)
@@ -87,6 +104,8 @@ def process_one_bdf(bdf_file: str | Path, output_root: str | Path) -> dict[str, 
         stage = "status_event_detection"
         _, intended_events, found_codes = find_status_events(
             raw, bdf_path.name, output_folder, log_func,
+            active_event_codes=protocol.active_event_codes,
+            baseline_event_code=protocol.baseline_event_code,
         )
 
         stage = "analysis_channel_validation"
@@ -95,16 +114,30 @@ def process_one_bdf(bdf_file: str | Path, output_root: str | Path) -> dict[str, 
         # FPVS's Epochs export excludes bads remaining after failed interpolation.
         analysis_channels = [ch for ch in requested_analysis_channels if ch in fft_channels]
         if not analysis_channels:
-            raise RuntimeError("No good configured analysis channels remain for FFT plotting.")
+            raise RuntimeError("No good configured analysis channels remain for FFT summaries.")
+        plot_channel_available = plot_channel in fft_channels
         channel_indices = [fft_channels.index(ch) for ch in analysis_channels]
         log_func(f"FFT electrodes ({len(fft_channels)}): {fft_channels}")
-        log_func(f"Amplitude plot/summary electrodes ({len(analysis_channels)}): {analysis_channels}")
+        log_func(f"Amplitude summary electrodes ({len(analysis_channels)}): {analysis_channels}")
+        if SAVE_PLOTS and plot_channel_available:
+            log_func(f"Amplitude plot electrode: {plot_channel}")
+        elif SAVE_PLOTS:
+            log_func(
+                f"WARNING: Plot electrode {plot_channel!r} is unavailable or remains "
+                "marked bad in this recording. FFT tables and summaries will be "
+                "saved, but PNG plots will be skipped for this file."
+            )
 
         post_sec = POST_EVENT_SEC_IF_INCLUDED if INCLUDE_POST_STIMULUS else 0.0
-        window_sec = PRE_EVENT_SEC + EVENT_DURATION_SEC + post_sec
+        window_sec = PRE_EVENT_SEC + protocol.event_duration_sec + post_sec
         stage = "baseline_epoch_extraction"
         baseline_epochs = extract_epochs_for_code(
-            raw, intended_events, BASELINE_EVENT_CODE, fft_channels, window_sec,
+            raw,
+            intended_events,
+            protocol.baseline_event_code,
+            fft_channels,
+            window_sec,
+            label=protocol.baseline_label,
         )
         baseline_fft = (
             compute_sssep_fft_from_averaged_epochs(baseline_epochs.epochs, float(raw.info["sfreq"]))
@@ -116,24 +149,33 @@ def process_one_bdf(bdf_file: str | Path, output_root: str | Path) -> dict[str, 
         stage = "active_sssep_analysis"
         summary_rows = []
         plotted = 0
-        for code in ACTIVE_EVENT_CODES:
-            label = TRIGGER_LABELS[code]
+        for trigger in protocol.active_triggers:
+            code = trigger.code
+            label = trigger.label
             condition, finger = parse_trigger_label(label)
-            target_hz = TRIGGER_HZ_MAP[code]
+            target_hz = trigger.target_hz
             epoch_set = extract_epochs_for_code(
-                raw, intended_events, code, fft_channels, window_sec,
+                raw,
+                intended_events,
+                code,
+                fft_channels,
+                window_sec,
+                label=label,
             )
             n_epochs = len(epoch_set.epochs)
-            count_ok = n_epochs == EXPECTED_REPETITIONS_PER_TRIGGER
+            count_ok = n_epochs == protocol.expected_repetitions_per_trigger
             if not count_ok:
-                log_func(f"WARNING: Trigger {code} ({label}) expected {EXPECTED_REPETITIONS_PER_TRIGGER} epochs; found {n_epochs}.")
+                log_func(
+                    f"WARNING: Trigger {code} ({label}) expected "
+                    f"{protocol.expected_repetitions_per_trigger} epochs; found {n_epochs}."
+                )
             row = {
                 "file_name": bdf_path.name, "processing_method": PROCESSING_METHOD,
                 "fpvs_reference_commit": FPVS_REFERENCE_COMMIT,
                 "trigger_code": code, "trigger_label": label,
                 "condition": condition, "finger": finger,
                 "expected_frequency_hz": target_hz,
-                "expected_repetitions": EXPECTED_REPETITIONS_PER_TRIGGER,
+                "expected_repetitions": protocol.expected_repetitions_per_trigger,
                 "usable_epochs": n_epochs, "skipped_epochs": epoch_set.skipped_epochs,
                 "out_of_bounds_epochs": epoch_set.out_of_bounds_epochs,
                 "edge_excluded_epochs": 0, "epoch_count_ok": count_ok,
@@ -142,7 +184,7 @@ def process_one_bdf(bdf_file: str | Path, output_root: str | Path) -> dict[str, 
                 "sampling_rate_hz": float(raw.info["sfreq"]),
                 "analysis_channels": ";".join(analysis_channels),
                 "fft_channels": ";".join(fft_channels),
-                "baseline_trigger_code": BASELINE_EVENT_CODE,
+                "baseline_trigger_code": protocol.baseline_event_code,
                 "baseline_usable_epochs": len(baseline_epochs.epochs),
                 "baseline_skipped_epochs": baseline_epochs.skipped_epochs,
                 "baseline_out_of_bounds_epochs": baseline_epochs.out_of_bounds_epochs,
@@ -166,19 +208,27 @@ def process_one_bdf(bdf_file: str | Path, output_root: str | Path) -> dict[str, 
                 continue
 
             code_dir = plots_dir / f"trigger_{code:03d}_{label.replace(' ', '_')}"
-            if SAVE_CSV_SUMMARIES or (SAVE_PLOTS and plotted < MAX_INDIVIDUAL_PLOTS):
+            if SAVE_CSV_SUMMARIES or (
+                SAVE_PLOTS
+                and plot_channel_available
+                and plotted < MAX_INDIVIDUAL_PLOTS
+            ):
                 ensure_folder(code_dir)
             output_stem = f"{file_stem}_trigger_{code:03d}_sssep_fft_amplitude"
             if SAVE_CSV_SUMMARIES:
                 spectrum_to_dataframe(
                     spectrum, baseline_fft, fft_channels, analysis_channels,
                 ).to_csv(code_dir / f"{output_stem}.csv", index=False)
-            if SAVE_PLOTS and plotted < MAX_INDIVIDUAL_PLOTS:
+            if (
+                SAVE_PLOTS
+                and plot_channel_available
+                and plotted < MAX_INDIVIDUAL_PLOTS
+            ):
                 plot_spectrum(
                     active=spectrum, baseline=baseline_fft,
                     title=f"{file_stem} - Trigger {code} {label} - FFT amplitude",
                     outpath=code_dir / f"{output_stem}.png", target_hz=target_hz,
-                    channel_names=fft_channels, analysis_channels=analysis_channels,
+                    channel_names=fft_channels, plot_channel=plot_channel,
                 )
                 plotted += 1
 
@@ -197,6 +247,8 @@ def process_one_bdf(bdf_file: str | Path, output_root: str | Path) -> dict[str, 
             filter_edge_margin_sec=0.0, analysis_channels=analysis_channels,
             report_lines=report_lines, summary_rows=summary_rows,
             summary_csv_path=summary_path,
+            active_event_codes=protocol.active_event_codes,
+            baseline_event_code=protocol.baseline_event_code,
         )
         if not any(row["status"] == "success" for row in summary_rows):
             raise RuntimeError("No usable active-condition epochs. See the event summary for counts.")

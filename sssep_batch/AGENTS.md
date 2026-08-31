@@ -2,9 +2,8 @@
 
 ## Package Role
 
-`sssep_batch` is the implementation package for the SSSEP processor. It exists
-to keep the old monolithic script split into focused modules with small,
-dedicated responsibilities.
+`sssep_batch` implements the SSSEP participant task and BDF processor in
+focused modules with small, dedicated responsibilities.
 
 The root `README.md` links the short student setup and user guides. Use
 `architecture.md` for the code map and validation steps, and
@@ -19,7 +18,11 @@ The package is organized around these boundaries:
 - `loading.py`
   FPVS-compatible BioSemi channel-subset loading from external input.
 - `analysis/`
-  Per-electrode amplitude FFT, SSSEP amplitude summaries, and plotting helpers.
+  Batch event protocol, per-electrode amplitude FFT, SSSEP amplitude summaries,
+  and plotting helpers.
+- `experiment/`
+  Task models, balanced scheduling, PsychoPy presentation, BioSemi serial
+  triggers, and task-event logs. It does not control TENS hardware.
 - `events/`
   Status-channel event detection and epoch extraction.
 - `preprocess/`
@@ -30,7 +33,7 @@ The package is organized around these boundaries:
 ## Non-Negotiable Design Intent
 
 1. `pipeline.py` defines order; helper modules define implementation.
-2. `config.py` is the single settings source for normal use.
+2. The GUI owns task/run selections; `config.py` owns analysis defaults.
 3. Keep helpers close to their domain. Do not reintroduce a monolith through
    cross-cutting helper files.
 4. Prefer pure or near-pure functions in submodules where practical.
@@ -55,8 +58,11 @@ The package is organized around these boundaries:
   `abs(np.fft.fft(mean_epoch_uv)[:, :N // 2 + 1]) / N * 2` without a taper,
   detrending, or power squaring. Preserve the reference DC/Nyquist scaling.
 - Exclude unresolved bad channels before FFT. Retain full good-scalp amplitude
-  spectra and nonnegative frequencies in CSVs; average amplitudes over the
-  available configured ROI only afterward for plots and summaries.
+  spectra and nonnegative frequencies in CSVs. PNGs show one selected electrode;
+  skip only those PNGs when it is unresolved. Existing ROI means remain only in
+  downstream summaries and CSV mean columns.
+- Use the `AnalysisProtocol` supplied by the launcher for active codes, labels,
+  epoch duration, expected counts, and optional stimulation frequency.
 - Local SSSEP amplitude SNR and Gap/Break comparisons are downstream summaries,
   not a claim of parity with FPVS's neighboring-bin SNR method.
 - `process_one_bdf()` writes durable per-file reports and should keep its final
@@ -89,6 +95,17 @@ The package is organized around these boundaries:
 
 - Be careful with sample indexing and trigger-code filtering.
 - Event timing mistakes silently change which data enters each epoch.
+
+### `experiment/`
+
+- Open the configured serial port before participant-facing screens.
+- Keep cue emission flip-locked through PsychoPy `window.callOnFlip(...)`.
+- Keep cue playback frame-counted from a measured display refresh, alternate
+  cues, and use the next onset or terminal black flip as the prior cue offset.
+- BioSemi events are one raw byte, codes `1..255`, at 115200 baud by default.
+- Never continue silently after a serial or trigger failure. Preserve partial
+  task logs after an in-task abort or write failure.
+- Keep PsychoPy on the launcher's persistent presentation thread on Windows.
 
 ### `preprocess/`
 

@@ -19,6 +19,9 @@ def extract_epochs_for_code(
     code: int,
     picks: list[str],
     window_sec: float,
+    *,
+    label: str | None = None,
+    pre_event_sec: float = PRE_EVENT_SEC,
 ) -> EpochSet:
     """
     Extract fixed-length EEG windows after each event of one trigger code.
@@ -33,7 +36,7 @@ def extract_epochs_for_code(
     sfreq = float(raw.info["sfreq"])
     code_events = events[events[:, 2] == code]
     n_samples = int(round(window_sec * sfreq))
-    pre_samples = int(round(PRE_EVENT_SEC * sfreq))
+    pre_samples = int(round(pre_event_sec * sfreq))
 
     extracted: list[np.ndarray] = []
     extracted_events: list[np.ndarray] = []
@@ -66,7 +69,7 @@ def extract_epochs_for_code(
 
     return EpochSet(
         code=code,
-        label=TRIGGER_LABELS.get(code, f"Trigger {code}"),
+        label=label or TRIGGER_LABELS.get(code, f"Trigger {code}"),
         epochs=epochs,
         skipped_epochs=out_of_bounds_skipped,
         out_of_bounds_epochs=out_of_bounds_skipped,

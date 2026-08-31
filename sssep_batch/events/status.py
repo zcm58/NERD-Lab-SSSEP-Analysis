@@ -33,6 +33,9 @@ def find_status_events(
     filename_for_log: str,
     output_folder: Path,
     log_func: Callable[[str], None],
+    *,
+    active_event_codes: tuple[int, ...] | list[int] | None = None,
+    baseline_event_code: int = BASELINE_EVENT_CODE,
 ) -> tuple[np.ndarray, np.ndarray, list[int]]:
     """
     Find trigger events from the BioSemi Status channel and keep intended codes.
@@ -41,6 +44,12 @@ def find_status_events(
     analysis, and a sorted list of every trigger code found in the file. The
     event samples are on the final sampling grid, matching FPVS's active runner.
     """
+
+    selected_active_codes = (
+        tuple(ACTIVE_EVENT_CODES)
+        if active_event_codes is None
+        else tuple(active_event_codes)
+    )
 
     try:
         all_events = mne.find_events(
@@ -55,7 +64,7 @@ def find_status_events(
         raise RuntimeError(f"No trigger events found in {STIM_CHANNEL}.")
 
     found_codes = sorted(np.unique(all_events[:, 2]).astype(int).tolist())
-    intended_codes = set(ACTIVE_EVENT_CODES + [BASELINE_EVENT_CODE])
+    intended_codes = set((*selected_active_codes, baseline_event_code))
     intended_mask = np.isin(all_events[:, 2], list(intended_codes))
     intended_events = all_events[intended_mask]
 
@@ -65,12 +74,12 @@ def find_status_events(
             f"Found codes: {found_codes}. Intended codes: {sorted(intended_codes)}."
         )
 
-    missing_active = [code for code in ACTIVE_EVENT_CODES if code not in found_codes]
-    baseline_found = BASELINE_EVENT_CODE in found_codes
+    missing_active = [code for code in selected_active_codes if code not in found_codes]
+    baseline_found = baseline_event_code in found_codes
 
     log_func(f"Found Status trigger codes in {filename_for_log}: {found_codes}")
     log_func(f"Active trigger codes missing from file: {missing_active if missing_active else 'None'}")
-    log_func(f"Baseline trigger {BASELINE_EVENT_CODE} found: {baseline_found}")
+    log_func(f"Baseline trigger {baseline_event_code} found: {baseline_found}")
 
     event_rows = pd.DataFrame(
         {

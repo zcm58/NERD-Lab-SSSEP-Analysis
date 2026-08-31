@@ -1,38 +1,42 @@
-# NERD Lab SSSEP Analysis
+# NERD Lab SSSEP Task and Analysis
 
-Analyze BioSemi `.bdf` EEG recordings from the SSSEP study. The program creates
-tables and graphs showing the strength of responses at the stimulation frequencies.
+Run the SSSEP attention task and analyze its BioSemi `.bdf` recordings from one
+simple program. The task shows fullscreen body-part cues and sends cue markers
+to BioSemi. The analysis creates full per-electrode FFT tables and a graph for
+one electrode selected by the user.
+
+TENS stimulation is controlled outside this program.
 
 ## Start here
 
 1. **First time?** Follow the [installation guide](docs/installation.md).
-2. **Ready to run?** Follow the [user guide](docs/user-guide.md).
+2. **Running the study or analysis?** Follow the [user guide](docs/user-guide.md).
 3. **Something went wrong?** See [troubleshooting](docs/troubleshooting.md).
 
 Once set up, right-click [sssep_bdf_batch_processor.py](sssep_bdf_batch_processor.py)
-in PyCharm and choose **Run**. You do not need to edit code for a normal run.
+in PyCharm and choose **Run**. The launcher has two tabs:
+
+- **Run Participant Task** presents the cues, sends BioSemi markers through the
+  selected serial port, and saves a task log.
+- **Analyze Recordings** processes saved `.bdf` files and creates FFT results.
+
+The analysis uses the condition, epoch duration, epoch count, and trigger codes
+currently shown in the participant-task tab. Set those fields to match the
+recordings before processing them.
 
 ## Where things live
 
 | File or folder | What you use it for |
 | --- | --- |
 | [sssep_bdf_batch_processor.py](sssep_bdf_batch_processor.py) | **Run this file** to open the program. |
-| [sssep_batch/config.py](sssep_batch/config.py) | **Edit settings here.** Everyday options are at the top. |
+| [sssep_batch/config.py](sssep_batch/config.py) | Advanced analysis settings and launcher defaults. |
 | [docs/](docs/) | Setup, user guide, help, and method details. |
-| [sssep_batch/](sssep_batch/) | The processing code, grouped by job. |
+| [sssep_batch/](sssep_batch/) | Task and analysis code, grouped by job. |
 | [tests/](tests/) | Checks to run after changing code. |
-| [requirements.txt](requirements.txt) | Libraries installed during setup; keep the listed versions. |
 
-Keep EEG data and results **outside this project folder**. Each run saves
-results in a new folder, so earlier runs stay intact.
+Keep EEG data, task logs, and results **outside this project folder**. Analysis
+runs use new result folders so earlier results stay intact.
 
-## Editing the project
-
-For settings, start with [Change settings](docs/user-guide.md#change-settings).
 For code changes, use the [code map and testing steps](architecture.md).
-`AGENTS.md` files contain instructions for coding assistants; students do not
-need them for normal use.
-
-The processing method follows the FPVS Toolbox while keeping SSSEP trial
-timing. [Method and verification details](docs/fpvs-parity.md) are separate
-from the student guides.
+The analysis method follows the FPVS Toolbox while keeping SSSEP trial timing;
+see [method and verification details](docs/fpvs-parity.md).

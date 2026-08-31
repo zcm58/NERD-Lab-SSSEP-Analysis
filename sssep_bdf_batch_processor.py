@@ -1,6 +1,6 @@
 """
-Targeted BioSemi BDF SSSEP Batch Processor
-==========================================
+NERD Lab SSSEP Participant Task and Analysis
+============================================
 
 This file is kept as a thin compatibility wrapper. The implementation now lives
 under the `sssep_batch` package so the processing pipeline is split into smaller
@@ -10,14 +10,14 @@ Beginner map
 ------------
 - This is the file users run from PyCharm.
 - It sets native math-library thread limits before anything heavy imports.
-- It then opens the PySide6 launcher from `sssep_batch.gui`.
+- It opens the PySide6 participant-task and analysis launcher.
 - It intentionally does not contain analysis logic.
 
 How to run in PyCharm
 ---------------------
 1. In the PyCharm Project pane, right-click `sssep_bdf_batch_processor.py`.
 2. Click `Run 'sssep_bdf_batch_processor'`.
-3. Choose input and output folders in the launcher, then click Process Data.
+3. Choose Run Participant Task or Analyze Recordings in the launcher.
 """
 
 import os

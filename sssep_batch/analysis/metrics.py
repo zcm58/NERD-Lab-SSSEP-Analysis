@@ -44,7 +44,7 @@ def ratio_to_db(ratio: float) -> float:
 
 def extract_target_metrics(
     spectrum: Spectrum | None,
-    target_hz: float,
+    target_hz: float | None,
     channel_indices: list[int] | None = None,
 ) -> dict[str, float]:
     """Summarize mean electrode amplitude near the expected SSSEP frequency.
@@ -53,10 +53,15 @@ def extract_target_metrics(
     input spectrum may retain the entire nonnegative FFT frequency range.
     A missing spectrum returns the same fields with NaN values.
     """
-    if spectrum is None:
+    if spectrum is None or target_hz is None:
         return {field: float("nan") for field in AMPLITUDE_METRIC_FIELDS}
     freqs = spectrum.freqs
     amplitudes = spectrum.amplitude_uv
+    if target_hz < float(np.min(freqs)) or target_hz > float(np.max(freqs)):
+        raise ValueError(
+            f"Target frequency {target_hz:g} Hz is outside this recording's "
+            f"FFT range ({float(np.min(freqs)):g}–{float(np.max(freqs)):g} Hz)."
+        )
     if channel_indices is not None:
         if len(channel_indices) == 0:
             raise ValueError("Select at least one channel for amplitude summaries.")

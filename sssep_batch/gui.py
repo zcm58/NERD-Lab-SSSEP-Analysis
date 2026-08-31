@@ -1,26 +1,42 @@
-"""PySide6 launcher used by beginner users to run the batch processor.
+"""One PySide6 launcher for participant tasks and recording analysis.
 
-The intended workflow is: run `sssep_bdf_batch_processor.py` in PyCharm, choose
-an input folder and output folder, click `Process Data`, and open the output
-folder when processing finishes. This module keeps the GUI small and delegates
-real work to `sssep_batch.batch`.
-
-Long processing runs happen in a `QThread` so the window can keep updating
-status text instead of freezing.
+PsychoPy task runs and BDF batches stay off the UI thread. Presentation runs
+reuse one long-lived worker thread because PsychoPy's window backend is tied to
+the thread that imports it.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+from math import isfinite
 from pathlib import Path
+from threading import Event
+
+import mne
 
 from sssep_batch.batch import BatchValidationError, run_batch
-from sssep_batch.config import INPUT_FOLDER, OUTPUT_ROOT
+from sssep_batch.config import (
+    EVENT_DURATION_SEC,
+    EXPECTED_REPETITIONS_PER_TRIGGER,
+    INPUT_FOLDER,
+    OUTPUT_ROOT,
+    PLOT_CHANNEL,
+    STIMULATION_FREQUENCY_HZ,
+)
+from sssep_batch.experiment import (
+    CueTriggerCodes,
+    TaskCondition,
+    TaskSettings,
+    analysis_protocol_for_task,
+    run_participant_task,
+)
+from sssep_batch.models import AnalysisProtocol
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SETTINGS_PATH = REPO_ROOT / ".sssep_gui_settings.json"
+BIOSEMI64_CHANNELS = tuple(mne.channels.make_standard_montage("biosemi64").ch_names)
 
 
 def load_saved_folders(settings_path: str | Path = SETTINGS_PATH) -> dict[str, str]:
@@ -65,11 +81,13 @@ def save_folder_defaults(
 def _require_pyside6():
     """Import PySide6 lazily and provide a clear install message if missing."""
     try:
-        from PySide6.QtCore import QThread, QUrl, Signal
+        from PySide6.QtCore import QObject, QThread, QUrl, Signal, Slot
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtWidgets import (
             QApplication,
             QCheckBox,
+            QComboBox,
+            QDoubleSpinBox,
             QFileDialog,
             QFormLayout,
             QHBoxLayout,
@@ -77,6 +95,8 @@ def _require_pyside6():
             QLineEdit,
             QMessageBox,
             QPushButton,
+            QSpinBox,
+            QTabWidget,
             QVBoxLayout,
             QWidget,
         )
@@ -89,19 +109,25 @@ def _require_pyside6():
     return {
         "QApplication": QApplication,
         "QCheckBox": QCheckBox,
+        "QComboBox": QComboBox,
         "QDesktopServices": QDesktopServices,
+        "QDoubleSpinBox": QDoubleSpinBox,
         "QFileDialog": QFileDialog,
         "QFormLayout": QFormLayout,
         "QHBoxLayout": QHBoxLayout,
         "QLabel": QLabel,
         "QLineEdit": QLineEdit,
         "QMessageBox": QMessageBox,
+        "QObject": QObject,
         "QPushButton": QPushButton,
+        "QSpinBox": QSpinBox,
+        "QTabWidget": QTabWidget,
         "QThread": QThread,
         "QUrl": QUrl,
         "QVBoxLayout": QVBoxLayout,
         "QWidget": QWidget,
         "Signal": Signal,
+        "Slot": Slot,
     }
 
 
@@ -111,19 +137,25 @@ def launch_gui() -> int:
 
     QApplication = qt["QApplication"]
     QCheckBox = qt["QCheckBox"]
+    QComboBox = qt["QComboBox"]
     QDesktopServices = qt["QDesktopServices"]
+    QDoubleSpinBox = qt["QDoubleSpinBox"]
     QFileDialog = qt["QFileDialog"]
     QFormLayout = qt["QFormLayout"]
     QHBoxLayout = qt["QHBoxLayout"]
     QLabel = qt["QLabel"]
     QLineEdit = qt["QLineEdit"]
     QMessageBox = qt["QMessageBox"]
+    QObject = qt["QObject"]
     QPushButton = qt["QPushButton"]
+    QSpinBox = qt["QSpinBox"]
+    QTabWidget = qt["QTabWidget"]
     QThread = qt["QThread"]
     QUrl = qt["QUrl"]
     QVBoxLayout = qt["QVBoxLayout"]
     QWidget = qt["QWidget"]
     Signal = qt["Signal"]
+    Slot = qt["Slot"]
 
     class BatchWorker(QThread):
         """Run `run_batch()` off the UI thread and emit Qt progress signals."""
@@ -132,11 +164,20 @@ def launch_gui() -> int:
         batch_finished = Signal(object)
         batch_failed = Signal(object)
 
-        def __init__(self, input_folder: str, output_root: str, parent: QWidget) -> None:
-            """Remember the selected folders for the background run."""
+        def __init__(
+            self,
+            input_folder: str,
+            output_root: str,
+            plot_channel: str,
+            analysis_protocol: AnalysisProtocol,
+            parent: QWidget,
+        ) -> None:
+            """Remember the selected batch settings for the background run."""
             super().__init__(parent)
             self.input_folder = input_folder
             self.output_root = output_root
+            self.plot_channel = plot_channel
+            self.analysis_protocol = analysis_protocol
 
         def run(self) -> None:
             """Execute the batch and translate success/failure into signals."""
@@ -145,6 +186,8 @@ def launch_gui() -> int:
                     self.input_folder,
                     self.output_root,
                     progress_callback=self._handle_progress,
+                    plot_channel=self.plot_channel,
+                    analysis_protocol=self.analysis_protocol,
                 )
             except Exception as exc:
                 self.batch_failed.emit(exc)
@@ -158,20 +201,117 @@ def launch_gui() -> int:
             total = int(event.get("total", 0) or 0)
             self.progress_changed.emit(message, completed, total)
 
+    class TaskWorker(QObject):
+        """Run every PsychoPy presentation on one long-lived worker thread."""
+
+        progress_changed = Signal(int, int)
+        task_finished = Signal(object)
+        task_failed = Signal(object)
+        task_done = Signal()
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._busy = False
+            self._stop_requested = Event()
+
+        @Slot(object)
+        def run_task(self, settings: TaskSettings) -> None:
+            """Run one task, reporting all results through Qt signals."""
+            if self._busy:
+                self.task_failed.emit(RuntimeError("A participant task is already running."))
+                self.task_done.emit()
+                return
+            self._busy = True
+            try:
+                result = run_participant_task(
+                    settings,
+                    progress_callback=self._handle_progress,
+                    abort_requested=self._stop_requested.is_set,
+                )
+            except Exception as exc:
+                self.task_failed.emit(exc)
+            else:
+                self.task_finished.emit(result)
+            finally:
+                self._busy = False
+                self.task_done.emit()
+
+        def _handle_progress(self, completed: int, total: int) -> None:
+            """Forward task progress without touching GUI widgets."""
+            self.progress_changed.emit(completed, total)
+
+        def request_stop(self) -> None:
+            """Request a cooperative stop from the GUI thread during app shutdown."""
+            self._stop_requested.set()
+
     class LauncherWindow(QWidget):
-        """Main launcher widget with folder fields, buttons, and status text."""
+        """Single launcher for task presentation and BDF analysis."""
+
+        task_requested = Signal(object)
 
         def __init__(self) -> None:
             """Create widgets, load saved folders, and wire up button actions."""
             super().__init__()
             self.worker: BatchWorker | None = None
+            self.task_running = False
             self.output_folder = ""
 
-            self.setWindowTitle("SSSEP Batch Processor")
+            self.setWindowTitle("SSSEP Task and Analysis")
+            self.tabs = QTabWidget()
+            self.task_tab = QWidget()
+            self.analysis_tab = QWidget()
+
+            self.condition_combo = QComboBox()
+            self.condition_combo.addItem(
+                "Both hands (left hand / right hand)",
+                TaskCondition.BOTH_HANDS.value,
+            )
+            self.condition_combo.addItem(
+                "Right hand and right ankle",
+                TaskCondition.RIGHT_HAND_AND_ANKLE.value,
+            )
+            self.epoch_duration_spin = QDoubleSpinBox()
+            self.epoch_duration_spin.setRange(0.1, 3600.0)
+            self.epoch_duration_spin.setDecimals(2)
+            self.epoch_duration_spin.setSingleStep(0.5)
+            self.epoch_duration_spin.setValue(EVENT_DURATION_SEC)
+            self.epoch_duration_spin.setSuffix(" seconds")
+            self.total_epochs_spin = QSpinBox()
+            self.total_epochs_spin.setRange(2, 10000)
+            self.total_epochs_spin.setSingleStep(2)
+            self.total_epochs_spin.setValue(EXPECTED_REPETITIONS_PER_TRIGGER * 2)
+
+            self.both_hands_left_code_spin = self._new_trigger_spin(11)
+            self.both_hands_right_code_spin = self._new_trigger_spin(12)
+            self.hand_ankle_hand_code_spin = self._new_trigger_spin(21)
+            self.hand_ankle_ankle_code_spin = self._new_trigger_spin(22)
+            self.serial_port_edit = QLineEdit("COM3")
+            self.task_log_edit = QLineEdit()
+            self.task_log_browse_button = QPushButton("Browse...")
+            self.start_task_button = QPushButton("Start Task")
+            self.task_status_label = QLabel(
+                "Choose task settings, confirm BioSemi is ready, then click Start Task."
+            )
+
             self.input_edit = QLineEdit()
             self.output_edit = QLineEdit()
             self.input_browse_button = QPushButton("Browse...")
             self.output_browse_button = QPushButton("Browse...")
+            self.plot_channel_combo = QComboBox()
+            self.plot_channel_combo.addItems(BIOSEMI64_CHANNELS)
+            if PLOT_CHANNEL not in BIOSEMI64_CHANNELS:
+                raise ValueError(
+                    f"Configured PLOT_CHANNEL {PLOT_CHANNEL!r} is not a BioSemi64 "
+                    "electrode. Correct sssep_batch/config.py before opening the "
+                    "analysis launcher."
+                )
+            self.plot_channel_combo.setCurrentText(PLOT_CHANNEL)
+            self.stimulation_frequency_edit = QLineEdit()
+            self.stimulation_frequency_edit.setPlaceholderText("Optional")
+            if STIMULATION_FREQUENCY_HZ is not None:
+                self.stimulation_frequency_edit.setText(
+                    f"{STIMULATION_FREQUENCY_HZ:g}"
+                )
             self.save_checkbox = QCheckBox("Save folders for next time")
             self.save_checkbox.setChecked(True)
             self.process_button = QPushButton("Process Data")
@@ -182,6 +322,29 @@ def launch_gui() -> int:
             self._load_initial_folders()
             self._build_layout()
             self._connect_signals()
+            self._start_task_thread()
+
+        @staticmethod
+        def _new_trigger_spin(default: int):
+            """Create a BioSemi event-code field with the valid byte range."""
+            spin = QSpinBox()
+            spin.setRange(1, 255)
+            spin.setValue(default)
+            return spin
+
+        def _start_task_thread(self) -> None:
+            """Create the one presentation thread reused by every task launch."""
+            self.task_thread = QThread(self)
+            self.task_thread.setObjectName("sssep-presentation-thread")
+            self.task_worker = TaskWorker()
+            self.task_worker.moveToThread(self.task_thread)
+            self.task_requested.connect(self.task_worker.run_task)
+            self.task_worker.progress_changed.connect(self._update_task_progress)
+            self.task_worker.task_finished.connect(self._task_finished)
+            self.task_worker.task_failed.connect(self._task_failed)
+            self.task_worker.task_done.connect(self._task_done)
+            self.task_thread.finished.connect(self.task_worker.deleteLater)
+            self.task_thread.start()
 
         def _load_initial_folders(self) -> None:
             """Populate folder fields from saved settings or config defaults."""
@@ -195,9 +358,43 @@ def launch_gui() -> int:
             output_default = saved.get("output_root") or OUTPUT_ROOT
             self.input_edit.setText(input_default)
             self.output_edit.setText(output_default)
+            self.task_log_edit.setText(output_default)
 
         def _build_layout(self) -> None:
-            """Assemble the small form-style launcher layout."""
+            """Assemble the task and analysis tabs."""
+            task_log_row = QHBoxLayout()
+            task_log_row.addWidget(self.task_log_edit)
+            task_log_row.addWidget(self.task_log_browse_button)
+
+            task_form = QFormLayout()
+            task_form.addRow("Condition", self.condition_combo)
+            task_form.addRow("Duration of each epoch", self.epoch_duration_spin)
+            task_form.addRow("Total epochs (even)", self.total_epochs_spin)
+            task_form.addRow(
+                "Both hands: left hand trigger",
+                self.both_hands_left_code_spin,
+            )
+            task_form.addRow(
+                "Both hands: right hand trigger",
+                self.both_hands_right_code_spin,
+            )
+            task_form.addRow(
+                "Hand/ankle: right hand trigger",
+                self.hand_ankle_hand_code_spin,
+            )
+            task_form.addRow(
+                "Hand/ankle: right ankle trigger",
+                self.hand_ankle_ankle_code_spin,
+            )
+            task_form.addRow("BioSemi serial port", self.serial_port_edit)
+            task_form.addRow("Task log folder", task_log_row)
+
+            task_layout = QVBoxLayout()
+            task_layout.addLayout(task_form)
+            task_layout.addWidget(self.start_task_button)
+            task_layout.addWidget(self.task_status_label)
+            self.task_tab.setLayout(task_layout)
+
             input_row = QHBoxLayout()
             input_row.addWidget(self.input_edit)
             input_row.addWidget(self.input_browse_button)
@@ -209,24 +406,53 @@ def launch_gui() -> int:
             form = QFormLayout()
             form.addRow("Input folder", input_row)
             form.addRow("Output folder", output_row)
+            form.addRow("Electrode to plot", self.plot_channel_combo)
+            form.addRow(
+                "Stimulation frequency (Hz)",
+                self.stimulation_frequency_edit,
+            )
 
             button_row = QHBoxLayout()
             button_row.addWidget(self.process_button)
             button_row.addWidget(self.view_output_button)
 
+            analysis_layout = QVBoxLayout()
+            analysis_layout.addWidget(
+                QLabel(
+                    "Condition, epoch duration, epoch count, and trigger codes come "
+                    "from the Participant Task tab."
+                )
+            )
+            analysis_layout.addLayout(form)
+            analysis_layout.addWidget(self.save_checkbox)
+            analysis_layout.addLayout(button_row)
+            analysis_layout.addWidget(self.status_label)
+            self.analysis_tab.setLayout(analysis_layout)
+
+            self.tabs.addTab(self.task_tab, "Run Participant Task")
+            self.tabs.addTab(self.analysis_tab, "Analyze Recordings")
             layout = QVBoxLayout()
-            layout.addLayout(form)
-            layout.addWidget(self.save_checkbox)
-            layout.addLayout(button_row)
-            layout.addWidget(self.status_label)
+            layout.addWidget(self.tabs)
             self.setLayout(layout)
 
         def _connect_signals(self) -> None:
             """Connect button clicks to the methods that handle them."""
+            self.task_log_browse_button.clicked.connect(self._browse_task_log)
+            self.start_task_button.clicked.connect(self._start_task)
             self.input_browse_button.clicked.connect(self._browse_input)
             self.output_browse_button.clicked.connect(self._browse_output)
             self.process_button.clicked.connect(self._start_processing)
             self.view_output_button.clicked.connect(self._view_output)
+
+        def _browse_task_log(self) -> None:
+            """Choose where the participant-task CSV log will be saved."""
+            folder = QFileDialog.getExistingDirectory(
+                self,
+                "Choose Task Log Folder",
+                self.task_log_edit.text().strip(),
+            )
+            if folder:
+                self.task_log_edit.setText(folder)
 
         def _browse_input(self) -> None:
             """Open a folder picker for the input `.bdf` folder."""
@@ -250,14 +476,32 @@ def launch_gui() -> int:
 
         def _start_processing(self) -> None:
             """Start setup checks and processing off the UI thread."""
-            if self.worker is not None:
+            if self.worker is not None or self.task_running:
                 return
             input_folder = self.input_edit.text().strip()
             output_root = self.output_edit.text().strip()
+            plot_channel = self.plot_channel_combo.currentText().strip()
+            try:
+                analysis_protocol = self._analysis_protocol()
+            except (TypeError, ValueError) as exc:
+                message = str(exc) or type(exc).__name__
+                self.status_label.setText(message)
+                QMessageBox.warning(
+                    self,
+                    "Analysis Settings Need Attention",
+                    message,
+                )
+                return
             self.output_folder = ""
-            self._set_running(True)
+            self._set_batch_running(True)
             self.status_label.setText("Checking folders, packages, and settings...")
-            self.worker = BatchWorker(input_folder, output_root, self)
+            self.worker = BatchWorker(
+                input_folder,
+                output_root,
+                plot_channel,
+                analysis_protocol,
+                self,
+            )
             self.worker.progress_changed.connect(self._update_progress)
             self.worker.batch_finished.connect(self._processing_finished)
             self.worker.batch_failed.connect(self._processing_failed)
@@ -265,30 +509,188 @@ def launch_gui() -> int:
             self.worker.finished.connect(self.worker.deleteLater)
             self.worker.start()
 
+        def _task_settings(self) -> TaskSettings:
+            """Build the validated participant settings currently shown."""
+            log_folder = self.task_log_edit.text().strip()
+            if not log_folder:
+                raise ValueError("Choose a task log folder before starting the task.")
+            return TaskSettings(
+                condition=TaskCondition(self.condition_combo.currentData()),
+                epoch_duration_sec=self.epoch_duration_spin.value(),
+                total_epochs=self.total_epochs_spin.value(),
+                trigger_codes=CueTriggerCodes(
+                    self.both_hands_left_code_spin.value(),
+                    self.both_hands_right_code_spin.value(),
+                    self.hand_ankle_hand_code_spin.value(),
+                    self.hand_ankle_ankle_code_spin.value(),
+                ),
+                serial_port=self.serial_port_edit.text(),
+                output_folder=Path(log_folder),
+            )
+
+        def _analysis_protocol(self) -> AnalysisProtocol:
+            """Use the visible task fields when cutting and labeling FFT epochs."""
+
+            frequency_text = self.stimulation_frequency_edit.text().strip()
+            target_hz: float | None = None
+            if frequency_text:
+                try:
+                    target_hz = float(frequency_text)
+                except ValueError as exc:
+                    raise ValueError(
+                        "Stimulation frequency must be a number, or left blank."
+                    ) from exc
+                if not isfinite(target_hz) or target_hz <= 0:
+                    raise ValueError(
+                        "Stimulation frequency must be a finite number above zero."
+                    )
+
+            return analysis_protocol_for_task(
+                condition=TaskCondition(self.condition_combo.currentData()),
+                epoch_duration_sec=self.epoch_duration_spin.value(),
+                total_epochs=self.total_epochs_spin.value(),
+                trigger_codes=CueTriggerCodes(
+                    self.both_hands_left_code_spin.value(),
+                    self.both_hands_right_code_spin.value(),
+                    self.hand_ankle_hand_code_spin.value(),
+                    self.hand_ankle_ankle_code_spin.value(),
+                ),
+                target_hz=target_hz,
+            )
+
+        def _start_task(self) -> None:
+            """Validate task fields and queue a presentation on the worker."""
+            if self.task_running or self.worker is not None:
+                return
+            try:
+                settings = self._task_settings()
+            except (TypeError, ValueError) as exc:
+                message = str(exc) or type(exc).__name__
+                self.task_status_label.setText(message)
+                QMessageBox.warning(self, "Task Settings Need Attention", message)
+                return
+
+            self.task_running = True
+            self._set_task_running(True)
+            self.task_status_label.setText(
+                f"Opening {settings.serial_port} before the participant screen..."
+            )
+            self.task_requested.emit(settings)
+
         def closeEvent(self, event) -> None:
-            """Keep the launcher alive until its processing thread has stopped."""
+            """Block active work, then stop the idle presentation thread safely."""
             if self.worker is not None and self.worker.isRunning():
                 event.ignore()
                 self.status_label.setText(
                     "Processing is still running. Keep this window open until it finishes."
                 )
                 return
+            if self.task_running:
+                event.ignore()
+                self.task_status_label.setText(
+                    "The participant task is still running. Press Escape in the task "
+                    "screen before closing this window."
+                )
+                return
+            if not self._shutdown_task_thread():
+                event.ignore()
+                self.task_status_label.setText(
+                    "The presentation worker is still stopping. Please try again."
+                )
+                return
             super().closeEvent(event)
+
+        def _shutdown_task_thread(self) -> bool:
+            """Stop the presentation thread safely; repeated calls are harmless."""
+            if not self.task_thread.isRunning():
+                return True
+            self.task_worker.request_stop()
+            self.task_thread.quit()
+            return bool(self.task_thread.wait())
+
+        def _shutdown_application(self) -> None:
+            """Finish active background work before Qt destroys its threads."""
+            if self.worker is not None and self.worker.isRunning():
+                self.worker.wait()
+            self._shutdown_task_thread()
 
         def _worker_finished(self) -> None:
             """Release the stopped worker before accepting another run."""
             self.worker = None
-            self._set_running(False)
+            self._set_batch_running(False)
 
-        def _set_running(self, running: bool) -> None:
-            """Enable or disable controls while the background worker runs."""
+        def _set_batch_running(self, running: bool) -> None:
+            """Enable or disable analysis controls during a batch."""
             self.input_edit.setEnabled(not running)
             self.output_edit.setEnabled(not running)
             self.input_browse_button.setEnabled(not running)
             self.output_browse_button.setEnabled(not running)
+            self.plot_channel_combo.setEnabled(not running)
+            self.stimulation_frequency_edit.setEnabled(not running)
             self.save_checkbox.setEnabled(not running)
             self.process_button.setEnabled(not running)
             self.view_output_button.setEnabled(False if running else bool(self.output_folder))
+            self.tabs.setTabEnabled(0, not running)
+
+        def _set_task_running(self, running: bool) -> None:
+            """Enable or disable task fields during a presentation."""
+            for widget in (
+                self.condition_combo,
+                self.epoch_duration_spin,
+                self.total_epochs_spin,
+                self.both_hands_left_code_spin,
+                self.both_hands_right_code_spin,
+                self.hand_ankle_hand_code_spin,
+                self.hand_ankle_ankle_code_spin,
+                self.serial_port_edit,
+                self.task_log_edit,
+                self.task_log_browse_button,
+                self.start_task_button,
+            ):
+                widget.setEnabled(not running)
+            self.tabs.setTabEnabled(1, not running)
+
+        def _update_task_progress(self, completed: int, total: int) -> None:
+            """Show cue progress emitted by the presentation worker."""
+            if completed == 0:
+                self.task_status_label.setText(
+                    f"Task started. Waiting to present {total} cue epochs."
+                )
+            else:
+                self.task_status_label.setText(
+                    f"Presented cue epoch {completed} of {total}."
+                )
+
+        def _task_finished(self, result) -> None:
+            """Show the completed or aborted task result."""
+            log_text = f" Log: {result.log_path}" if result.log_path else ""
+            if result.aborted:
+                reason = result.abort_reason or "The task was stopped."
+                self.task_status_label.setText(
+                    f"Task stopped after {result.completed_epochs} completed epoch(s). "
+                    f"{reason}{log_text}"
+                )
+                if "trigger output failed" in reason.casefold():
+                    QMessageBox.critical(self, "BioSemi Trigger Failed", reason)
+                return
+            self.task_status_label.setText(
+                f"Task complete: {result.completed_epochs} epoch(s).{log_text}"
+            )
+
+        def _task_failed(self, exc: Exception) -> None:
+            """Make task setup, PsychoPy, serial, and log failures visible."""
+            message = str(exc) or type(exc).__name__
+            self.task_status_label.setText(message.splitlines()[0])
+            QMessageBox.critical(
+                self,
+                "Participant Task Failed",
+                f"{message}\n\nNo task was continued after this failure.",
+            )
+
+        def _task_done(self) -> None:
+            """Release the task controls while retaining the worker thread."""
+            self.task_running = False
+            self._set_task_running(False)
 
         def _update_progress(self, message: str, completed: int, total: int) -> None:
             """Show the latest worker progress message in the status label."""
@@ -364,7 +766,9 @@ def launch_gui() -> int:
         app = QApplication(sys.argv)
 
     window = LauncherWindow()
-    window.resize(700, 180)
+    app.aboutToQuit.connect(window._shutdown_application)
+    app._sssep_launcher_window = window
+    window.resize(760, 520)
     window.show()
 
     if owns_app:

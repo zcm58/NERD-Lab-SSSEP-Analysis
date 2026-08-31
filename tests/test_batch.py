@@ -94,6 +94,16 @@ def test_validate_config_settings_reports_missing_trigger_metadata(monkeypatch):
         batch.validate_config_settings()
 
 
+@pytest.mark.parametrize("plot_channel", [None, "", "   ", 4])
+def test_plot_channel_selection_requires_a_channel_label(plot_channel):
+    with pytest.raises(batch.BatchValidationError, match="FFT plot electrode"):
+        batch.validate_plot_channel_selection(plot_channel)
+
+
+def test_plot_channel_selection_trims_launcher_input():
+    assert batch.validate_plot_channel_selection("  C4  ") == "C4"
+
+
 @pytest.mark.parametrize(
     "lowcut,highcut,downsample",
     [(0.0, 50.0, 0), (None, 50.0, None), (0.1, None, 256),
@@ -135,6 +145,8 @@ def test_run_batch_reports_progress_and_writes_summary(monkeypatch, tmp_path):
     second.write_text("", encoding="utf-8")
 
     futures = []
+    submitted_plot_channels = []
+    submitted_protocols = []
 
     class FakeFuture:
         """Minimal future object that returns a prepared worker result."""
@@ -162,8 +174,17 @@ def test_run_batch_reports_progress_and_writes_summary(monkeypatch, tmp_path):
             """Do not suppress exceptions from the code under test."""
             return False
 
-        def submit(self, func, bdf_file: Path, output_root: Path):
+        def submit(
+            self,
+            func,
+            bdf_file: Path,
+            output_root: Path,
+            plot_channel: str,
+            analysis_protocol,
+        ):
             """Return deterministic success/failure rows for synthetic files."""
+            submitted_plot_channels.append(plot_channel)
+            submitted_protocols.append(analysis_protocol)
             if bdf_file.name == "a_file.bdf":
                 result = {
                     "file_name": bdf_file.name,
@@ -193,12 +214,18 @@ def test_run_batch_reports_progress_and_writes_summary(monkeypatch, tmp_path):
         input_folder,
         output_folder,
         progress_callback=progress_events.append,
+        plot_channel=" C4 ",
     )
 
     assert result["status"] == "completed_with_failures"
     assert result["total_files"] == 2
     assert result["succeeded"] == 1
     assert result["failed"] == 1
+    assert submitted_plot_channels == ["C4", "C4"]
+    assert all(
+        protocol.active_event_codes == (11, 12, 21, 22)
+        for protocol in submitted_protocols
+    )
     run_folder = Path(result["output_folder"])
     summary_path = Path(result["summary_csv"])
     assert run_folder.parent == output_folder
@@ -227,3 +254,4 @@ def test_run_batch_reports_progress_and_writes_summary(monkeypatch, tmp_path):
     assert log_path.read_text(encoding="utf-8") == log_text
     assert old_error.read_text(encoding="utf-8") == "previous run only"
     assert not (next_folder / "ERROR.txt").exists()
+    assert submitted_plot_channels[-2:] == [batch.PLOT_CHANNEL, batch.PLOT_CHANNEL]

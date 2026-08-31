@@ -4,42 +4,38 @@
 
 ## The program will not start
 
-Check that PyCharm uses this project's `.venv` and Python 3.13.
-If a library is missing, open PyCharm's **Terminal** in the project folder and run:
+Check that PyCharm uses this project's `.venv` with Python 3.11. In PyCharm's
+Terminal, reinstall the required libraries if needed:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r .\requirements.txt
 ```
 
-If `.venv\Scripts\python.exe` cannot be found, finish the
-[environment setup](installation.md) first. Keep the package versions unchanged.
+## Participant task problems
 
-## Processing has a problem
+| Problem | What to do |
+| --- | --- |
+| `COM3` is missing | Check that the BioSemi trigger interface is connected and powered. In Windows Device Manager, find its COM number and enter that port in the launcher. |
+| The COM port is busy | Close any program using that port, then restart the launcher. Do not run the task without a working trigger connection. |
+| Fullscreen opens on the wrong display | Make the participant display the Windows primary display before starting, then reopen the launcher. |
+| The ready screen does not continue | Click the fullscreen task window and press **Space**. |
+| I need to stop the task | Press **Escape**. Keep the CSV log and record that the run was aborted. |
+| Cues or markers seem late | Stop using that session. Save its log and ask the supervisor to check the display and BioSemi Status channel. |
+
+The software sends a one-byte marker on the cue's display flip, but this does
+not replace a hardware timing check. Confirm marker values and timing on the
+BioSemi Status channel before collecting study data.
+
+## Analysis problems
 
 | Problem | What to do |
 | --- | --- |
 | No `.bdf` files found | Choose the folder containing the files themselves, not its parent. |
-| Cannot save results | Choose a folder you can write to, such as Documents; check that the drive is connected. |
-| Computer is slow | Close other large programs. For the next run, lower `BATCH_WORKERS` to `1` or `2` in `sssep_batch/config.py`. |
-| Window will not close | Wait for processing to finish. There is no cancel button; force-stopping can leave incomplete results. |
-| Only five graphs appear | This is the default plot limit. To change it, follow [Change settings](user-guide.md#change-settings). |
-| Results are in a new folder | This is intentional. Use **View Output** to open the latest run. |
-| Saved folders are wrong | Choose the correct folders and leave **Save folders for next time** checked. |
-| An edit caused an error | Undo the last change, save, close the launcher, and run it again. |
+| Cannot save results | Choose a writable folder such as Documents and check that the drive is connected. |
+| Computer is slow | Close other large programs. Lower `BATCH_WORKERS` in `sssep_batch/config.py` for the next run. |
+| The requested plot electrode is missing | The FFT CSVs and summaries are still saved, but that recording has no PNG. Choose another usable electrode and process again if you need its graph. |
+| Only some graphs appear | Check the plot limit in `sssep_batch/config.py`. FFT CSVs are still created for all usable electrodes. |
+| A recording failed | Open `batch_processing_summary.csv`, then read the listed `ERROR.txt` or the batch log. |
 
-## A recording failed or has warnings
-
-1. Click **View Output** and open `batch_processing_summary.csv`.
-2. Find the recording's row. Read its `error` and `error_file` columns.
-3. Open the listed `ERROR.txt`. If none exists, read the batch log
-   `sssep_batch_processing.log`.
-
-For completed recordings, read `*_processing_report.txt`. A `success` status
-does not mean every condition or processing step was complete. Missing trials,
-unresolved bad electrodes, and missing baseline results need review.
-
-If you need help, give your supervisor the error message and report from that
-run. Do not upload participant recordings to this repository.
-
-Old power/Welch results use a different method. See
-[method details](fpvs-parity.md) before comparing them with new amplitudes.
+Do not upload participant recordings to this repository. Give your supervisor
+the task log, processing report, and exact error message when asking for help.

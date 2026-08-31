@@ -132,8 +132,8 @@ def test_bdf_pipeline_is_exactly_equal_to_fpvs(fpvs_source, tmp_path, monkeypatc
         checked_preprocessing.append(True)
         return events
 
-    def compare_epochs(raw, events, code, picks, window_sec):
-        actual = extract_epochs(raw, events, code, picks, window_sec)
+    def compare_epochs(raw, events, code, picks, window_sec, **kwargs):
+        actual = extract_epochs(raw, events, code, picks, window_sec, **kwargs)
         n_times = round(window_sec * reference_raw.info["sfreq"])
         starts = reference_events[reference_events[:, 2] == code, 0] - reference_raw.first_samp
         expected = [reference_raw.get_data(start=int(start), stop=int(start + n_times))

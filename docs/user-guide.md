@@ -2,59 +2,58 @@
 
 [Home](../README.md) · [Installation](installation.md) · [Help](troubleshooting.md)
 
-## Run an analysis
+Open the project in PyCharm, right-click `sssep_bdf_batch_processor.py`, and
+choose **Run**.
 
-1. Open the project in PyCharm.
-2. Right-click `sssep_bdf_batch_processor.py` and choose **Run**.
-3. In **Input folder**, choose the folder directly containing your `.bdf` files.
-   Files inside subfolders are not included.
-4. In **Output folder**, choose a results folder outside this project.
-5. Click **Process Data**. Leave PyCharm and the launcher open until it finishes.
-6. Click **View Output**.
+## Run a participant task
 
-Leave **Save folders for next time** checked to remember your choices.
-Each run gets a new `run_...` folder; old results are kept.
+TENS stimulation is controlled separately. Set it up before starting the task.
 
-## Read the results
+1. Open the **Run Participant Task** tab.
+2. Choose **Both hands** or **Right hand + right ankle**.
+3. Enter the length of each cue epoch in seconds.
+4. Enter an **even** total number of epochs. Each cue will appear the same
+   number of times. The cues alternate; the first cue is randomized.
+5. Check the serial port. The default is `COM3`.
+6. Give each cue a different trigger code from `1` to `255`. Do not use `100`;
+   it is reserved for the Gap/Break baseline.
+7. Choose a folder outside the project for the CSV task log.
+8. Click **Start Task**. Confirm that the BioSemi recording is running and is
+   the one paired with this task log. Then press **Space** on the fullscreen
+   ready screen.
 
-CSV files are tables you can open in Excel. PNG files are graphs.
+Each cue marker is sent on the same screen refresh that displays its cue.
+Press **Escape** to abort. Keep the task log with the matching BioSemi
+recording; an aborted run still needs review before analysis.
 
-| Open this | What it tells you |
-| --- | --- |
-| `batch_processing_summary.csv` | Which recordings succeeded or failed. Start here. |
-| A recording's `*_sssep_event_summary.csv` | Results for each condition, including trial counts and amplitudes. |
-| `*_processing_report.txt` | Settings, warnings, and processing details. |
-| `plots/` inside a recording's folder | Amplitude graphs and full FFT tables, grouped by condition. |
-| `ERROR.txt`, if present | Why that recording failed. |
+## Analyze recordings
 
-Graphs show FFT amplitude in microvolts (µV). By default, each recording gets
-at most five graphs; other usable conditions still get results and FFT tables.
+1. In **Run Participant Task**, set the condition, duration, epoch count, and
+   trigger codes used for these recordings.
+2. Open **Analyze Recordings**.
+3. Choose the folder directly containing the `.bdf` files. Subfolders are not
+   searched.
+4. Choose a results folder outside the project.
+5. Choose the electrode for the PNG plots.
+6. Enter the TENS frequency if you want it marked and summarized. It must be
+   inside the usable plot, filter, and FFT range (3–50 Hz by default). Otherwise,
+   leave this field blank; the full FFT is still saved.
+7. Click **Process Data** and leave the program open until it finishes.
+8. Click **View Output**.
 
-Before using results:
+Each analysis run gets a new `run_...` folder. Start with
+`batch_processing_summary.csv`. Each recording also has an event summary,
+processing report, FFT CSV files, and PNG plots. Read warnings even when the
+recording says `success`.
 
-- Read warnings even when a recording says `success`.
-- `epoch_count_ok = False` means the trial count differs from the expected count.
-  Ask your supervisor about missing trials, warnings, or blank baseline results.
-- Do not combine these amplitudes with results from the old power/Welch method.
+FFT CSVs contain all usable electrodes. Each PNG shows the electrode selected
+in the launcher. Changing that selection does not change the FFT or CSV data.
+If that electrode is unusable in one recording, that recording still gets FFT
+CSVs and summaries, but its PNGs are skipped.
 
-## Change settings
+Legacy ROI mean columns remain in the CSVs for compatibility. New ROI analyses,
+hemisphere comparisons, scalp maps, and statistics are performed outside this
+package.
 
-1. Wait for processing to finish, then close the launcher.
-2. Open [sssep_batch/config.py](../sssep_batch/config.py).
-3. Change an option in **Everyday options**. For example, to allow 15 graphs
-   per recording, set:
-
-   ```python
-   MAX_INDIVIDUAL_PLOTS = 15
-   ```
-
-4. Save the file, then run `sssep_bdf_batch_processor.py` again.
-
-`BATCH_WORKERS` controls how many recordings run at once. Lower it to `1` or
-`2` if the computer struggles. Keep spelling, quotation marks, and brackets
-unchanged when editing values.
-
-Change experiment or advanced processing settings only as agreed with your
-supervisor: these can change the scientific results.
-
-For changes beyond settings, see the [code map](../architecture.md).
+For the processing method, see [FPVS parity](fpvs-parity.md). For code changes,
+see the [code map](../architecture.md).

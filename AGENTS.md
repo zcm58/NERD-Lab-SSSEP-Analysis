@@ -2,19 +2,20 @@
 
 ## Repo Purpose
 
-This repository contains a BioSemi `.bdf` SSSEP batch processor intended to be
-run locally from PyCharm. The current user-facing workflow is:
+This repository contains one local SSSEP task-and-analysis application intended
+to be run from PyCharm. The current user-facing workflow is:
 
-1. If settings need changing, edit `sssep_batch/config.py`
-2. Right-click `sssep_bdf_batch_processor.py`
-3. Click `Run 'sssep_bdf_batch_processor'`
+1. Right-click `sssep_bdf_batch_processor.py`
+2. Click `Run 'sssep_bdf_batch_processor'`
+3. Choose **Run Participant Task** or **Analyze Recordings**
 
 Do not redesign this around command-line flags unless the user explicitly asks
-for that. `config.py` is the intended configuration surface.
+for that. Task settings and the plotted electrode belong in the GUI;
+`config.py` remains the source for analysis defaults and advanced settings.
 
-## Product End Goal
+## Product Scope
 
-Build one simple SSSEP/TENS application with two connected parts: an FPVS
+Maintain one simple SSSEP/TENS application with two connected parts: an FPVS
 Studio-style fullscreen cue/BioSemi trigger runner, and the existing offline
 BDF analysis with per-electrode FFT plots.
 
@@ -25,13 +26,14 @@ BDF analysis with per-electrode FFT plots.
 
 TENS units are controlled externally. This package owns task presentation,
 cue-onset BioSemi triggers, BDF processing, per-electrode FFT CSVs, and plots
-for one user-selected electrode. ROI averaging, hemisphere comparisons,
-topographies, and other statistical analysis stay outside this package.
+for one user-selected electrode. New ROI averaging, hemisphere comparisons,
+topographies, and other statistical analysis stay outside this package; the
+existing ROI mean compatibility fields remain in exported CSVs/summaries.
 
-The current repo is the offline BDF-analysis foundation. Presentation, live
-trigger output, and condition control are not built. Do not guess cue codes,
-timing, frequencies, or counterbalancing; record those protocol decisions
-before implementation.
+The participant runtime alternates its two balanced cues from a randomized
+starting cue, uses explicit unique cue codes, and presents back-to-back
+configurable-duration epochs. Record any future timing, code, frequency, or
+counterbalancing change in `docs/task-protocol.md` before implementation.
 
 ## Repo Layout
 
@@ -53,7 +55,7 @@ before implementation.
 - `requirements.txt`
   Pinned runtime dependencies for the local `.venv`; `requirements-dev.txt`
   adds pytest 9.0.1 and edfio 0.4.16 for tests and generated BDF fixtures.
-  Use Python 3.13; verification used 3.13.5.
+  Use Python 3.11 because the pinned PsychoPy does not support Python 3.13.
 - `docs/fpvs-parity.md`
   FPVS reference, method boundary, and comparison evidence.
 
@@ -63,7 +65,8 @@ before implementation.
    change.
 2. Keep `pipeline.py` as an orchestration file. Put low-level logic in the most
    specific submodule instead of growing the pipeline.
-3. Keep user-edit settings in `sssep_batch/config.py`.
+3. Keep task/run selections in the launcher and analysis defaults in
+   `sssep_batch/config.py`.
 4. Do not add generic utility modules when a more specific home exists.
 5. Treat `.bdf` data as external local input, not as repository content.
 
@@ -85,8 +88,13 @@ pipeline. Preserve this current design unless a further change is authorized:
 - Average trials in float64 per electrode and calculate the reference
   microvolt amplitude FFT, `abs(FFT(mean_epoch_uv)) / N * 2`, retaining its
   DC/Nyquist scaling. No Hann taper, detrending, power, or Welch PSD.
-- Exclude unresolved bad channels before the FFT. Average the resulting
-  electrode amplitudes for ROI plots/summaries and report actual channel lists.
+- Exclude unresolved bad channels before the FFT. PNGs show one launcher-selected
+  electrode; if it is unresolved, skip that file's PNGs without suppressing its
+  FFT CSVs. Existing ROI summary/CSV mean fields remain compatibility outputs
+  and report their actual channel lists.
+- Carry the launcher's condition, cue codes, duration, and expected repetitions
+  into the batch through `AnalysisProtocol`. Never analyze task recordings with
+  unrelated hard-coded event settings.
 - Keep full per-electrode nonnegative-frequency amplitude CSVs and method
   metadata. The old power/Welch schema is intentionally retired.
 - Keep file-level parallelism in `batch.py`. Parallelism is across files, not
@@ -94,11 +102,13 @@ pipeline. Preserve this current design unless a further change is authorized:
 - Keep native thread limits at `1` per worker to avoid oversubscription during
   parallel batch runs.
 - Enforce `MAX_INDIVIDUAL_PLOTS` only for plot creation. Do not let it affect
-  metrics or CSV summaries; the default 5 means five amplitude PNGs per file.
+  metrics or CSV summaries; the default allows up to five amplitude PNGs per
+  file.
 - Keep each batch in a newly created, unique run subfolder. Preserve previous
   runs and the GUI's parent-root saved setting.
-- Retain GUI workers until `QThread.finished` and block window close while a
-  batch is active. Keep setup checks and processing off the UI thread.
+- Retain GUI workers until completion and block window close while a batch or
+  participant task is active. Keep batch work off the UI thread and reuse one
+  persistent presentation thread for PsychoPy on Windows.
 
 ## Before Making Structural Changes
 
