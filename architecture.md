@@ -1,123 +1,79 @@
-# Architecture
+# Code map
 
-This repository is a local BioSemi `.bdf` SSSEP batch processor with a small
-PySide6 launcher. It is optimized for the PyCharm workflow documented in
-`README.md`: users edit `sssep_batch/config.py`, run
-`sssep_bdf_batch_processor.py`, choose folders in the launcher, and review CSV,
-text, and plot outputs.
+[Home](README.md) · [Student user guide](docs/user-guide.md) · [Processing method](docs/fpvs-parity.md)
 
-## Entry Points
+For normal runs, use `sssep_bdf_batch_processor.py`. For settings, edit
+`sssep_batch/config.py`. Read the map below when changing the program itself.
 
-- `sssep_bdf_batch_processor.py`
-  Imports `sssep_batch.gui.launch_gui()` and exits with its return code. Keep it
-  as a thin wrapper.
-- `sssep_batch/gui.py`
-  Owns the PySide6 folder-selection launcher, saved folder defaults, worker
-  thread, progress updates, and "View Output" action. Setup checks run in the
-  worker. Closing is blocked while it runs; worker ownership lasts until
-  `QThread.finished`. Saved defaults keep the chosen parent output root,
-  while "View Output" opens the completed run's actual child folder.
+## Find the right file
 
-## Processing Flow
+| If you want to change… | Start here |
+| --- | --- |
+| Everyday options or study settings | [config.py](sssep_batch/config.py) |
+| The launcher window, folder choices, or progress messages | [gui.py](sssep_batch/gui.py) |
+| Finding files, running workers, or creating run folders | [batch.py](sssep_batch/batch.py) |
+| The order of processing steps for one recording | [pipeline.py](sssep_batch/pipeline.py) |
+| Reading a BDF file | [loading.py](sssep_batch/loading.py) |
+| Electrode types, montage, or references | [preprocess/channels.py](sssep_batch/preprocess/channels.py) |
+| Filtering or resampling | [preprocess/filtering.py](sssep_batch/preprocess/filtering.py) |
+| Bad-channel detection or interpolation | [preprocess/bad_channels.py](sssep_batch/preprocess/bad_channels.py) |
+| Trigger detection or trial windows | [events/](sssep_batch/events/) |
+| FFT calculation | [analysis/spectra.py](sssep_batch/analysis/spectra.py) |
+| Target-frequency results or baseline comparisons | [analysis/metrics.py](sssep_batch/analysis/metrics.py) |
+| Graphs or full FFT tables | [analysis/plotting.py](sssep_batch/analysis/plotting.py) |
+| Summary CSVs, reports, or error files | [outputs.py](sssep_batch/outputs.py) |
 
-`sssep_batch/pipeline.py` is the per-file orchestration layer. It should describe
-stage order, not hold low-level processing details.
+[models.py](sssep_batch/models.py) defines the data containers passed between
+modules. [logging_utils.py](sssep_batch/logging_utils.py) supports file logging.
 
-Current high-level order:
+## How the parts connect
 
-1. Load the first 64 scalp channels plus EXG references and `Status`; assign
-   channel types and the `standard_1005` montage before preprocessing.
-2. Apply the EXG1/EXG2 reference, drop those channels, and retain scalp EEG plus
-   `Status`.
-3. Apply the scaled-duration 0.1–50 Hz FIR filter at the original sampling rate.
-4. Downsample to 256 Hz, preserving FPVS filter metadata.
-5. Run kurtosis screening at threshold 5 and interpolation, then the final
-   average-reference projection over retained good EEG.
-6. Find `Status` events on the preprocessed sampling grid using
-   `shortest_event=1` and the reference MNE defaults for other event options.
-7. Exclude unresolved bad channels from the FFT channel set. Extract complete
-   SSSEP onset windows, 7.5 seconds by default, without an additional FIR edge
-   margin or EEG zero replacement. Construct MNE `EpochsArray` over all retained
-   channels with `baseline=None` and default projection before selecting EEG;
-   this preserves FPVS's final floating-point projector effects.
-8. Average repetitions in float64 per electrode, convert volts to microvolts,
-   and calculate `abs(np.fft.fft(mean_epoch_uv)[:, :N // 2 + 1]) / N * 2`.
-   Preserve the reference scaling at DC/Nyquist; do not taper, detrend,
-   square into power, or compute Welch PSD.
-9. Average amplitudes across the available configured ROI electrodes for
-   plots/SSSEP summaries; retain all good scalp electrodes and nonnegative
-   frequencies in amplitude CSVs. Write reports and Gap/Break comparisons.
+`entrypoint → gui → batch → pipeline → preprocessing / events / analysis → outputs`
 
-This is `fpvs_amplitude_v1`, referenced to FPVS commit
-`185d803f0056daebee04e5f28cc6b554c47336ce`. It intentionally retains SSSEP codes,
-expected frequencies, and onset durations rather than FPVS's visual-oddball
-1.2 Hz marker crop. Local SSSEP SNR and baseline summaries are downstream of
-the parity boundary. See [FPVS method and parity checks](docs/fpvs-parity.md).
+`pipeline.py` coordinates stages; low-level work belongs in the relevant
+module. Keep the entrypoint thin and settings in `config.py`. Do not add a
+second launcher, duplicate settings file, or generic utility module.
 
-## Module Boundaries
+The numerical order is load/montage → EXG reference/drop → filter → resample
+→ interpolate → average reference → events → SSSEP epochs → trial mean
+→ per-electrode amplitude FFT → ROI plots and summaries.
 
-- `sssep_batch/batch.py`
-  Finds input `.bdf` files, validates batch requests, manages file-level
-  parallelism, limits native threads per worker, atomically creates a unique
-  run folder, and writes the batch summary there. Previous runs remain intact.
-- `sssep_batch/loading.py`
-  Loads the reference-compatible BioSemi channel subset from external input.
-- `sssep_batch/config.py`
-  User-edit configuration surface for experiment settings, trigger maps,
-  constants, and optional folder defaults.
-- `sssep_batch/events/`
-  Parses trigger labels, filters intended `Status` events, and extracts epochs.
-- `sssep_batch/preprocess/`
-  Handles channel validation, montage/reference setup, scaled FIR filtering,
-  subsequent downsampling, bad-channel interpolation, and final average
-  reference. Preserves explicitly logged FPVS warning-and-continue behavior.
-- `sssep_batch/analysis/`
-  Computes per-electrode amplitude spectra, SSSEP amplitude summaries,
-  Gap/Break comparisons, full-frequency tables, and diagnostic plots.
-- `sssep_batch/outputs.py`
-  Writes per-file CSV summaries, processing reports, and error reports.
-- `sssep_batch/logging_utils.py`
-  Creates output folders and logging helpers.
-- `sssep_batch/models.py`
-  Holds small shared data containers.
+Epochs must pass through MNE `EpochsArray` with all retained channels and
+default projection before good EEG selection. This preserves FPVS's
+floating-point projector behavior. The full numerical contract and reference
+source are in [fpvs-parity.md](docs/fpvs-parity.md); do not duplicate that
+specification in student instructions.
 
-## Dependency Direction
+## Keep these behaviors
 
-Prefer this direction:
+- Preserve the validated FPVS method unless an analysis change is authorized.
+- Keep SSSEP trial timing and output field names stable.
+- Keep data outside the repo and each batch in a fresh run folder.
+- Parallelize across recordings; cap native threads at one per worker.
+- Retain GUI workers until `QThread.finished`; block close while processing.
+- Limit only PNG creation with `MAX_INDIVIDUAL_PLOTS`, never FFTs or CSVs.
+- Keep warnings and failures visible; do not hide them with silent fallbacks.
 
-`gui.py` -> `batch.py` -> `pipeline.py` -> domain modules -> `models.py`
+## After changing code
 
-Keep cross-cutting helpers out of generic `utils.py` files. Put new behavior in
-the most specific existing module that owns the concept.
+1. Change one thing at a time and inspect the diff.
+2. Install the test libraries once, then run the checks from the project folder:
 
-## Stability Contracts
+   ```powershell
+   .\.venv\Scripts\python.exe -m pip install -r .\requirements-dev.txt
+   .\.venv\Scripts\python.exe -m pytest -q
+   ```
 
-- Preserve mathematical output unless the user asks for an analysis change.
-- Preserve output field names unless the user asks for a schema change.
-- Preserve the PyCharm launcher entrypoint.
-- Preserve file-level parallelism in `batch.py`.
-- Treat `.bdf` files as external local input, not repository content.
-- Keep `MAX_INDIVIDUAL_PLOTS` limited to plot creation only.
-- A default limit of 5 means at most five amplitude PNGs per file, not five
-  FFT/Welch pairs. Available condition spectra/summary rows remain independent
-  of that limit.
-- Keep `processing_method`, reference commit, and actual `analysis_channels` /
-  `fft_channels` traceable in event summaries and reports. Old power/Welch
-  schemas are retired; do not silently mix their values with amplitudes.
-- Do not reuse a previous batch's output directory for a new run. Direct
-  per-file callers must supply a destination without that file's result folder.
+3. Run the usual PyCharm entrypoint and check the affected behavior.
+4. Update the relevant guide if a setting, output, or workflow changed.
 
-## Verification Map
+Tests mirror the code folders under [tests/](tests/). They use synthetic EEG;
+an unset `FPVS_REFERENCE_ROOT` or `SSSEP_TEST_BDF` skips the corresponding
+optional check. For math changes, also run the
+[FPVS reference comparisons](docs/fpvs-parity.md#verification-and-reproducibility)
+and compare a known recording when available. Do not treat a skipped check
+as a passing comparison.
 
-- Environment: Python 3.13 (3.13.5 tested); runtime pins in `requirements.txt`;
-  `requirements-dev.txt` adds pytest 9.0.1 and edfio 0.4.16 for generated BDFs.
-- Processing code: compile with `.\.venv\Scripts\python.exe -m py_compile`
-  and run `.\.venv\Scripts\python.exe -m pytest -q`.
-- Math-sensitive changes: add/update focused unit tests and compare against a
-  known local `.bdf` file when available.
-- GUI changes: add/update a lightweight test for helper behavior where possible,
-  and exercise worker lifetime with the isolated SSSEP Qt/process-pool tests.
-- Output changes: inspect generated field names and explain intentional schema
-  differences.
-- External checks: `FPVS_REFERENCE_ROOT` selects the source checkout;
-  `SSSEP_TEST_BDF` selects an optional recording. Keep both external to the repo.
+Use Python 3.13 (3.13.5 tested) and the existing dependency pins. Keep
+`AGENTS.md` as a map for coding assistants, student guides brief, and detailed
+scientific documentation in `docs/fpvs-parity.md`.

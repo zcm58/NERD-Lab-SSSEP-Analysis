@@ -6,8 +6,9 @@
 to keep the old monolithic script split into focused modules with small,
 dedicated responsibilities.
 
-The main human-facing repository overview now lives in the root `README.md`.
-Use that file for project-level workflow, structure, and validation context.
+The root `README.md` links the short student setup and user guides. Use
+`architecture.md` for the code map and validation steps, and
+`docs/fpvs-parity.md` for the numerical contract.
 
 The package is organized around these boundaries:
 

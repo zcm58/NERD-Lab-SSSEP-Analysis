@@ -5,7 +5,7 @@
 This repository contains a BioSemi `.bdf` SSSEP batch processor intended to be
 run locally from PyCharm. The current user-facing workflow is:
 
-1. Edit `sssep_batch/config.py`
+1. If settings need changing, edit `sssep_batch/config.py`
 2. Right-click `sssep_bdf_batch_processor.py`
 3. Click `Run 'sssep_bdf_batch_processor'`
 
@@ -14,8 +14,11 @@ for that. `config.py` is the intended configuration surface.
 
 ## Repo Layout
 
+- `README.md`, `docs/installation.md`, and `docs/user-guide.md`
+  Student starting page, setup, and everyday use. Keep these brief and link to
+  technical details rather than repeating them.
 - `architecture.md`
-  Compact module map and dependency guidance. Read this before broad changes.
+  Task-based code map, design rules, and testing steps. Read before code changes.
 - `sssep_bdf_batch_processor.py`
   Thin entrypoint wrapper. Keep it simple.
 - `sssep_batch/`
@@ -80,6 +83,8 @@ pipeline. Preserve this current design unless a further change is authorized:
 
 Read `README.md` and `architecture.md` first. They contain the intended
 workflow, package structure, module responsibilities, and safety checklist.
+Keep everyday options first in `config.py`; separate experiment and advanced
+processing settings. Rewording or regrouping settings must not change values.
 
 Use repo-local skills when they match the task:
 
