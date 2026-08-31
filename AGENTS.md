@@ -12,6 +12,27 @@ run locally from PyCharm. The current user-facing workflow is:
 Do not redesign this around command-line flags unless the user explicitly asks
 for that. `config.py` is the intended configuration surface.
 
+## Product End Goal
+
+Build one simple SSSEP/TENS application with two connected parts: an FPVS
+Studio-style fullscreen cue/BioSemi trigger runner, and the existing offline
+BDF analysis with per-electrode FFT plots.
+
+- Condition 1: stimulate both hands; cue attention to the left or right hand;
+  test stimulation-frequency amplitude over the contralateral hemisphere.
+- Condition 2: stimulate the right hand and right ankle; cue attention to either
+  site; test whether the stimulation-frequency scalp peak changes location.
+
+TENS units are controlled externally. This package owns task presentation,
+cue-onset BioSemi triggers, BDF processing, per-electrode FFT CSVs, and plots
+for one user-selected electrode. ROI averaging, hemisphere comparisons,
+topographies, and other statistical analysis stay outside this package.
+
+The current repo is the offline BDF-analysis foundation. Presentation, live
+trigger output, and condition control are not built. Do not guess cue codes,
+timing, frequencies, or counterbalancing; record those protocol decisions
+before implementation.
+
 ## Repo Layout
 
 - `README.md`, `docs/installation.md`, and `docs/user-guide.md`
