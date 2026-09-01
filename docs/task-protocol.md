@@ -19,9 +19,9 @@ This page records the task behavior that the software must preserve.
   timestamp before the task window closes.
 - Each cue has a unique marker from `1` to `255`. Marker `0` is not a cue, and
   marker `100` remains reserved for the Gap/Break baseline.
-- Launcher defaults are `11` for both-hands/left-hand, `12` for
+- Fixed markers are `11` for both-hands/left-hand, `12` for
   both-hands/right-hand, `21` for hand-and-ankle/right-hand, and `22` for
-  hand-and-ankle/right-ankle. The operator may change them before a run.
+  hand-and-ankle/right-ankle. They are shown disabled and cannot be edited.
 - The marker is sent through `COM3` on the exact PsychoPy display flip that
   makes the cue visible.
 - `COM3` is fixed and is not editable in the launcher.
@@ -29,8 +29,8 @@ This page records the task behavior that the software must preserve.
 - A CSV task log records the scheduled and presented epochs and trigger events.
 - TENS stimulation is controlled externally.
 
-The analysis tab uses the condition, duration, epoch count, and cue codes
-currently shown in the task tab. Its optional stimulation-frequency field adds
+The analysis tab uses the condition, duration, epoch count, and fixed cue codes
+shown in the task tab. Its optional stimulation-frequency field adds
 the correct expected-frequency marker and summary values without controlling
 the TENS unit. The frequency must be inside the usable plot, filter, and FFT
 range (3–50 Hz by default). Leaving it blank still saves the complete

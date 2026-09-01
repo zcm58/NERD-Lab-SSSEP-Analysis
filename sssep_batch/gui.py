@@ -281,10 +281,10 @@ def launch_gui() -> int:
             self.total_epochs_spin.setSingleStep(2)
             self.total_epochs_spin.setValue(EXPECTED_REPETITIONS_PER_TRIGGER * 2)
 
-            self.both_hands_left_code_spin = self._new_trigger_spin(11)
-            self.both_hands_right_code_spin = self._new_trigger_spin(12)
-            self.hand_ankle_hand_code_spin = self._new_trigger_spin(21)
-            self.hand_ankle_ankle_code_spin = self._new_trigger_spin(22)
+            self.both_hands_left_code_spin = self._new_fixed_trigger_spin(11)
+            self.both_hands_right_code_spin = self._new_fixed_trigger_spin(12)
+            self.hand_ankle_hand_code_spin = self._new_fixed_trigger_spin(21)
+            self.hand_ankle_ankle_code_spin = self._new_fixed_trigger_spin(22)
             self.task_log_edit = QLineEdit()
             self.task_log_browse_button = QPushButton("Browse...")
             self.start_task_button = QPushButton("Start Task")
@@ -324,11 +324,13 @@ def launch_gui() -> int:
             self._start_task_thread()
 
         @staticmethod
-        def _new_trigger_spin(default: int):
-            """Create a BioSemi event-code field with the valid byte range."""
+        def _new_fixed_trigger_spin(code: int):
+            """Show one study trigger code without allowing operator edits."""
             spin = QSpinBox()
-            spin.setRange(1, 255)
-            spin.setValue(default)
+            spin.setRange(code, code)
+            spin.setValue(code)
+            spin.setEnabled(False)
+            spin.setToolTip("Fixed BioSemi trigger code for this study")
             return spin
 
         def _start_task_thread(self) -> None:
@@ -635,10 +637,6 @@ def launch_gui() -> int:
                 self.condition_combo,
                 self.epoch_duration_spin,
                 self.total_epochs_spin,
-                self.both_hands_left_code_spin,
-                self.both_hands_right_code_spin,
-                self.hand_ankle_hand_code_spin,
-                self.hand_ankle_ankle_code_spin,
                 self.task_log_edit,
                 self.task_log_browse_button,
                 self.start_task_button,

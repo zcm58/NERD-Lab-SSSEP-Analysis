@@ -32,9 +32,10 @@ statistical analysis stay outside this package; the existing ROI mean
 compatibility fields remain in exported CSVs/summaries.
 
 The participant runtime alternates its two balanced cues from a randomized
-starting cue, uses explicit unique cue codes, and presents back-to-back
-configurable-duration epochs. Record any future timing, code, frequency, or
-counterbalancing change in `docs/task-protocol.md` before implementation.
+starting cue, uses fixed codes `11`/`12` for both hands and `21`/`22` for hand
+and ankle, and presents back-to-back configurable-duration epochs. Keep all four
+code controls disabled in the GUI. Record any future timing, code, frequency,
+or counterbalancing change in `docs/task-protocol.md` before implementation.
 
 ## Repo Layout
 
@@ -103,9 +104,9 @@ pipeline. Preserve this current design unless a further change is authorized:
   electrode; if it is unresolved, skip only the affected participant/group
   plot and report the contributing participant count. Existing ROI summary/CSV
   mean fields remain compatibility outputs and report their actual channels.
-- Carry the launcher's condition, cue codes, duration, and expected repetitions
-  into the batch through `AnalysisProtocol`. Never analyze task recordings with
-  unrelated hard-coded event settings.
+- Carry the launcher's condition, fixed cue codes, duration, and expected
+  repetitions into the batch through `AnalysisProtocol`. Never analyze task
+  recordings with unrelated event settings.
 - Keep full per-electrode nonnegative-frequency amplitudes and method metadata
   in the root-run `participant_fft_amplitudes.csv` and
   `group_fft_amplitudes.csv`. These are consolidated CSVs, not Excel workbooks.

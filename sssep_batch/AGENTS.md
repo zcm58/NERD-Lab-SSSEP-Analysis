@@ -35,7 +35,8 @@ The package is organized around these boundaries:
 
 1. `pipeline.py` defines order; helper modules define implementation.
 2. The GUI owns task/run selections; `config.py` owns analysis defaults. The
-   BioSemi port is fixed at `COM3` and is not a GUI setting.
+   BioSemi port is fixed at `COM3`, and cue codes are fixed at `11`, `12`, `21`,
+   and `22`; neither can be edited in the GUI.
 3. Keep helpers close to their domain. Do not reintroduce a monolith through
    cross-cutting helper files.
 4. Prefer pure or near-pure functions in submodules where practical.
@@ -71,8 +72,9 @@ The package is organized around these boundaries:
   selected electrode; skip only affected PNGs when it is unresolved and retain
   contributing-participant counts. Existing ROI means remain only in downstream
   summaries and CSV mean columns.
-- Use the `AnalysisProtocol` supplied by the launcher for active codes, labels,
-  epoch duration, expected counts, and optional stimulation frequency.
+- Use the `AnalysisProtocol` supplied by the launcher for the selected
+  condition's fixed codes and labels, epoch duration, expected counts, and
+  optional stimulation frequency.
 - Local SSSEP amplitude SNR and Gap/Break comparisons are downstream summaries,
   not a claim of parity with FPVS's neighboring-bin SNR method.
 - `process_one_bdf()` writes durable per-file reports and should keep its final

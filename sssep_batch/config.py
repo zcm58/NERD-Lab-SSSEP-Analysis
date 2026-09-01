@@ -37,9 +37,9 @@ OUTPUT_ROOT = ""
 # These describe the experiment and how its results are summarized. Keep them
 # consistent across recordings that will be compared.
 
-# Trigger codes mark the prompt that appeared at that instant. These defaults
-# match the participant-task tab. A task analysis started from the GUI uses the
-# values currently shown there, so duration and codes stay synchronized.
+# Trigger codes mark the prompt that appeared at that instant. These fixed codes
+# match the disabled fields on the participant-task tab. A GUI analysis uses the
+# selected condition's codes so presentation and analysis stay synchronized.
 ACTIVE_EVENT_CODES = [11, 12, 21, 22]
 
 # Trigger used for the separately measured Gap/Break baseline.

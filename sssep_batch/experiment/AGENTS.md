@@ -14,7 +14,8 @@ This package runs the participant cue task. TENS is controlled externally.
 - Open the fixed `COM3` connection before creating participant-facing screens.
 - Send every cue code with `window.callOnFlip(...)` on the cue-onset flip.
 - Use one raw byte per event (`1..255`) over fixed COM3 at 115200 baud, 8N1.
-- Keep the four condition-and-cue codes unique; code `0` is not an event.
+- Keep both-hands codes fixed at `11`/`12` and hand/ankle codes fixed at
+  `21`/`22`. Keep their GUI controls disabled. Code `0` is not an event.
 - Require a positive duration and positive even total epoch count.
 - Measure display refresh before the ready screen, compile each duration to a
   whole frame count, and close cues on the next onset or terminal black flip.

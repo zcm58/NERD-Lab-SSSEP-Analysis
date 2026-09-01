@@ -15,8 +15,10 @@ TENS stimulation is controlled separately. Set it up before starting the task.
    number of times. The cues alternate; the first cue is randomized.
 5. Connect and power the BioSemi trigger interface. The task always uses
    `COM3`; there is no port setting in the launcher.
-6. Give each cue a different trigger code from `1` to `255`. Do not use `100`;
-   it is reserved for the Gap/Break baseline.
+6. Confirm the fixed cue codes shown in grey: both hands use `11` for left and
+   `12` for right; hand/ankle uses `21` for right hand and `22` for right ankle.
+   These codes cannot be changed in the launcher. Code `100` is reserved for
+   the Gap/Break baseline.
 7. Choose a folder outside the project for the CSV task log.
 8. Click **Start Task**. Confirm that the BioSemi recording is running and is
    the one paired with this task log. Then press **Space** on the fullscreen
@@ -28,8 +30,8 @@ recording; an aborted run still needs review before analysis.
 
 ## Analyze recordings
 
-1. In **Run Participant Task**, set the condition, duration, epoch count, and
-   trigger codes used for these recordings.
+1. In **Run Participant Task**, set the condition, duration, and epoch count
+   used for these recordings. The selected condition supplies its fixed codes.
 2. Open **Analyze Recordings**.
 3. Choose the folder directly containing the `.bdf` files. Subfolders are not
    searched. Include one `.bdf` file per participant in the batch. The filename

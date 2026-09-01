@@ -116,8 +116,9 @@ Parity means identical preprocessing and per-electrode amplitude FFTs for
 identical input data, settings, electrode labels, and epoch samples. These
 experiment-specific choices remain:
 
-- SSSEP's trigger codes and cue duration come from the launcher. The default
-  7.5-second window is exactly 1920 samples at 256 Hz. Other durations use
+- The selected SSSEP condition supplies fixed launcher trigger codes (`11`/`12`
+  or `21`/`22`); cue duration remains editable. The default 7.5-second window is
+  exactly 1920 samples at 256 Hz. Other durations use
   `round(duration * sampling_rate)` samples, with a stop-exclusive slice and no
   extra endpoint. Event indices account for MNE's `raw.first_samp`.
 - FPVS's visual-oddball marker-55 crop and 1.2 Hz exact-bin restrictions do not

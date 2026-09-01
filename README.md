@@ -21,9 +21,9 @@ launcher has two tabs:
   fixed `COM3` connection, and saves a task log.
 - **Analyze Recordings** processes saved `.bdf` files and creates FFT results.
 
-The analysis uses the condition, epoch duration, epoch count, and trigger codes
-currently shown in the participant-task tab. Set those fields to match the
-recordings before processing them.
+The analysis uses the condition, epoch duration, epoch count, and fixed trigger
+codes shown in the participant-task tab. Set the condition, duration, and epoch
+count to match the recordings before processing them.
 
 Use one `.bdf` file per participant in an analysis batch. Each run saves one
 consolidated participant FFT CSV and one group FFT CSV. These are CSV files that

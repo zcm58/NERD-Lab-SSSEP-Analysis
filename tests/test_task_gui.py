@@ -55,6 +55,17 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                         QApplication.instance().exit(1)
                 return wrapped
 
+            def assert_trigger_codes_locked(window):
+                trigger_spins = (
+                    window.both_hands_left_code_spin,
+                    window.both_hands_right_code_spin,
+                    window.hand_ankle_hand_code_spin,
+                    window.hand_ankle_ankle_code_spin,
+                )
+                assert [spin.value() for spin in trigger_spins] == [11, 12, 21, 22]
+                assert all(spin.minimum() == spin.maximum() for spin in trigger_spins)
+                assert all(not spin.isEnabled() for spin in trigger_spins)
+
             @checked
             def start_probe():
                 window = next(w for w in QApplication.topLevelWidgets()
@@ -68,12 +79,7 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                 assert not hasattr(window, "serial_port_edit")
                 assert window.total_epochs_spin.singleStep() == 2
                 assert window.total_epochs_spin.value() % 2 == 0
-                assert [
-                    window.both_hands_left_code_spin.value(),
-                    window.both_hands_right_code_spin.value(),
-                    window.hand_ankle_hand_code_spin.value(),
-                    window.hand_ankle_ankle_code_spin.value(),
-                ] == [11, 12, 21, 22]
+                assert_trigger_codes_locked(window)
 
                 window.condition_combo.setCurrentIndex(1)
                 window.epoch_duration_spin.setValue(2.5)
@@ -100,6 +106,7 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                     assert window.task_thread.isRunning()
                     assert not window.start_task_button.isEnabled()
                     assert not window.tabs.isTabEnabled(1)
+                    assert_trigger_codes_locked(window)
                     assert not window.close(), "Active participant task accepted close"
                     settings = settings_seen[0]
                     assert settings.condition is gui.TaskCondition.RIGHT_HAND_AND_ANKLE
@@ -118,6 +125,7 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                         return
                     assert window.start_task_button.isEnabled()
                     assert window.tabs.isTabEnabled(1)
+                    assert_trigger_codes_locked(window)
                     assert "Task complete: 4 epoch(s)." in window.task_status_label.text()
                     assert window.task_worker is original_worker
                     window._start_task()

@@ -72,8 +72,8 @@ are intentionally left to external analysis.
 - Send each cue's marker on the same display flip that reveals that cue.
 - Require an even epoch count and alternate the two cues from a randomized
   starting cue.
-- Pass the visible condition, duration, epoch count, and cue codes into each
-  analysis batch; do not fall back to unrelated event settings.
+- Pass the visible condition, duration, epoch count, and that condition's fixed
+  cue codes into each analysis batch; do not fall back to unrelated settings.
 - Preserve the validated FPVS analysis method unless a change is authorized.
 - Treat one BDF as one participant. Average all same-cue epochs in the time
   domain before that participant's FFT; never average epoch FFT amplitudes.
