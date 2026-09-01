@@ -13,6 +13,10 @@ This page records the task behavior that the software must preserve.
   default duration is 15 seconds.
 - After COM3 opens, PySide6 presents the ready frame. The task stops with an
   error if the requested OpenGL frame does not swap within five seconds.
+- An unchecked test-mode box is the default. If the operator checks it, the
+  launcher asks `Are you sure you want to run the experiment in test mode?`
+  **Yes** runs the same presentation without opening COM3 or sending markers;
+  **No** returns to setup. The task CSV records `test_mode=True`.
 - A precise timer is aligned to each accepted cue-frame swap and requests the
   next cue at the configured software deadline. The next accepted swap closes
   the preceding cue in the event log, so a cue is never intentionally shortened.
@@ -43,12 +47,12 @@ first and final 2.5 seconds before averaging same-cue epochs and calculating the
 FFT. At the 15-second default, the FFT uses the middle 10 seconds. This analysis
 crop does not shorten the participant's fullscreen cue.
 
-The software must open and check `COM3` before showing participant cues. A
-missing, busy, or failed trigger connection stops the task instead of continuing
-silently. CSV onset and trigger times are software estimates at the Qt swap and
-serial-write request. They do not measure the first illuminated pixel or the
-marker's arrival in BioSemi. Confirm both with a photodiode and the BioSemi
-Status channel before data collection.
+Outside confirmed test mode, the software must open and check `COM3` before
+showing participant cues. A missing, busy, or failed trigger connection stops
+the task instead of continuing silently. CSV onset and trigger times are
+software estimates at the Qt swap and serial-write request. They do not measure
+the first illuminated pixel or the marker's arrival in BioSemi. Confirm both
+with a photodiode and the BioSemi Status channel before data collection.
 
 The trigger path follows FPVS Studio commit
 `888544b9e0d84c2fa31e9b96b55ab214c1489df0`: validate codes before timed

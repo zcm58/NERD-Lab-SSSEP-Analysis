@@ -74,7 +74,8 @@ or counterbalancing change in `docs/task-protocol.md` before implementation.
    specific submodule instead of growing the pipeline.
 3. Keep task/run selections in the launcher and analysis defaults in
    `sssep_batch/config.py`. Keep the BioSemi port fixed at `COM3` and absent
-   from the GUI.
+   from the GUI. The explicit, confirmed test-mode checkbox may bypass COM3;
+   normal runs may not.
 4. Do not add generic utility modules when a more specific home exists.
 5. Treat `.bdf` data as external local input, not as repository content.
 

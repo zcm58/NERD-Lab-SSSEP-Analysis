@@ -26,10 +26,13 @@ from .models import (
     TaskSettings,
 )
 from .schedule import build_cue_schedule
-from .triggers import SerialTriggerBackend, SerialTriggerError
+from .triggers import SerialTriggerBackend, SerialTriggerError, SimulatedTriggerBackend
 
 
 READY_PROMPT = "Press Space when you are ready to begin.\n\nPress Escape to stop."
+TEST_MODE_READY_PROMPT = (
+    "TEST MODE: BioSemi triggers are disabled.\n\n" + READY_PROMPT
+)
 FRAME_TIMEOUT_MS = 5_000
 
 
@@ -310,7 +313,7 @@ class QtTaskRunner(QObject):
 
     @Slot(object)
     def start(self, settings: TaskSettings) -> None:
-        """Preflight the log and COM3, then show the fullscreen ready frame."""
+        """Preflight the log and trigger backend, then show the ready frame."""
         if self._started:
             self._fail(RuntimeError("This participant task runner was already used."))
             return
@@ -337,7 +340,8 @@ class QtTaskRunner(QObject):
                 self._escape_pressed,
                 self._fail,
             )
-            self._surface.show_ready(READY_PROMPT, self._ready_frame_visible)
+            ready_prompt = TEST_MODE_READY_PROMPT if settings.test_mode else READY_PROMPT
+            self._surface.show_ready(ready_prompt, self._ready_frame_visible)
         except Exception as exc:
             self._fail(exc)
 
@@ -357,6 +361,8 @@ class QtTaskRunner(QObject):
             return self._provided_backend
         if self._trigger_backend_factory is not None:
             return self._trigger_backend_factory(settings)
+        if settings.test_mode:
+            return SimulatedTriggerBackend()
         return SerialTriggerBackend(port=settings.serial_port)
 
     def _ready_frame_visible(self) -> None:
@@ -629,6 +635,7 @@ def write_task_event_log(result: TaskRunResult, output_folder: Path) -> Path:
         "condition",
         "epoch_duration_sec",
         "total_epochs",
+        "test_mode",
         "serial_port",
         "epoch_number",
         "cue",
@@ -657,6 +664,7 @@ def write_task_event_log(result: TaskRunResult, output_folder: Path) -> Path:
                     "condition": epoch.condition.value,
                     "epoch_duration_sec": result.settings.epoch_duration_sec,
                     "total_epochs": result.settings.total_epochs,
+                    "test_mode": result.settings.test_mode,
                     "serial_port": result.settings.serial_port,
                     "epoch_number": epoch.epoch_index + 1,
                     "cue": epoch.cue.value,

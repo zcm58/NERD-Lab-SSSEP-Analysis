@@ -1,4 +1,4 @@
-"""BioSemi serial trigger output for the participant task."""
+"""Hardware and simulated trigger backends for the participant task."""
 
 from __future__ import annotations
 
@@ -124,6 +124,39 @@ class SerialTriggerBackend:
         self._connection = None
         if connection is not None:
             connection.close()
+
+
+class SimulatedTriggerBackend:
+    """Exercise task timing without opening a serial connection."""
+
+    def connect(self) -> None:
+        """Prepare test mode without opening COM3."""
+
+    def send_trigger(
+        self,
+        code: int,
+        *,
+        label: str | None = None,
+        time_s: float | None = None,
+        epoch_index: int | None = None,
+    ) -> SentTrigger:
+        """Validate one simulated trigger without hardware output."""
+
+        validated_code = _validate_event_code(code)
+        return SentTrigger(validated_code, label, time_s, epoch_index)
+
+    def send_prevalidated_trigger(
+        self,
+        code: int,
+        *,
+        label: str | None = None,
+        time_s: float | None = None,
+        epoch_index: int | None = None,
+    ) -> None:
+        """Accept an already-validated trigger without hardware output."""
+
+    def close(self) -> None:
+        """Finish test mode without hardware cleanup."""
 
 
 def _validate_event_code(code: object) -> int:

@@ -13,8 +13,11 @@ TENS stimulation is controlled separately. Set it up before starting the task.
 3. Enter the length of each cue epoch in seconds. The default is 15 seconds.
 4. Enter an **even** total number of epochs. Each cue will appear the same
    number of times. The cues alternate; the first cue is randomized.
-5. Connect and power the BioSemi trigger interface. The task always uses
-   `COM3`; there is no port setting in the launcher.
+5. For a normal run, connect and power the BioSemi trigger interface. The task
+   always uses `COM3`; there is no port setting in the launcher.
+   - To test only the fullscreen prompts, check **Test mode (no BioSemi
+     triggers)**. Click **Yes** in the warning to continue without COM3, or
+     **No** to return to the setup screen.
 6. Confirm the fixed cue codes shown in grey: both hands use `11` for left and
    `12` for right; hand/ankle uses `21` for right hand and `22` for right ankle.
    These codes cannot be changed in the launcher. Code `100` is reserved for

@@ -10,6 +10,7 @@ from sssep_batch.experiment.triggers import (
     SentTrigger,
     SerialTriggerBackend,
     SerialTriggerError,
+    SimulatedTriggerBackend,
 )
 
 
@@ -51,6 +52,21 @@ class _FakeSerialModule:
         if self.fail_open:
             raise OSError("open failed")
         return self.port
+
+
+def test_simulated_backend_accepts_triggers_without_serial_hardware() -> None:
+    backend = SimulatedTriggerBackend()
+
+    backend.connect()
+    record = backend.send_trigger(
+        11,
+        label="left_hand",
+        time_s=1.25,
+        epoch_index=3,
+    )
+    backend.close()
+
+    assert record == SentTrigger(11, "left_hand", 1.25, 3)
 
 
 def test_connect_uses_biosemi_com3_defaults() -> None:

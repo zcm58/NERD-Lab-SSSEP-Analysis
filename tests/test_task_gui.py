@@ -103,6 +103,7 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 assert not hasattr(window, "serial_port_edit")
                 assert window.total_epochs_spin.singleStep() == 2
                 assert window.total_epochs_spin.value() % 2 == 0
+                assert not window.test_mode_checkbox.isChecked()
                 assert window.task_runner is None
                 assert_trigger_codes_locked(window)
 
@@ -136,6 +137,7 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 assert settings.condition is gui.TaskCondition.RIGHT_HAND_AND_ANKLE
                 assert settings.epoch_duration_sec == 2.5
                 assert settings.total_epochs == 4
+                assert settings.test_mode is False
                 assert settings.serial_port == "COM3"
                 assert settings.output_folder == log_folder
                 assert settings.trigger_codes == gui.CueTriggerCodes(11, 12, 21, 22)
@@ -163,13 +165,51 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 assert window.task_runner is runners[1]
                 assert start_thread_ids == [main_thread_id, main_thread_id]
                 runners[1].complete()
+                QTimer.singleShot(0, test_mode_confirmation)
+
+            @checked
+            def test_mode_confirmation():
+                window = window_ref[0]
+                assert window.task_runner is None
+                window.test_mode_checkbox.setChecked(True)
+                previous_status = window.task_status_label.text()
+
+                question_answers.append(MessageBox.No)
+                window._start_task()
+                assert window.task_runner is None
+                assert not window.task_running
+                assert window.task_status_label.text() == previous_status
+                assert window.test_mode_checkbox.isEnabled()
+
+                question_answers.append(MessageBox.Yes)
+                window._start_task()
+                QTimer.singleShot(0, check_test_mode_run)
+
+            @checked
+            def check_test_mode_run():
+                window = window_ref[0]
+                assert len(runners) == 3
+                assert window.task_runner is runners[2]
+                assert settings_seen[2].test_mode is True
+                assert not window.test_mode_checkbox.isEnabled()
+                assert questions == [
+                    (
+                        "Confirm Test Mode",
+                        "Are you sure you want to run the experiment in test mode?",
+                    ),
+                    (
+                        "Confirm Test Mode",
+                        "Are you sure you want to run the experiment in test mode?",
+                    ),
+                ]
+                runners[2].complete()
                 QTimer.singleShot(0, finish_probe)
 
             @checked
             def finish_probe():
                 window = window_ref[0]
-                assert len(settings_seen) == 2
-                assert completion_thread_ids == [main_thread_id, main_thread_id]
+                assert len(settings_seen) == 3
+                assert completion_thread_ids == [main_thread_id] * 3
                 assert window.task_runner is None
                 assert not any(runner.stop_requested for runner in runners)
                 assert not messages
@@ -188,17 +228,28 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                     return app
 
             class MessageBox:
+                Yes = 1
+                No = 2
+
                 @staticmethod
                 def warning(parent, title, message):
                     messages.append((title, message))
                 critical = warning
+
+                @staticmethod
+                def question(parent, title, message, buttons, default):
+                    questions.append((title, message))
+                    assert buttons == MessageBox.Yes | MessageBox.No
+                    assert default == MessageBox.No
+                    return question_answers.pop(0)
 
             if __name__ == "__main__":
                 log_folder = Path(sys.argv[1])
                 main_thread_id = threading.get_ident()
                 runners, settings_seen = [], []
                 start_thread_ids, completion_thread_ids = [], []
-                messages, errors, window_ref = [], [], []
+                messages, questions, question_answers = [], [], []
+                errors, window_ref = [], []
                 observed = set()
                 gui.QtTaskRunner = FakeTaskRunner
                 gui.load_saved_folders = lambda: {}

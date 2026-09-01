@@ -231,6 +231,12 @@ def launch_gui() -> int:
             self.total_epochs_spin.setRange(2, 10000)
             self.total_epochs_spin.setSingleStep(2)
             self.total_epochs_spin.setValue(EXPECTED_REPETITIONS_PER_TRIGGER * 2)
+            self.test_mode_checkbox = QCheckBox(
+                "Test mode (no BioSemi triggers)"
+            )
+            self.test_mode_checkbox.setToolTip(
+                "Run the fullscreen task without opening COM3 or sending triggers."
+            )
 
             self.both_hands_left_code_spin = self._new_fixed_trigger_spin(11)
             self.both_hands_right_code_spin = self._new_fixed_trigger_spin(12)
@@ -309,6 +315,7 @@ def launch_gui() -> int:
             task_form.addRow("Condition", self.condition_combo)
             task_form.addRow("Duration of each epoch", self.epoch_duration_spin)
             task_form.addRow("Total epochs (even)", self.total_epochs_spin)
+            task_form.addRow(self.test_mode_checkbox)
             task_form.addRow(
                 "Both hands: left hand trigger",
                 self.both_hands_left_code_spin,
@@ -467,6 +474,7 @@ def launch_gui() -> int:
                     self.hand_ankle_ankle_code_spin.value(),
                 ),
                 output_folder=Path(log_folder),
+                test_mode=self.test_mode_checkbox.isChecked(),
             )
 
         def _analysis_protocol(self) -> AnalysisProtocol:
@@ -511,11 +519,27 @@ def launch_gui() -> int:
                 QMessageBox.warning(self, "Task Settings Need Attention", message)
                 return
 
+            if settings.test_mode:
+                response = QMessageBox.question(
+                    self,
+                    "Confirm Test Mode",
+                    "Are you sure you want to run the experiment in test mode?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if response != QMessageBox.Yes:
+                    return
+
             self.task_running = True
             self._set_task_running(True)
-            self.task_status_label.setText(
-                f"Opening {settings.serial_port} before the participant screen..."
-            )
+            if settings.test_mode:
+                self.task_status_label.setText(
+                    "Starting test mode without BioSemi triggers..."
+                )
+            else:
+                self.task_status_label.setText(
+                    f"Opening {settings.serial_port} before the participant screen..."
+                )
             self.task_runner = QtTaskRunner(parent=self)
             self.task_runner.progress_changed.connect(self._update_task_progress)
             self.task_runner.task_finished.connect(self._task_finished)
@@ -577,6 +601,7 @@ def launch_gui() -> int:
                 self.condition_combo,
                 self.epoch_duration_spin,
                 self.total_epochs_spin,
+                self.test_mode_checkbox,
                 self.task_log_edit,
                 self.task_log_browse_button,
                 self.start_task_button,

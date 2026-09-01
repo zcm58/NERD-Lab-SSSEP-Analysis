@@ -11,7 +11,9 @@ This package runs the participant cue task. TENS is controlled externally.
 
 ## Preserve
 
-- Open the fixed `COM3` connection before creating participant-facing screens.
+- Open the fixed `COM3` connection before creating participant-facing screens
+  in normal runs. The only exception is the explicit GUI test mode after its
+  yes/no confirmation; test mode must be recorded in the task log.
 - Send every cue code as the first external action in the matching
   `QOpenGLWindow.frameSwapped` callback for its newly drawn frame.
 - Use one raw byte per event (`1..255`) over fixed COM3 at 115200 baud, 8N1.
@@ -21,6 +23,7 @@ This package runs the participant cue task. TENS is controlled externally.
 - Align a Qt `PreciseTimer` deadline to each accepted cue swap and close cues on
   the next onset or terminal black swap.
 - Abort visibly after trigger failure; never continue with a null backend.
+  Test mode uses the concrete simulated backend.
 - Run the participant presenter on the Qt main thread.
 - Preserve planned and observed rows in the task log, including aborted runs.
 

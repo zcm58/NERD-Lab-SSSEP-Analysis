@@ -67,6 +67,33 @@ def test_task_serial_port_is_fixed_to_com3() -> None:
         )
 
 
+def test_task_test_mode_is_explicit_and_boolean() -> None:
+    normal = TaskSettings(
+        condition=TaskCondition.BOTH_HANDS,
+        epoch_duration_sec=1.0,
+        total_epochs=2,
+        trigger_codes=_codes(),
+    )
+    test = TaskSettings(
+        condition=TaskCondition.BOTH_HANDS,
+        epoch_duration_sec=1.0,
+        total_epochs=2,
+        trigger_codes=_codes(),
+        test_mode=True,
+    )
+
+    assert normal.test_mode is False
+    assert test.test_mode is True
+    with pytest.raises(TypeError, match="test_mode"):
+        TaskSettings(
+            condition=TaskCondition.BOTH_HANDS,
+            epoch_duration_sec=1.0,
+            total_epochs=2,
+            trigger_codes=_codes(),
+            test_mode=1,  # type: ignore[arg-type]
+        )
+
+
 def test_trigger_codes_must_be_unique_normal_biosemi_codes() -> None:
     with pytest.raises(ValueError, match="unique"):
         CueTriggerCodes(1, 2, 3, 3)

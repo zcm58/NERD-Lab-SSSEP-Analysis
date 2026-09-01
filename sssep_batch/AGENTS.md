@@ -129,7 +129,8 @@ The package is organized around these boundaries:
 
 ### `experiment/`
 
-- Open the fixed `COM3` connection before participant-facing screens.
+- Open the fixed `COM3` connection before participant-facing screens in normal
+  runs. Confirmed test mode uses the simulated backend and must be logged.
 - Keep cue emission as the first external action in the matching
   `QOpenGLWindow.frameSwapped` callback for each newly drawn cue.
 - Align a Qt `PreciseTimer` deadline to each accepted cue swap, alternate cues,

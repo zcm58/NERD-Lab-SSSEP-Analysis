@@ -42,13 +42,15 @@ PySide6 also presents the fullscreen participant task.
 
 Participant task:
 
-`entrypoint → gui → experiment settings → schedule → serial preflight → PySide6 presenter → task CSV`
+`entrypoint → gui → experiment settings → schedule → trigger backend → PySide6 presenter → task CSV`
 
-The runner opens the fixed `COM3` connection before participant screens. After
+Normal runs open the fixed `COM3` connection before participant screens. A
+checked and confirmed test mode uses a simulated backend and clearly marks the
+ready screen and task CSV; it never opens COM3 or sends markers. After
 Space starts the task, a main-thread `QOpenGLWindow` draws each cue. Its
-matching `frameSwapped` callback immediately requests the cue's unique
-`1..255` serial marker after Qt completes that frame's buffer swap. A Qt
-`PreciseTimer` requests the next cue at the configured software deadline.
+matching `frameSwapped` callback immediately requests the cue's unique `1..255`
+marker through the selected backend after Qt completes that frame's buffer
+swap. A Qt `PreciseTimer` requests the next cue at the configured software deadline.
 Escape aborts. TENS control stays outside this program. See
 [task-protocol.md](docs/task-protocol.md) for the runtime contract.
 
@@ -84,7 +86,8 @@ with zero. Hemisphere comparisons and statistics remain external.
 - Keep PySide6 presentation and live serial output inside `experiment/`,
   separate from BDF analysis.
 - Keep `COM3` fixed and absent from the GUI. Open and check it before participant
-  cues; never continue after a trigger failure.
+  cues in normal runs; never continue after a trigger failure. Test mode must
+  require explicit confirmation and must be recorded in the task CSV.
 - Request each cue's marker immediately from the callback for its matching Qt
   buffer swap.
 - Require an even epoch count and alternate the two cues from a randomized

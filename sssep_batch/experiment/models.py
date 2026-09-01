@@ -114,6 +114,7 @@ class TaskSettings:
     serial_port: str = field(default=BIOSEMI_SERIAL_PORT, init=False)
     output_folder: Path | None = None
     random_seed: int | None = None
+    test_mode: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.condition, TaskCondition):
@@ -138,6 +139,8 @@ class TaskSettings:
             not isinstance(self.random_seed, int) or isinstance(self.random_seed, bool)
         ):
             raise TypeError("random_seed must be an integer or None.")
+        if not isinstance(self.test_mode, bool):
+            raise TypeError("test_mode must be True or False.")
 
         object.__setattr__(self, "epoch_duration_sec", float(self.epoch_duration_sec))
         if self.output_folder is not None:

@@ -15,6 +15,7 @@ from sssep_batch.experiment.models import (
 )
 from sssep_batch.experiment.runner import (
     READY_PROMPT,
+    TEST_MODE_READY_PROMPT,
     QtTaskRunner,
     _FrameCallbackGate,
 )
@@ -346,7 +347,62 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
     assert all(row["trigger_succeeded"] == "True" for row in rows)
     assert {row["epoch_duration_sec"] for row in rows} == {"0.2"}
     assert {row["total_epochs"] for row in rows} == {"2"}
+    assert {row["test_mode"] for row in rows} == {"False"}
     assert {row["serial_port"] for row in rows} == {"COM3"}
+
+
+def test_runner_test_mode_skips_com3_and_marks_the_ready_screen(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    events: list[tuple[str, object]] = []
+    factory = _FakeSurfaceFactory(events)
+    failures: list[Exception] = []
+    results = []
+    done: list[bool] = []
+    settings = TaskSettings(
+        condition=TaskCondition.BOTH_HANDS,
+        epoch_duration_sec=0.2,
+        total_epochs=2,
+        trigger_codes=CueTriggerCodes(11, 12, 21, 22),
+        output_folder=tmp_path,
+        random_seed=4,
+        test_mode=True,
+    )
+
+    def fail_serial_backend(*_args, **_kwargs):
+        pytest.fail("Test mode attempted to create the COM3 backend.")
+
+    monkeypatch.setattr(
+        "sssep_batch.experiment.runner.SerialTriggerBackend",
+        fail_serial_backend,
+    )
+    runner = QtTaskRunner(
+        surface_factory=factory,
+        monotonic=_FakeMonotonic(),
+    )
+    runner.task_failed.connect(failures.append)
+    runner.task_finished.connect(results.append)
+    runner.task_done.connect(lambda: done.append(True))
+
+    runner.start(settings)
+
+    surface = factory.surface
+    assert surface is not None
+    assert events[1] == ("show_ready", TEST_MODE_READY_PROMPT)
+    surface.swap()
+    surface.press_space()
+    surface.swap()
+    assert surface.scheduled_delay == pytest.approx(0.2)
+    runner.request_stop()
+
+    assert failures == []
+    assert done == [True]
+    assert len(results) == 1
+    assert results[0].settings.test_mode is True
+    with results[0].log_path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert {row["test_mode"] for row in rows} == {"True"}
 
 
 def test_epoch_timer_compensates_for_trigger_callback_time(tmp_path) -> None:
