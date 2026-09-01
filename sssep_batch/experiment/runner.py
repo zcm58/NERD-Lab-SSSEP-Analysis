@@ -501,7 +501,9 @@ def _load_psychopy_modules() -> tuple[ModuleType, ModuleType, ModuleType]:
     except (ImportError, ModuleNotFoundError) as exc:
         raise PsychoPyUnavailableError(
             "PsychoPy could not be loaded. Use the project's Python 3.11 "
-            "environment and run: pip install -r requirements.txt. "
+            "environment and run: powershell -NoProfile -ExecutionPolicy "
+            "Bypass -File .\\install.ps1. If .venv uses another Python "
+            "version, add -Recreate. "
             f"Details: {exc}"
         ) from exc
     return visual, core, keyboard_module

@@ -4,12 +4,20 @@
 
 ## The program will not start
 
-Check that PyCharm uses this project's `.venv` with Python 3.11. In PyCharm's
-Terminal, reinstall the required libraries if needed:
+Check the Python version in PyCharm's Terminal:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r .\requirements.txt
+.\.venv\Scripts\python.exe --version
 ```
+
+It must say `Python 3.11`. If it shows another version, rebuild the environment
+and install every required library with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Recreate
+```
+
+If it already shows Python 3.11, run the same command without `-Recreate`.
 
 ## Participant task problems
 

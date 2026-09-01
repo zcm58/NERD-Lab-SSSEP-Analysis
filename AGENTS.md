@@ -59,6 +59,9 @@ or counterbalancing change in `docs/task-protocol.md` before implementation.
   Pinned runtime dependencies for the local `.venv`; `requirements-dev.txt`
   adds pytest 9.0.1 and edfio 0.4.16 for tests and generated BDF fixtures.
   Use Python 3.11 because the pinned PsychoPy does not support Python 3.13.
+- `install.ps1`
+  Creates the Python 3.11 `.venv`, installs `requirements.txt`, and verifies
+  the pinned PsychoPy task imports. Keep it as the simple Windows setup path.
 - `docs/fpvs-parity.md`
   FPVS reference, method boundary, and comparison evidence.
 

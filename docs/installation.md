@@ -19,16 +19,16 @@ Do this once per computer. You need an internet connection.
 4. **Open the project.** In PyCharm, select **Open** and choose the extracted
    folder containing `README.md`.
 
-5. **Create the environment.** Open **Settings > Python > Interpreter > Add
-   Interpreter > Add Local Interpreter**. Create a Virtualenv named `.venv`
-   inside the project and select Python 3.11 as its base interpreter.
-
-6. **Install the libraries.** Open PyCharm's **Terminal** in the project folder
-   and run:
+5. **Install the libraries.** Open PyCharm's **Terminal** in the project folder
+   and run this one command. It creates `.venv`, installs the pinned PsychoPy
+   version, and checks the installation.
 
    ```powershell
-   .\.venv\Scripts\python.exe -m pip install -r .\requirements.txt
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
    ```
+
+6. **Select the environment.** If PyCharm asks for an interpreter, choose
+   `.venv\Scripts\python.exe` inside the project.
 
 7. **Check the launcher.** Right-click `main.py` and select **Run**. The task,
    recording-analysis, and saved-FFT plotting tabs should open.

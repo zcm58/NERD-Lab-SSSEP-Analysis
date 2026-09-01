@@ -11,6 +11,7 @@ PsychoPy is used only by the fullscreen participant task.
 
 | If you want to change… | Start here |
 | --- | --- |
+| Python environment or pinned libraries | [install.ps1](install.ps1) and [requirements.txt](requirements.txt) |
 | Main launcher, participant-task fields, BDF fields, or progress messages | [gui.py](sssep_batch/gui.py) |
 | Saved-results tab, its controls, or its background workers | [saved_plots_gui.py](sssep_batch/saved_plots_gui.py) |
 | Analysis defaults and advanced processing settings | [config.py](sssep_batch/config.py) |
