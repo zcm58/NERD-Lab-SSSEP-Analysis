@@ -1,7 +1,7 @@
 """Settings for analysis runs. Start with section 1 below.
 
 After editing, save this file. Wait for any running batch to finish, close the
-launcher, then run sssep_bdf_batch_processor.py again to apply your changes.
+launcher, then run main.py again to apply your changes.
 Do not run this settings file directly.
 """
 

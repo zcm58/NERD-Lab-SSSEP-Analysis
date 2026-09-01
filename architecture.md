@@ -2,9 +2,10 @@
 
 [Home](README.md) · [Student user guide](docs/user-guide.md) · [Task behavior](docs/task-protocol.md) · [Processing method](docs/fpvs-parity.md)
 
-Run `sssep_bdf_batch_processor.py` for both participant tasks and recording
-analysis. Keep this entrypoint thin. The PySide6 launcher selects a workflow;
-PsychoPy is used only by the fullscreen participant task.
+Run `main.py` for both participant tasks and recording analysis. Keep this
+entrypoint thin. The PySide6 launcher selects a workflow; PsychoPy is used only
+by the fullscreen participant task. `sssep_bdf_batch_processor.py` remains a
+compatibility wrapper.
 
 ## Find the right file
 

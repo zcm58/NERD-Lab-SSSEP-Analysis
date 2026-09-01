@@ -13,8 +13,8 @@ TENS stimulation is controlled outside this program.
 2. **Running the study or analysis?** Follow the [user guide](docs/user-guide.md).
 3. **Something went wrong?** See [troubleshooting](docs/troubleshooting.md).
 
-Once set up, right-click [sssep_bdf_batch_processor.py](sssep_bdf_batch_processor.py)
-in PyCharm and choose **Run**. The launcher has two tabs:
+Once set up, right-click [main.py](main.py) in PyCharm and choose **Run**. The
+launcher has two tabs:
 
 - **Run Participant Task** presents the cues, sends BioSemi markers through the
   selected serial port, and saves a task log.
@@ -28,7 +28,8 @@ recordings before processing them.
 
 | File or folder | What you use it for |
 | --- | --- |
-| [sssep_bdf_batch_processor.py](sssep_bdf_batch_processor.py) | **Run this file** to open the program. |
+| [main.py](main.py) | **Run this file** to open the program. |
+| [sssep_bdf_batch_processor.py](sssep_bdf_batch_processor.py) | Compatibility launcher for older PyCharm setups. |
 | [sssep_batch/config.py](sssep_batch/config.py) | Advanced analysis settings and launcher defaults. |
 | [docs/](docs/) | Setup, user guide, help, and method details. |
 | [sssep_batch/](sssep_batch/) | Task and analysis code, grouped by job. |

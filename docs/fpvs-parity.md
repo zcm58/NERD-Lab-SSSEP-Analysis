@@ -5,7 +5,7 @@
 `fpvs_amplitude_v1` follows the active FPVS Toolbox preprocessing and
 per-electrode FFT at commit `185d803f0056daebee04e5f28cc6b554c47336ce`.
 The Toolbox is a reference for verification, not a runtime dependency. SSSEP
-still runs locally from `sssep_bdf_batch_processor.py` in PyCharm.
+still runs locally from `main.py` in PyCharm.
 
 The reference source files are:
 
@@ -165,9 +165,9 @@ check accepted every pin in `requirements.txt`, including PsychoPy 2026.2.3
 and pyserial 3.5. Different versions or platforms are not assumed to be
 bitwise identical.
 
-Verified on 2026-08-31: **173 feature tests passed and one optional
+Verified on 2026-09-01: **174 feature tests passed and one optional
 participant-recording test skipped** with FPVS source comparisons enabled. All
-47 tracked-or-new feature Python files compiled. Isolated Qt subprocess tests
+49 tracked-or-new feature Python files compiled. Isolated Qt subprocess tests
 opened and closed the launcher through normal close, application quit, and
 application exit paths. The remaining 14 warnings are matplotlib/Pyparsing
 deprecation notices, not numerical comparison failures. PsychoPy presentation

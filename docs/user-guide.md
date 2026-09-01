@@ -2,8 +2,7 @@
 
 [Home](../README.md) · [Installation](installation.md) · [Help](troubleshooting.md)
 
-Open the project in PyCharm, right-click `sssep_bdf_batch_processor.py`, and
-choose **Run**.
+Open the project in PyCharm, right-click `main.py`, and choose **Run**.
 
 ## Run a participant task
 

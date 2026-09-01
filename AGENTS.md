@@ -5,8 +5,8 @@
 This repository contains one local SSSEP task-and-analysis application intended
 to be run from PyCharm. The current user-facing workflow is:
 
-1. Right-click `sssep_bdf_batch_processor.py`
-2. Click `Run 'sssep_bdf_batch_processor'`
+1. Right-click `main.py`
+2. Click `Run 'main'`
 3. Choose **Run Participant Task** or **Analyze Recordings**
 
 Do not redesign this around command-line flags unless the user explicitly asks
@@ -42,8 +42,10 @@ counterbalancing change in `docs/task-protocol.md` before implementation.
   technical details rather than repeating them.
 - `architecture.md`
   Task-based code map, design rules, and testing steps. Read before code changes.
+- `main.py`
+  Primary GUI entrypoint. Keep it simple.
 - `sssep_bdf_batch_processor.py`
-  Thin entrypoint wrapper. Keep it simple.
+  Compatibility wrapper for the former entrypoint.
 - `sssep_batch/`
   Actual implementation package.
 - `tests/`
@@ -132,7 +134,7 @@ If you change processing code, validate at minimum:
 
 1. Compilation with `.\.venv\Scripts\python.exe -m py_compile` still passes.
 2. `.\.venv\Scripts\python.exe -m pytest -q` still passes.
-3. The PyCharm entrypoint still runs through `sssep_bdf_batch_processor.py`.
+3. The PyCharm entrypoint still runs through `main.py`.
 4. Output field names remain stable unless the user asked to revise them.
 5. If math was not meant to change, compare results on a known local `.bdf`
    file when available.
