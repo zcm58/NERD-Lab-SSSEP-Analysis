@@ -39,13 +39,18 @@ from sssep_batch.config import (
     DOWNSAMPLE_RATE,
     EVENT_DURATION_SEC,
     EXPECTED_REPETITIONS_PER_TRIGGER,
+    FFT_CROP_END_SEC,
+    FFT_CROP_START_SEC,
     FMAX,
     FMIN,
     HIGHCUT,
+    INCLUDE_POST_STIMULUS,
     INPUT_FOLDER,
     LOWCUT,
     OUTPUT_ROOT,
     PLOT_CHANNEL,
+    POST_EVENT_SEC_IF_INCLUDED,
+    PRE_EVENT_SEC,
     PROCESSING_METHOD,
     SAVE_CSV_SUMMARIES,
     SAVE_PLOTS,
@@ -78,6 +83,39 @@ REQUIRED_PACKAGE_IMPORTS = {
 
 class BatchValidationError(RuntimeError):
     """User-facing setup problem that should be shown without a traceback."""
+
+
+def _configured_epoch_window_sec(event_duration_sec: float) -> float | None:
+    """Return the full extracted window when all timing values are valid."""
+
+    post_sec = POST_EVENT_SEC_IF_INCLUDED if INCLUDE_POST_STIMULUS else 0.0
+    values = (PRE_EVENT_SEC, event_duration_sec, post_sec)
+    if not all(
+        isinstance(value, Real)
+        and not isinstance(value, bool)
+        and isfinite(value)
+        and value >= 0
+        for value in values
+    ):
+        return None
+    return float(sum(values))
+
+
+def _configured_retained_fft_samples(epoch_window_sec: float) -> int | None:
+    """Return retained samples when the configured final rate is known."""
+
+    if (
+        not isinstance(DOWNSAMPLE_RATE, Real)
+        or isinstance(DOWNSAMPLE_RATE, bool)
+        or not isfinite(DOWNSAMPLE_RATE)
+        or DOWNSAMPLE_RATE <= 0
+    ):
+        return None
+    return (
+        round(epoch_window_sec * DOWNSAMPLE_RATE)
+        - round(FFT_CROP_START_SEC * DOWNSAMPLE_RATE)
+        - round(FFT_CROP_END_SEC * DOWNSAMPLE_RATE)
+    )
 
 
 def configure_native_thread_limits() -> None:
@@ -178,13 +216,57 @@ def validate_config_settings() -> None:
         or EXPECTED_REPETITIONS_PER_TRIGGER < 1
     ):
         problems.append("EXPECTED_REPETITIONS_PER_TRIGGER must be 1 or more.")
-    if (
+    event_duration_valid = not (
         not isinstance(EVENT_DURATION_SEC, Real)
         or isinstance(EVENT_DURATION_SEC, bool)
         or not isfinite(EVENT_DURATION_SEC)
         or EVENT_DURATION_SEC <= 0
-    ):
+    )
+    if not event_duration_valid:
         problems.append("EVENT_DURATION_SEC must be a finite number above zero.")
+    configured_epoch_window_sec = (
+        _configured_epoch_window_sec(float(EVENT_DURATION_SEC))
+        if event_duration_valid
+        else None
+    )
+    if event_duration_valid and configured_epoch_window_sec is None:
+        problems.append(
+            "PRE_EVENT_SEC and the enabled post-stimulus duration must be "
+            "finite nonnegative numbers."
+        )
+    crop_values_valid = all(
+        isinstance(value, Real)
+        and not isinstance(value, bool)
+        and isfinite(value)
+        and value >= 0
+        for value in (FFT_CROP_START_SEC, FFT_CROP_END_SEC)
+    )
+    if not crop_values_valid:
+        problems.append(
+            "FFT_CROP_START_SEC and FFT_CROP_END_SEC must be finite "
+            "nonnegative numbers."
+        )
+    configured_retained_samples = (
+        _configured_retained_fft_samples(configured_epoch_window_sec)
+        if crop_values_valid
+        and configured_epoch_window_sec is not None
+        else None
+    )
+    if (
+        crop_values_valid
+        and configured_epoch_window_sec is not None
+        and (
+            configured_epoch_window_sec <= FFT_CROP_START_SEC + FFT_CROP_END_SEC
+            or (
+                configured_retained_samples is not None
+                and configured_retained_samples <= 0
+            )
+        )
+    ):
+        problems.append(
+            "The configured full epoch window must leave at least one sample "
+            "after the FFT start and end crop."
+        )
     if not isinstance(PLOT_CHANNEL, str) or not PLOT_CHANNEL.strip():
         problems.append("PLOT_CHANNEL must be a non-empty electrode label, such as 'Cz'.")
     if not ACTIVE_EVENT_CODES:
@@ -253,6 +335,34 @@ def validate_analysis_protocol_selection(
     if not isinstance(selected, AnalysisProtocol):
         raise BatchValidationError(
             "The task analysis settings must be an AnalysisProtocol value."
+        )
+    if not all(
+        isinstance(value, Real)
+        and not isinstance(value, bool)
+        and isfinite(value)
+        and value >= 0
+        for value in (FFT_CROP_START_SEC, FFT_CROP_END_SEC)
+    ):
+        raise BatchValidationError(
+            "The FFT crop settings must be finite nonnegative numbers in "
+            "sssep_batch/config.py."
+        )
+    epoch_window_sec = _configured_epoch_window_sec(selected.event_duration_sec)
+    if epoch_window_sec is None:
+        raise BatchValidationError(
+            "The analysis epoch timing settings must be finite nonnegative "
+            "numbers in sssep_batch/config.py."
+        )
+    crop_total_sec = FFT_CROP_START_SEC + FFT_CROP_END_SEC
+    retained_samples = _configured_retained_fft_samples(epoch_window_sec)
+    if epoch_window_sec <= crop_total_sec or (
+        retained_samples is not None and retained_samples <= 0
+    ):
+        raise BatchValidationError(
+            "The selected epoch duration is too short for FFT analysis. "
+            f"The analysis removes {FFT_CROP_START_SEC:g} seconds from the start "
+            f"and {FFT_CROP_END_SEC:g} seconds from the end. The full epoch must "
+            "leave at least one sample after those crops."
         )
     return selected
 
@@ -451,6 +561,11 @@ def run_batch(
         list(selected_protocol.active_event_codes),
         selected_protocol.event_duration_sec,
         selected_protocol.expected_repetitions_per_trigger,
+    )
+    logger.info(
+        "FFT window: remove %g s from the start and %g s from the end of each epoch.",
+        FFT_CROP_START_SEC,
+        FFT_CROP_END_SEC,
     )
     logger.info("Preflight checks passed: folders, packages, and config are ready.")
     logger.info(f"Found {total_files} .bdf file(s) in {input_path}.")

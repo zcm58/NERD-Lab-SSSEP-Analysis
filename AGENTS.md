@@ -80,8 +80,9 @@ or counterbalancing change in `docs/task-protocol.md` before implementation.
 
 ## Known Pipeline Constraints
 
-The authorized `fpvs_amplitude_v1` method replaces the former SSSEP power/Welch
-pipeline. Preserve this current design unless a further change is authorized:
+The authorized `fpvs_amplitude_epoch_crop_v2` method replaces the former SSSEP
+power/Welch pipeline. Preserve this current design unless a further change is
+authorized:
 
 - Use the reference-compatible loader and `standard_1005` montage before
   preprocessing, then EXG reference/drop and retention of 64 scalp channels
@@ -91,8 +92,12 @@ pipeline. Preserve this current design unless a further change is authorized:
   final average reference. Preserve the reference's explicitly logged
   warning-and-continue paths; do not add silent fallbacks.
 - Detect `Status` events after preprocessing with the reference MNE options.
-  Keep SSSEP onset windows (7.5 seconds by default), with no extra FIR edge
-  exclusion or EEG zero replacement. Do not import the FPVS 1.2 Hz marker crop.
+  Require complete SSSEP onset windows (15 seconds by default), with no extra
+  FIR edge exclusion or EEG zero replacement.
+- Before same-cue averaging and FFT calculation, remove 2.5 seconds from the
+  start and end of every epoch. At the default, analyze samples 640:3200 at
+  256 Hz: the middle 2560 samples, or 10 seconds. This is an SSSEP-specific
+  analysis window, not the FPVS visual-oddball 1.2 Hz marker crop.
 - Average trials in float64 per electrode and calculate the reference
   microvolt amplitude FFT, `abs(FFT(mean_epoch_uv)) / N * 2`, retaining its
   DC/Nyquist scaling. Average all epochs for the same cue in the time domain

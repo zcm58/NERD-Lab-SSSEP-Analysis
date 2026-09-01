@@ -3,8 +3,29 @@
 import numpy as np
 import pytest
 
-from sssep_batch.analysis.spectra import compute_sssep_fft_from_averaged_epochs
+from sssep_batch.analysis.spectra import (
+    compute_sssep_fft_from_averaged_epochs,
+    crop_epochs_for_fft,
+)
 from sssep_batch.config import PROCESSING_METHOD
+
+
+def test_default_fft_crop_keeps_exact_middle_ten_seconds_at_256_hz():
+    epochs = np.arange(2 * 3 * 3840, dtype=np.float64).reshape(2, 3, 3840)
+
+    cropped = crop_epochs_for_fft(epochs, sfreq=256.0)
+    spectrum = compute_sssep_fft_from_averaged_epochs(cropped, sfreq=256.0)
+
+    assert cropped.shape == (2, 3, 2560)
+    np.testing.assert_array_equal(cropped, epochs[..., 640:3200])
+    assert spectrum.amplitude_uv.shape == (3, 1281)
+    assert spectrum.freqs[1] - spectrum.freqs[0] == pytest.approx(0.1)
+    assert spectrum.freqs[-1] == pytest.approx(128.0)
+
+
+def test_fft_crop_rejects_an_epoch_with_no_middle_samples():
+    with pytest.raises(ValueError, match="too short for the configured FFT crop"):
+        crop_epochs_for_fft(np.empty((1, 1, 1280)), sfreq=256.0)
 
 
 def test_fft_preserves_each_electrodes_microvolt_amplitude_without_taper():

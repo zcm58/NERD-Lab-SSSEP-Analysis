@@ -17,7 +17,7 @@ def task_protocol() -> AnalysisProtocol:
             AnalysisTrigger(code, f"Condition Site {code}", 10.0)
             for code in (1, 2, 3, 4)
         ),
-        event_duration_sec=7.5,
+        event_duration_sec=15.0,
         expected_repetitions_per_trigger=1,
         baseline_event_code=100,
     )
@@ -43,6 +43,8 @@ def test_pipeline_uses_fpvs_order_and_creates_one_plot_per_cue(monkeypatch, tmp_
     raw = make_recording()
     monkeypatch.setattr(pipeline, "load_bdf", lambda *args: raw)
     calls = []
+    extracted_sample_counts = []
+    fft_input_sample_counts = []
     for name in (
         "apply_basic_fir_filter", "downsample_if_needed",
         "detect_and_interpolate_bad_channels_by_kurtosis",
@@ -55,6 +57,24 @@ def test_pipeline_uses_fpvs_order_and_creates_one_plot_per_cue(monkeypatch, tmp_
             return _original(*args, **kwargs)
 
         monkeypatch.setattr(pipeline, name, tracked)
+    original_extract_epochs = pipeline.extract_epochs_for_code
+    original_compute_fft = pipeline.compute_sssep_fft_from_averaged_epochs
+
+    def tracked_extract_epochs(*args, **kwargs):
+        epoch_set = original_extract_epochs(*args, **kwargs)
+        extracted_sample_counts.append(epoch_set.epochs.shape[-1])
+        return epoch_set
+
+    def tracked_compute_fft(epochs, *args, **kwargs):
+        fft_input_sample_counts.append(epochs.shape[-1])
+        return original_compute_fft(epochs, *args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "extract_epochs_for_code", tracked_extract_epochs)
+    monkeypatch.setattr(
+        pipeline,
+        "compute_sssep_fft_from_averaged_epochs",
+        tracked_compute_fft,
+    )
     plots = []
     monkeypatch.setattr(pipeline, "plot_spectrum", lambda **kwargs: plots.append(kwargs))
     result = pipeline.process_one_bdf(
@@ -74,9 +94,12 @@ def test_pipeline_uses_fpvs_order_and_creates_one_plot_per_cue(monkeypatch, tmp_
     assert summary.usable_epochs.tolist() == [1, 1, 1, 1]
     assert summary.trigger_code.tolist() == [1, 2, 3, 4]
     assert summary.expected_repetitions.tolist() == [1, 1, 1, 1]
-    assert summary.analysis_window_sec.tolist() == [7.5, 7.5, 7.5, 7.5]
+    assert summary.epoch_window_sec.tolist() == [15.0, 15.0, 15.0, 15.0]
+    assert summary.fft_crop_start_sec.tolist() == [2.5, 2.5, 2.5, 2.5]
+    assert summary.fft_crop_end_sec.tolist() == [2.5, 2.5, 2.5, 2.5]
+    assert summary.analysis_window_sec.tolist() == [10.0, 10.0, 10.0, 10.0]
     assert summary.edge_excluded_epochs.tolist() == [0, 0, 0, 0]
-    assert set(summary.processing_method) == {"fpvs_amplitude_v1"}
+    assert set(summary.processing_method) == {"fpvs_amplitude_epoch_crop_v2"}
     assert "sssep_fft_nearest_amplitude_uv" in summary
     assert not any("power" in name or "welch" in name for name in summary.columns)
     assert len(plots) == 4
@@ -89,7 +112,14 @@ def test_pipeline_uses_fpvs_order_and_creates_one_plot_per_cue(monkeypatch, tmp_
     assert [record.trigger_code for record in cue_records] == [1, 2, 3, 4]
     assert cue_records[0].spectrum.freqs[0] == 0
     assert cue_records[0].spectrum.freqs[-1] == 128
-    assert len(cue_records[0].spectrum.freqs) == 961
+    assert extracted_sample_counts == [3840] * 5
+    assert fft_input_sample_counts == [2560] * 5
+    assert all(record.epoch_window_sec == 15.0 for record in records)
+    assert all(record.fft_crop_start_sec == 2.5 for record in records)
+    assert all(record.fft_crop_end_sec == 2.5 for record in records)
+    assert all(record.analysis_window_sec == 10.0 for record in records)
+    assert len(cue_records[0].spectrum.freqs) == 1281
+    assert cue_records[0].spectrum.freqs[1] == pytest.approx(0.1)
     assert "Cz" in cue_records[0].channel_names
     assert plots[0]["active"].amplitude_uv.ndim == 2
     assert "one per usable cue" in (

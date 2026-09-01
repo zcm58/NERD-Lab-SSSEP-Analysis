@@ -20,7 +20,7 @@ explicitly asks for an analysis change.
 3. Identify the smallest module that owns the behavior. Keep `pipeline.py` as
    orchestration only.
 4. Preserve these invariants:
-   - The current method is `fpvs_amplitude_v1`, based on FPVS commit
+   - The current method is `fpvs_amplitude_epoch_crop_v2`, based on FPVS commit
      `185d803f0056daebee04e5f28cc6b554c47336ce`; the old power/Welch method was
      intentionally replaced.
    - Load the reference BioSemi channel subset and apply `standard_1005`
@@ -31,8 +31,11 @@ explicitly asks for an analysis change.
      5, and apply the final average reference. Keep the reference's logged
      warning-and-continue behavior explicit.
    - Detect `Status` events after preprocessing with the reference MNE options.
-     Retain SSSEP onset windows (default 7.5 seconds), with no extra FIR edge
-     exclusion, EEG zero replacement, or FPVS 1.2 Hz marker crop.
+     Require complete SSSEP onset windows (default 15 seconds), with no extra
+     FIR edge exclusion or EEG zero replacement. Before same-cue averaging and
+     FFT calculation, remove 2.5 seconds from each end. At 256 Hz, the default
+     retains samples 640:3200: 2560 samples, or 10 seconds. This SSSEP-specific
+     crop is distinct from the FPVS visual-oddball 1.2 Hz marker crop.
    - Exclude unresolved bad channels. Average trials in float64 per electrode,
      convert to microvolts, and compute the first `N // 2 + 1` bins of
      `abs(FFT(mean_epoch_uv)) / N * 2`, including reference DC/Nyquist scaling.

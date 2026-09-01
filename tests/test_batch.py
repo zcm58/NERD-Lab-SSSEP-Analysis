@@ -133,6 +133,49 @@ def test_plot_channel_selection_trims_launcher_input():
     assert batch.validate_plot_channel_selection("  C4  ") == "C4"
 
 
+@pytest.mark.parametrize("duration_sec", [0.1, 5.0, 5.001])
+def test_analysis_protocol_rejects_epochs_without_samples_after_fft_crop(duration_sec):
+    protocol = AnalysisProtocol(
+        active_triggers=(AnalysisTrigger(11, "BothHands Left Hand", 10.0),),
+        event_duration_sec=duration_sec,
+        expected_repetitions_per_trigger=1,
+        baseline_event_code=100,
+    )
+
+    with pytest.raises(batch.BatchValidationError, match="leave at least one sample"):
+        batch.validate_analysis_protocol_selection(protocol)
+
+
+def test_analysis_protocol_accepts_duration_that_retains_a_sample_after_rounding():
+    protocol = AnalysisProtocol(
+        active_triggers=(AnalysisTrigger(11, "BothHands Left Hand", 10.0),),
+        event_duration_sec=5.002,
+        expected_repetitions_per_trigger=1,
+        baseline_event_code=100,
+    )
+
+    assert batch.validate_analysis_protocol_selection(protocol) is protocol
+
+
+def test_analysis_protocol_crop_validation_uses_the_full_extracted_window(monkeypatch):
+    monkeypatch.setattr(batch, "PRE_EVENT_SEC", 2.0)
+    protocol = AnalysisProtocol(
+        active_triggers=(AnalysisTrigger(11, "BothHands Left Hand", 10.0),),
+        event_duration_sec=4.0,
+        expected_repetitions_per_trigger=1,
+        baseline_event_code=100,
+    )
+
+    assert batch.validate_analysis_protocol_selection(protocol) is protocol
+
+
+def test_analysis_protocol_reports_invalid_fft_crop_config(monkeypatch):
+    monkeypatch.setattr(batch, "FFT_CROP_START_SEC", "invalid")
+
+    with pytest.raises(batch.BatchValidationError, match="FFT crop settings"):
+        batch.validate_analysis_protocol_selection(None)
+
+
 @pytest.mark.parametrize(
     "lowcut,highcut,downsample",
     [(0.0, 50.0, 0), (None, 50.0, None), (0.1, None, 256),

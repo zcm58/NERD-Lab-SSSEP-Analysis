@@ -53,7 +53,7 @@ def fpvs_source(monkeypatch, tmp_path):
 
 
 def reference_fft_from_source(source_path, epochs, sfreq):
-    """Execute the actual reference assignments, without its experiment's crop."""
+    """Execute the actual reference assignments on the SSSEP-selected samples."""
     tree = ast.parse(source_path.read_text(encoding="utf-8"))
     assignments = []
     for name in (
@@ -117,6 +117,8 @@ def test_bdf_pipeline_is_exactly_equal_to_fpvs(fpvs_source, tmp_path, monkeypatc
     extract_epochs = pipeline.extract_epochs_for_code
     compute_fft = pipeline.compute_sssep_fft_from_averaged_epochs
     captured_spectra = []
+    extracted_sample_counts = []
+    fft_input_sample_counts = []
     checked_preprocessing = []
 
     def compare_preprocessed(raw, *args, **kwargs):
@@ -135,6 +137,8 @@ def test_bdf_pipeline_is_exactly_equal_to_fpvs(fpvs_source, tmp_path, monkeypatc
     def compare_epochs(raw, events, code, picks, window_sec, **kwargs):
         actual = extract_epochs(raw, events, code, picks, window_sec, **kwargs)
         n_times = round(window_sec * reference_raw.info["sfreq"])
+        assert n_times == 3840
+        extracted_sample_counts.append(actual.epochs.shape[-1])
         starts = reference_events[reference_events[:, 2] == code, 0] - reference_raw.first_samp
         expected = [reference_raw.get_data(start=int(start), stop=int(start + n_times))
                     for start in starts if 0 <= start and start + n_times <= reference_raw.n_times]
@@ -151,6 +155,8 @@ def test_bdf_pipeline_is_exactly_equal_to_fpvs(fpvs_source, tmp_path, monkeypatc
         return actual
 
     def compare_fft(epochs, final_sfreq):
+        assert epochs.shape[-1] == 2560
+        fft_input_sample_counts.append(epochs.shape[-1])
         actual = compute_fft(epochs, final_sfreq)
         frequencies, amplitudes = reference_fft_from_source(
             fpvs_source.src / "Main_App/Shared/post_process.py", epochs, final_sfreq,
@@ -170,8 +176,12 @@ def test_bdf_pipeline_is_exactly_equal_to_fpvs(fpvs_source, tmp_path, monkeypatc
         if result["status"] != "success":
             pytest.fail(Path(result["error_file"]).read_text(encoding="utf-8"))
         assert checked_preprocessing == [True]
+        assert extracted_sample_counts == [3840] * 5
+        assert fft_input_sample_counts == [2560] * 5
         assert result["bad_channels_by_kurtosis"] == reference_n_bad
         assert len(captured_spectra) == 5  # Baseline plus four present active conditions.
+        assert all(len(spectrum.freqs) == 1281 for spectrum in captured_spectra)
+        assert all(spectrum.freqs[1] == pytest.approx(0.1) for spectrum in captured_spectra)
         summary = pd.read_csv(result["summary_csv"])
         fft_channels = tuple(summary.iloc[0]["fft_channels"].split(";"))
         participant_records = result["_participant_spectra"]

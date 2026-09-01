@@ -10,7 +10,7 @@ TENS stimulation is controlled separately. Set it up before starting the task.
 
 1. Open the **Run Participant Task** tab.
 2. Choose **Both hands** or **Right hand + right ankle**.
-3. Enter the length of each cue epoch in seconds.
+3. Enter the length of each cue epoch in seconds. The default is 15 seconds.
 4. Enter an **even** total number of epochs. Each cue will appear the same
    number of times. The cues alternate; the first cue is randomized.
 5. Connect and power the BioSemi trigger interface. The task always uses
@@ -61,10 +61,13 @@ The program writes CSV files, not Excel workbooks. You can still open the CSVs
 in Excel. Read warnings even when a recording says `success`.
 
 For each participant and cue, all usable cue epochs are averaged together in
-the time domain before the FFT. The group result then gives each participant's
-amplitude spectrum equal weight, regardless of how many usable epochs that
-participant had. Each PNG shows the electrode selected in the launcher.
-Changing that selection does not change the full-electrode CSV data.
+the time domain before the FFT. Before that average, the analysis removes the
+first and final 2.5 seconds from every complete epoch. With the default
+15-second epoch, the FFT uses the middle 10 seconds. The group result then gives
+each participant's amplitude spectrum equal weight, regardless of how many
+usable epochs that participant had. Each PNG shows the electrode selected in
+the launcher. Changing that selection does not change the full-electrode CSV
+data.
 
 If the selected electrode is unusable for one participant, that participant's
 PNG is skipped and that participant does not contribute to the group curve for

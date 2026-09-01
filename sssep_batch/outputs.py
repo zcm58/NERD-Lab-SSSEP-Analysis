@@ -58,6 +58,11 @@ def _next_steps_for_stage(stage: str) -> list[str]:
             "Review LOWCUT, HIGHCUT, and trigger frequencies in sssep_batch/config.py.",
             "Undo recent config edits if the default settings used to work.",
         ]
+    if stage in {"baseline_fft_window_cropping", "active_fft_window_cropping"}:
+        return [
+            "Use epochs longer than the combined FFT start and end crop.",
+            "Restore the documented 15-second epoch if the duration was changed.",
+        ]
     return [
         "Open batch_processing_summary.csv and find this file's error_file path.",
         "Share this ERROR.txt file with whoever is helping debug the run.",
@@ -92,6 +97,9 @@ def write_processing_report(
     summary_csv_path: Path,
     active_event_codes: tuple[int, ...] | list[int] | None = None,
     baseline_event_code: int = BASELINE_EVENT_CODE,
+    epoch_window_sec: float | None = None,
+    fft_crop_start_sec: float = 0.0,
+    fft_crop_end_sec: float = 0.0,
 ) -> None:
     """Write a per-file text report with a beginner summary and technical log."""
     selected_active_codes = (
@@ -156,6 +164,12 @@ def write_processing_report(
             f"Baseline trigger {baseline_event_code} found: "
             f"{baseline_event_code in found_codes}\n"
         )
+        extracted_epoch_sec = (
+            analysis_window_sec if epoch_window_sec is None else epoch_window_sec
+        )
+        report_file.write(f"Extracted epoch window seconds: {extracted_epoch_sec}\n")
+        report_file.write(f"FFT crop from epoch start seconds: {fft_crop_start_sec}\n")
+        report_file.write(f"FFT crop from epoch end seconds: {fft_crop_end_sec}\n")
         report_file.write(f"Analysis window seconds: {analysis_window_sec}\n")
         report_file.write(
             "Additional SSSEP FIR epoch exclusion (disabled in FPVS method): "

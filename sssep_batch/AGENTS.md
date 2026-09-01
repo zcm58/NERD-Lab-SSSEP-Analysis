@@ -46,7 +46,7 @@ The package is organized around these boundaries:
 
 ## Pipeline Facts Future Agents Must Preserve
 
-- Current method: `fpvs_amplitude_v1`, referenced to FPVS commit
+- Current method: `fpvs_amplitude_epoch_crop_v2`, referenced to FPVS commit
   `185d803f0056daebee04e5f28cc6b554c47336ce`. See
   [FPVS method and parity checks](../docs/fpvs-parity.md).
 - Load the reference channel subset, assign `standard_1005` before
@@ -57,9 +57,11 @@ The package is organized around these boundaries:
 - `find_status_events()` runs after preprocessing on the final sampling grid.
   Its MNE options match the reference; do not restore the old mask or
   event-before-downsample path.
-- SSSEP epochs retain the configured onset duration, 7.5 seconds by default.
+- Require the complete configured SSSEP onset duration, 15 seconds by default.
   Skip out-of-recording windows, but add no FIR edge margin or EEG zero
-  replacement. The FPVS visual-oddball 1.2 Hz marker crop is not applicable.
+  replacement. Before averaging and FFT, crop 2.5 seconds from each end. The
+  default retains samples 640:3200 at 256 Hz: 2560 samples, or 10 seconds.
+  This is SSSEP-specific and is not the FPVS visual-oddball 1.2 Hz marker crop.
 - Average trials in float64 per electrode, convert to microvolts, then use
   `abs(np.fft.fft(mean_epoch_uv)[:, :N // 2 + 1]) / N * 2` without a taper,
   detrending, or power squaring. Average same-cue epochs in the time domain
@@ -113,10 +115,11 @@ The package is organized around these boundaries:
 - Use the participant CSV as the canonical input for later plots. It preserves
   participant identity for within-participant ROI means and equal-participant
   group aggregation, plus the schema version, FPVS reference, montage, actual
-  sampling rate, analysis-window duration, and plot-frequency range. ROI source
-  exports retain each participant's contributing electrodes and curve. Scalp
-  maps keep variable electrode Ns visible, omit labels without montage
-  coordinates, and never replace missing channels with zero.
+  sampling rate, extracted epoch duration, crop durations, FFT analysis-window
+  duration, and plot-frequency range. ROI source exports retain each
+  participant's contributing electrodes and curve. Scalp maps keep variable
+  electrode Ns visible, omit labels without montage coordinates, and never
+  replace missing channels with zero.
 - Save one participant and one group selected-electrode PNG per usable cue.
 
 ### `events/`

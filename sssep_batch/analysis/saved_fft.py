@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from sssep_batch.analysis.grouping import average_group_spectra
+from sssep_batch.config import PROCESSING_METHOD
 from sssep_batch.models import (
     FFT_EXPORT_SCHEMA_VERSION,
     ParticipantSpectrum,
@@ -29,6 +30,11 @@ _PROVENANCE_COLUMNS = (
     "analysis_window_sec",
     "plot_fmin_hz",
     "plot_fmax_hz",
+)
+_CROP_PROVENANCE_COLUMNS = (
+    "epoch_window_sec",
+    "fft_crop_start_sec",
+    "fft_crop_end_sec",
 )
 _TEXT_COLUMNS = (
     "participant_id",
@@ -82,6 +88,9 @@ class FftProvenance:
     montage_name: str
     sampling_rate_hz: float
     analysis_window_sec: float
+    epoch_window_sec: float
+    fft_crop_start_sec: float
+    fft_crop_end_sec: float
     plot_fmin_hz: float
     plot_fmax_hz: float
 
@@ -228,6 +237,33 @@ def load_saved_fft_dataset(path: str | Path) -> SavedFftDataset:
             f"Missing columns: {missing}"
         )
 
+    crop_provenance_present = [
+        column for column in _CROP_PROVENANCE_COLUMNS if column in frame.columns
+    ]
+    if crop_provenance_present and len(crop_provenance_present) != len(
+        _CROP_PROVENANCE_COLUMNS
+    ):
+        missing_crop_provenance = [
+            column
+            for column in _CROP_PROVENANCE_COLUMNS
+            if column not in frame.columns
+        ]
+        raise ValueError(
+            "Saved FFT crop provenance must include all three crop columns or "
+            f"none of them. Missing columns: {missing_crop_provenance}"
+        )
+    if not crop_provenance_present:
+        saved_methods = frame["processing_method"].dropna().astype(str).str.strip()
+        if saved_methods.eq(PROCESSING_METHOD).any():
+            raise ValueError(
+                f"Saved FFT data using {PROCESSING_METHOD!r} requires all three "
+                "epoch and crop provenance columns. Reprocess the original BDF "
+                "files or restore the complete participant FFT CSV."
+            )
+        frame["epoch_window_sec"] = frame["analysis_window_sec"]
+        frame["fft_crop_start_sec"] = 0.0
+        frame["fft_crop_end_sec"] = 0.0
+
     amplitude_columns = [
         str(column)
         for column in frame.columns
@@ -289,6 +325,9 @@ def load_saved_fft_dataset(path: str | Path) -> SavedFftDataset:
         montage_name=first.montage_name,
         sampling_rate_hz=float(first.sampling_rate_hz),
         analysis_window_sec=float(first.analysis_window_sec),
+        epoch_window_sec=float(first.epoch_window_sec),
+        fft_crop_start_sec=float(first.fft_crop_start_sec),
+        fft_crop_end_sec=float(first.fft_crop_end_sec),
         plot_fmin_hz=first.plot_fmin_hz,
         plot_fmax_hz=first.plot_fmax_hz,
     )
@@ -486,6 +525,9 @@ def _convert_numeric_columns(frame: pd.DataFrame, amplitude_columns: list[str]) 
         "fft_schema_version",
         "sampling_rate_hz",
         "analysis_window_sec",
+        "epoch_window_sec",
+        "fft_crop_start_sec",
+        "fft_crop_end_sec",
         "plot_fmin_hz",
         "plot_fmax_hz",
         "frequency_hz",
@@ -508,11 +550,17 @@ def _convert_numeric_columns(frame: pd.DataFrame, amplitude_columns: list[str]) 
             )
         if np.any(finite_values < 0):
             raise ValueError("Saved FFT amplitudes must be nonnegative.")
-    for column in ("sampling_rate_hz", "analysis_window_sec"):
+    for column in ("sampling_rate_hz", "analysis_window_sec", "epoch_window_sec"):
         values = frame[column].to_numpy(dtype=float)
         if not np.isfinite(values).all() or np.any(values <= 0):
             raise ValueError(
                 f"Saved FFT column {column!r} must contain finite values above zero."
+            )
+    for column in ("fft_crop_start_sec", "fft_crop_end_sec"):
+        values = frame[column].to_numpy(dtype=float)
+        if not np.isfinite(values).all() or np.any(values < 0):
+            raise ValueError(
+                f"Saved FFT column {column!r} must contain finite nonnegative values."
             )
 
 
@@ -592,6 +640,9 @@ def _rows_to_record(
         raise ValueError("Each saved participant spectrum needs increasing frequency bins.")
     sampling_rate_hz = _single_float(rows, "sampling_rate_hz")
     analysis_window_sec = _single_float(rows, "analysis_window_sec")
+    epoch_window_sec = _single_float(rows, "epoch_window_sec")
+    fft_crop_start_sec = _single_float(rows, "fft_crop_start_sec")
+    fft_crop_end_sec = _single_float(rows, "fft_crop_end_sec")
     plot_fmin_hz = _single_float(rows, "plot_fmin_hz")
     plot_fmax_hz = _single_float(rows, "plot_fmax_hz")
     if plot_fmin_hz < 0 or plot_fmax_hz <= plot_fmin_hz:
@@ -677,6 +728,9 @@ def _rows_to_record(
         montage_name=_single_text(rows, "montage_name"),
         sampling_rate_hz=sampling_rate_hz,
         analysis_window_sec=analysis_window_sec,
+        epoch_window_sec=epoch_window_sec,
+        fft_crop_start_sec=fft_crop_start_sec,
+        fft_crop_end_sec=fft_crop_end_sec,
         plot_fmin_hz=plot_fmin_hz,
         plot_fmax_hz=plot_fmax_hz,
         fft_schema_version=_single_int(rows, "fft_schema_version"),

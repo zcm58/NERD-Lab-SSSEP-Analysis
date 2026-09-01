@@ -70,11 +70,14 @@ TRIGGER_HZ_MAP = {
 # Optional extra reference lines drawn on every diagnostic plot.
 FIXED_HZ_LINES = []
 
-# Timing of each analyzed segment, in seconds.
+# Timing of each recorded epoch and the samples retained for its FFT, in seconds.
 PRE_EVENT_SEC = 0.0
-EVENT_DURATION_SEC = 7.5
+EVENT_DURATION_SEC = 15.0
 INCLUDE_POST_STIMULUS = False
 POST_EVENT_SEC_IF_INCLUDED = 2.5
+# The default 15-second epoch therefore contributes its middle 10 seconds.
+FFT_CROP_START_SEC = 2.5
+FFT_CROP_END_SEC = 2.5
 # Expected usable repetitions per active trigger; differences are flagged.
 EXPECTED_REPETITIONS_PER_TRIGGER = 5
 
@@ -137,4 +140,4 @@ EPS = 1e-20
 
 # Reference for the implemented preprocessing and per-electrode FFT formula.
 FPVS_REFERENCE_COMMIT = "185d803f0056daebee04e5f28cc6b554c47336ce"
-PROCESSING_METHOD = "fpvs_amplitude_v1"
+PROCESSING_METHOD = "fpvs_amplitude_epoch_crop_v2"

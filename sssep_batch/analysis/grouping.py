@@ -26,6 +26,9 @@ class GroupSpectrum:
     montage_name: str
     sampling_rate_hz: float
     analysis_window_sec: float
+    epoch_window_sec: float
+    fft_crop_start_sec: float
+    fft_crop_end_sec: float
     plot_fmin_hz: float
     plot_fmax_hz: float
     fft_schema_version: int
@@ -50,6 +53,9 @@ def _validate_records(
         first.montage_name,
         first.sampling_rate_hz,
         first.analysis_window_sec,
+        first.epoch_window_sec,
+        first.fft_crop_start_sec,
+        first.fft_crop_end_sec,
         first.plot_fmin_hz,
         first.plot_fmax_hz,
         first.fft_schema_version,
@@ -88,6 +94,9 @@ def _validate_records(
             record.montage_name,
             record.sampling_rate_hz,
             record.analysis_window_sec,
+            record.epoch_window_sec,
+            record.fft_crop_start_sec,
+            record.fft_crop_end_sec,
             record.plot_fmin_hz,
             record.plot_fmax_hz,
             record.fft_schema_version,
@@ -163,6 +172,9 @@ def participant_spectra_to_dataframe(
             "montage_name": record.montage_name,
             "sampling_rate_hz": record.sampling_rate_hz,
             "analysis_window_sec": record.analysis_window_sec,
+            "epoch_window_sec": record.epoch_window_sec,
+            "fft_crop_start_sec": record.fft_crop_start_sec,
+            "fft_crop_end_sec": record.fft_crop_end_sec,
             "plot_fmin_hz": record.plot_fmin_hz,
             "plot_fmax_hz": record.plot_fmax_hz,
             "analysis_channels": ";".join(record.analysis_channels),
@@ -237,6 +249,9 @@ def average_group_spectra(
                 montage_name=first.montage_name,
                 sampling_rate_hz=first.sampling_rate_hz,
                 analysis_window_sec=first.analysis_window_sec,
+                epoch_window_sec=first.epoch_window_sec,
+                fft_crop_start_sec=first.fft_crop_start_sec,
+                fft_crop_end_sec=first.fft_crop_end_sec,
                 plot_fmin_hz=first.plot_fmin_hz,
                 plot_fmax_hz=first.plot_fmax_hz,
                 fft_schema_version=first.fft_schema_version,
@@ -262,6 +277,9 @@ def group_spectra_to_dataframe(groups: Iterable[GroupSpectrum]) -> pd.DataFrame:
         groups[0].montage_name,
         groups[0].sampling_rate_hz,
         groups[0].analysis_window_sec,
+        groups[0].epoch_window_sec,
+        groups[0].fft_crop_start_sec,
+        groups[0].fft_crop_end_sec,
         groups[0].plot_fmin_hz,
         groups[0].plot_fmax_hz,
         groups[0].fft_schema_version,
@@ -281,6 +299,9 @@ def group_spectra_to_dataframe(groups: Iterable[GroupSpectrum]) -> pd.DataFrame:
             group.montage_name,
             group.sampling_rate_hz,
             group.analysis_window_sec,
+            group.epoch_window_sec,
+            group.fft_crop_start_sec,
+            group.fft_crop_end_sec,
             group.plot_fmin_hz,
             group.plot_fmax_hz,
             group.fft_schema_version,
@@ -324,6 +345,9 @@ def group_spectra_to_dataframe(groups: Iterable[GroupSpectrum]) -> pd.DataFrame:
             "montage_name": group.montage_name,
             "sampling_rate_hz": group.sampling_rate_hz,
             "analysis_window_sec": group.analysis_window_sec,
+            "epoch_window_sec": group.epoch_window_sec,
+            "fft_crop_start_sec": group.fft_crop_start_sec,
+            "fft_crop_end_sec": group.fft_crop_end_sec,
             "plot_fmin_hz": group.plot_fmin_hz,
             "plot_fmax_hz": group.plot_fmax_hz,
             "frequency_hz": group.spectrum.freqs,

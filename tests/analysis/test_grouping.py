@@ -26,6 +26,9 @@ def make_record(
     analysis_channels: tuple[str, ...] | None = None,
     frequencies: np.ndarray = FREQUENCIES,
     method: str = "fpvs_amplitude_v1",
+    epoch_window_sec: float = 0.2,
+    fft_crop_start_sec: float = 0.05,
+    fft_crop_end_sec: float = 0.05,
 ) -> ParticipantSpectrum:
     """Build a compact participant spectrum with explicit electrode order."""
 
@@ -42,6 +45,9 @@ def make_record(
         analysis_channels=analysis_channels or channel_names,
         sampling_rate_hz=2.0 * float(frequencies[-1]),
         analysis_window_sec=1.0 / float(frequencies[1] - frequencies[0]),
+        epoch_window_sec=epoch_window_sec,
+        fft_crop_start_sec=fft_crop_start_sec,
+        fft_crop_end_sec=fft_crop_end_sec,
         spectrum=Spectrum(
             freqs=frequencies.copy(),
             amplitude_uv=np.array(list(amplitudes.values()), dtype=np.float64),
@@ -79,6 +85,9 @@ def test_participant_table_has_one_row_per_event_and_frequency() -> None:
     assert cue_rows.montage_name.unique().tolist() == ["standard_1005"]
     assert cue_rows.sampling_rate_hz.unique().tolist() == [40.0]
     assert cue_rows.analysis_window_sec.unique().tolist() == [0.1]
+    assert cue_rows.epoch_window_sec.unique().tolist() == [0.2]
+    assert cue_rows.fft_crop_start_sec.unique().tolist() == [0.05]
+    assert cue_rows.fft_crop_end_sec.unique().tolist() == [0.05]
     assert cue_rows.plot_fmin_hz.unique().tolist() == [3.0]
     assert cue_rows.plot_fmax_hz.unique().tolist() == [50.0]
     assert cue_rows.fpvs_reference_commit.str.len().min() == 40
@@ -148,6 +157,9 @@ def test_consolidated_tables_mark_unavailable_electrodes_and_report_group_ns() -
     assert trigger_11.C4_n_participants.unique().tolist() == [2]
     assert trigger_11.fft_schema_version.unique().tolist() == [1]
     assert trigger_11.montage_name.unique().tolist() == ["standard_1005"]
+    assert trigger_11.epoch_window_sec.unique().tolist() == [0.2]
+    assert trigger_11.fft_crop_start_sec.unique().tolist() == [0.05]
+    assert trigger_11.fft_crop_end_sec.unique().tolist() == [0.05]
     trigger_12 = group_frame[group_frame.trigger_code == 12]
     assert trigger_12.C3_n_participants.unique().tolist() == [1]
     assert trigger_12.C4_n_participants.unique().tolist() == [0]
@@ -200,6 +212,31 @@ def test_inconsistent_event_metadata_or_processing_method_is_rejected(
 
     with pytest.raises(ValueError, match=message):
         average_group_spectra([first, second])
+
+
+def test_inconsistent_crop_provenance_is_rejected() -> None:
+    first = make_record("P01", {"C3": [1.0, 2.0, 3.0]})
+    second = make_record(
+        "P02",
+        {"C3": [4.0, 5.0, 6.0]},
+        fft_crop_start_sec=0.0,
+        fft_crop_end_sec=0.1,
+    )
+
+    with pytest.raises(ValueError, match="inconsistent FFT provenance"):
+        average_group_spectra([first, second])
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"fft_crop_start_sec": -0.05}, "finite nonnegative"),
+        ({"epoch_window_sec": 0.1}, "FFT window provenance is inconsistent"),
+    ],
+)
+def test_invalid_crop_provenance_is_rejected(changes, message) -> None:
+    with pytest.raises(ValueError, match=message):
+        make_record("P01", {"C3": [1.0, 2.0, 3.0]}, **changes)
 
 
 def test_nonfinite_participant_spectrum_is_rejected() -> None:

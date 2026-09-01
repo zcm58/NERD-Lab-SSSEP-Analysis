@@ -3,8 +3,10 @@
 Run the SSSEP attention task and analyze its BioSemi `.bdf` recordings from one
 simple program. The task shows fullscreen body-part cues and sends cue markers
 to BioSemi. For each participant, the analysis averages all usable epochs with
-the same cue before the FFT. It creates one graph per cue for the selected
-electrode, then creates the same cue-level graphs for the group.
+the same cue before the FFT. The default epoch is 15 seconds; the FFT uses only
+its middle 10 seconds after removing 2.5 seconds from each end. The program
+creates one graph per cue for the selected electrode, then creates the same
+cue-level graphs for the group.
 
 TENS stimulation is controlled outside this program.
 

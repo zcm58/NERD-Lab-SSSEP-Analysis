@@ -22,6 +22,7 @@ from sssep_batch.analysis.saved_outputs import (
     create_saved_scalp_outputs,
     roi_participant_source_dataframe,
 )
+from sssep_batch.config import PROCESSING_METHOD
 from sssep_batch.models import ParticipantSpectrum, Spectrum
 
 
@@ -38,6 +39,9 @@ def make_record(
     event_type: str = "cue",
     frequencies: np.ndarray = FREQUENCIES,
     method: str = "fpvs_amplitude_v1",
+    epoch_window_sec: float = 0.2,
+    fft_crop_start_sec: float = 0.05,
+    fft_crop_end_sec: float = 0.05,
 ) -> ParticipantSpectrum:
     """Build one compact saved-spectrum source record."""
 
@@ -54,6 +58,9 @@ def make_record(
         analysis_channels=(channel_names[0],),
         sampling_rate_hz=2.0 * float(frequencies[-1]),
         analysis_window_sec=1.0 / float(frequencies[1] - frequencies[0]),
+        epoch_window_sec=epoch_window_sec,
+        fft_crop_start_sec=fft_crop_start_sec,
+        fft_crop_end_sec=fft_crop_end_sec,
         spectrum=Spectrum(
             freqs=frequencies.copy(),
             amplitude_uv=np.asarray(list(amplitudes.values()), dtype=np.float64),
@@ -101,6 +108,9 @@ def test_saved_fft_round_trip_recovers_events_participants_and_electrodes(tmp_pa
     assert dataset.provenance.montage_name == "standard_1005"
     assert dataset.provenance.sampling_rate_hz == 40.0
     assert dataset.provenance.analysis_window_sec == 0.1
+    assert dataset.provenance.epoch_window_sec == 0.2
+    assert dataset.provenance.fft_crop_start_sec == 0.05
+    assert dataset.provenance.fft_crop_end_sec == 0.05
     assert dataset.provenance.plot_fmin_hz == 3.0
     assert dataset.provenance.plot_fmax_hz == 50.0
     np.testing.assert_array_equal(dataset.frequencies, FREQUENCIES)
@@ -290,6 +300,55 @@ def test_saved_fft_gives_legacy_tables_a_reprocessing_message(tmp_path):
         load_saved_fft_dataset(run_folder)
 
 
+def test_saved_fft_loads_schema_one_table_without_crop_provenance(tmp_path):
+    run_folder, source_csv = write_saved_dataset(
+        tmp_path, (make_record("P01", {"C3": [1, 2, 3]}),)
+    )
+    frame = pd.read_csv(source_csv).drop(
+        columns=[
+            "epoch_window_sec",
+            "fft_crop_start_sec",
+            "fft_crop_end_sec",
+        ]
+    )
+    frame.to_csv(source_csv, index=False)
+
+    dataset = load_saved_fft_dataset(run_folder)
+
+    assert dataset.provenance.epoch_window_sec == 0.1
+    assert dataset.provenance.fft_crop_start_sec == 0.0
+    assert dataset.provenance.fft_crop_end_sec == 0.0
+
+
+def test_saved_fft_rejects_current_crop_method_without_crop_provenance(tmp_path):
+    run_folder, source_csv = write_saved_dataset(
+        tmp_path,
+        (make_record("P01", {"C3": [1, 2, 3]}, method=PROCESSING_METHOD),),
+    )
+    frame = pd.read_csv(source_csv).drop(
+        columns=[
+            "epoch_window_sec",
+            "fft_crop_start_sec",
+            "fft_crop_end_sec",
+        ]
+    )
+    frame.to_csv(source_csv, index=False)
+
+    with pytest.raises(ValueError, match="requires all three"):
+        load_saved_fft_dataset(run_folder)
+
+
+def test_saved_fft_rejects_partial_crop_provenance(tmp_path):
+    run_folder, source_csv = write_saved_dataset(
+        tmp_path, (make_record("P01", {"C3": [1, 2, 3]}),)
+    )
+    frame = pd.read_csv(source_csv).drop(columns="fft_crop_end_sec")
+    frame.to_csv(source_csv, index=False)
+
+    with pytest.raises(ValueError, match="all three crop columns or none"):
+        load_saved_fft_dataset(run_folder)
+
+
 def test_saved_fft_rejects_partial_missing_electrode_trace(tmp_path):
     run_folder, source_csv = write_saved_dataset(
         tmp_path, (make_record("P01", {"C3": [1, 2, 3]}),)
@@ -360,6 +419,24 @@ def test_saved_fft_rejects_mixed_saved_provenance(tmp_path):
     )
     frame = pd.read_csv(source_csv)
     frame.loc[frame.participant_id == "P02", "montage_name"] = "biosemi64"
+    frame.to_csv(source_csv, index=False)
+
+    with pytest.raises(ValueError, match="inconsistent FFT provenance"):
+        load_saved_fft_dataset(run_folder)
+
+
+def test_saved_fft_rejects_mixed_crop_provenance(tmp_path):
+    run_folder, source_csv = write_saved_dataset(
+        tmp_path,
+        (
+            make_record("P01", {"C3": [1, 2, 3]}),
+            make_record("P02", {"C3": [2, 3, 4]}),
+        ),
+    )
+    frame = pd.read_csv(source_csv)
+    p02_rows = frame.participant_id == "P02"
+    frame.loc[p02_rows, "fft_crop_start_sec"] = 0.0
+    frame.loc[p02_rows, "fft_crop_end_sec"] = 0.1
     frame.to_csv(source_csv, index=False)
 
     with pytest.raises(ValueError, match="inconsistent FFT provenance"):
@@ -467,6 +544,9 @@ def test_saved_roi_and_scalp_outputs_include_exact_source_data(tmp_path):
         assert pd.read_csv(result["source_csv"]).shape[0] > 0
         assert (run_folder / "saved_fft_plots") in Path(result["plot_path"]).parents
         assert "fpvs_reference_commit" in pd.read_csv(result["source_csv"]).columns
+        assert "epoch_window_sec" in pd.read_csv(result["source_csv"]).columns
+        assert "fft_crop_start_sec" in pd.read_csv(result["source_csv"]).columns
+        assert "fft_crop_end_sec" in pd.read_csv(result["source_csv"]).columns
     participant_values = pd.read_csv(roi_result["participant_source_csv"])
     assert set(participant_values.participant_id) == {"P01", "P02"}
 

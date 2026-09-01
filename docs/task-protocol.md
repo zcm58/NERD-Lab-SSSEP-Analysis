@@ -9,7 +9,8 @@ This page records the task behavior that the software must preserve.
 - The exact fullscreen prompts are `Think of your left hand`, `Think of your
   right hand`, and `Think of your right ankle`; each condition uses its two
   relevant prompts.
-- The operator chooses the epoch duration and an even total epoch count.
+- The operator chooses the epoch duration and an even total epoch count. The
+  default duration is 15 seconds.
 - After COM3 opens, PySide6 presents the ready frame. The task stops with an
   error if the requested OpenGL frame does not swap within five seconds.
 - A precise timer is aligned to each accepted cue-frame swap and requests the
@@ -36,6 +37,11 @@ the correct expected-frequency marker and summary values without controlling
 the TENS unit. The frequency must be inside the usable plot, filter, and FFT
 range (3–50 Hz by default). Leaving it blank still saves the complete
 per-electrode FFT.
+
+Recording analysis requires each full configured epoch. It then removes the
+first and final 2.5 seconds before averaging same-cue epochs and calculating the
+FFT. At the 15-second default, the FFT uses the middle 10 seconds. This analysis
+crop does not shorten the participant's fullscreen cue.
 
 The software must open and check `COM3` before showing participant cues. A
 missing, busy, or failed trigger connection stops the task instead of continuing

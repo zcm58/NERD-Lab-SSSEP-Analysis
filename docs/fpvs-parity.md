@@ -2,10 +2,11 @@
 
 ## Method and reference
 
-`fpvs_amplitude_v1` follows the active FPVS Toolbox preprocessing and
-per-electrode FFT at commit `185d803f0056daebee04e5f28cc6b554c47336ce`.
-The Toolbox is a reference for verification, not a runtime dependency. SSSEP
-still runs locally from `main.py` in PyCharm.
+`fpvs_amplitude_epoch_crop_v2` follows the active FPVS Toolbox preprocessing
+and per-electrode FFT formula at commit
+`185d803f0056daebee04e5f28cc6b554c47336ce`. SSSEP adds its own epoch crop
+before the FFT. The Toolbox is a reference for verification, not a runtime
+dependency. SSSEP still runs locally from `main.py` in PyCharm.
 
 The reference source files are:
 
@@ -48,7 +49,7 @@ changes, the test fails rather than silently accepting a different reference.
 7. **Final reference:** Create the average EEG reference projection and apply
    it after interpolation. All retained good EEG electrodes contribute; the
    later plotting ROI does not define this reference.
-8. **Events and SSSEP epochs:** Find events on the final grid with
+8. **Events and complete SSSEP epochs:** Find events on the final grid with
    `shortest_event=1` and MNE's other defaults, including its default transition
    rule. No custom trigger mask is added. If Status extraction raises, use
    MNE's default annotation mapping, as the active FPVS runner does. Retain
@@ -56,10 +57,16 @@ changes, the test fails rather than silently accepting a different reference.
    all retained channels with `baseline=None` and its default projection
    behavior, then select good EEG electrodes. This epoch projection can alter
    the last floating-point bits even after the continuous reference projection
-   was applied; it is necessary for exact numerical parity. Do not
-   add an FIR edge margin or replace EEG NaNs/infinities with zeros.
-9. **Participant cue average and FFT:** For one participant's same-cue epochs
-   shaped trials × electrodes × samples:
+   was applied; it is necessary for exact numerical parity. Do not add an FIR
+   edge margin or replace EEG NaNs/infinities with zeros. Require each entire
+   configured epoch before retaining it.
+9. **SSSEP FFT window:** Remove 2.5 seconds from the start and end of every
+   retained epoch. At the 15-second default and 256 Hz, extract 3840 samples,
+   retain the stop-exclusive slice `640:3200`, and pass 2560 samples (10
+   seconds) to the cue average and FFT. Apply the same crop to cue and baseline
+   epochs.
+10. **Participant cue average and FFT:** For one participant's cropped
+   same-cue epochs shaped trials × electrodes × samples:
 
    ```python
    avg_data = np.mean(epochs.astype(np.float64), axis=0)
@@ -74,7 +81,9 @@ changes, the test fails rather than silently accepting a different reference.
    The arithmetic order is deliberate. Do not substitute power, Welch, a
    tapered FFT, FFT padding, channel averaging before the FFT, or a differently
    ordered scaling expression. FPVS also doubles DC and Nyquist; this method
-   preserves that convention.
+   preserves that convention. The preprocessing and formula stay
+   FPVS-aligned; the samples supplied to the formula use the SSSEP window in
+   step 9.
 
 Group output is a later SSSEP reporting step. It gives each participant's
 already-computed amplitude spectrum equal weight; usable epoch count does not
@@ -112,20 +121,24 @@ repair has been added. Existing per-file logs and screening CSVs remain.
 
 ## SSSEP-specific boundaries
 
-Parity means identical preprocessing and per-electrode amplitude FFTs for
-identical input data, settings, electrode labels, and epoch samples. These
-experiment-specific choices remain:
+Parity means identical preprocessing and per-electrode amplitude FFT
+calculation for identical input data, settings, electrode labels, and samples
+supplied to the FFT. These experiment-specific choices remain:
 
 - The selected SSSEP condition supplies fixed launcher trigger codes (`11`/`12`
-  or `21`/`22`); cue duration remains editable. The default 7.5-second window is
-  exactly 1920 samples at 256 Hz. Other durations use
+  or `21`/`22`); cue duration remains editable. The default full window is 15
+  seconds, or 3840 samples at 256 Hz. Other durations use
   `round(duration * sampling_rate)` samples, with a stop-exclusive slice and no
   extra endpoint. Event indices account for MNE's `raw.first_samp`.
-- FPVS's visual-oddball marker-55 crop and 1.2 Hz exact-bin restrictions do not
-  apply to this experiment. The full FPVS export function requires that crop;
-  the reference test executes its actual FFT assignments after supplying the
-  SSSEP epochs. It does not pretend to run an unchanged FPVS experiment.
-- FFT bin spacing is the reciprocal of the analyzed duration. The optional
+- SSSEP removes 2.5 seconds from both epoch ends before averaging and FFT. This
+  fixed onset/offset crop defines the middle analysis window. It is separate
+  from FPVS's visual-oddball marker-55 crop, which aligns 1.2 Hz stimulation
+  cycles. The FPVS marker crop and its 1.2 Hz exact-bin restrictions do not
+  apply here. The reference test executes FPVS's FFT assignments after
+  supplying the cropped SSSEP samples; it does not claim an unchanged FPVS
+  experiment.
+- FFT bin spacing is the reciprocal of the analyzed duration: 0.1 Hz for the
+  default middle 10-second window. The optional
   stimulation frequency shown in the launcher adds expected-frequency markers
   and SSSEP summary values. Leaving it blank leaves those target summaries
   unavailable while preserving the full per-electrode FFT.

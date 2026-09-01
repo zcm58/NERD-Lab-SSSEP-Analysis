@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from sssep_batch.config import ACTIVE_EVENT_CODES
+from sssep_batch.config import ACTIVE_EVENT_CODES, PROCESSING_METHOD
 from sssep_batch.pipeline import process_one_bdf
 
 
@@ -47,6 +47,6 @@ def test_external_bdf_regression_fixture(tmp_path):
         "sssep_fft_nearest_amplitude_uv",
         "fft_channels",
     }.issubset(summary_df.columns)
-    assert (summary_df["processing_method"] == "fpvs_amplitude_v1").all()
+    assert (summary_df["processing_method"] == PROCESSING_METHOD).all()
     assert (summary_df["status"] == "success").any()
     assert not any("power" in field or "welch" in field for field in summary_df.columns)

@@ -192,6 +192,9 @@ class ParticipantSpectrum:
     sampling_rate_hz: float
     analysis_window_sec: float
     spectrum: Spectrum
+    epoch_window_sec: float | None = None
+    fft_crop_start_sec: float = 0.0
+    fft_crop_end_sec: float = 0.0
     fpvs_reference_commit: str = FPVS_REFERENCE_COMMIT
     montage_name: str = MONTAGE_NAME
     plot_fmin_hz: float = FMIN
@@ -288,6 +291,47 @@ class ParticipantSpectrum:
                 or value <= 0
             ):
                 raise ValueError(f"{name} must be a finite number above zero.")
+        crop_start_sec = self.fft_crop_start_sec
+        crop_end_sec = self.fft_crop_end_sec
+        for value, name in (
+            (crop_start_sec, "fft_crop_start_sec"),
+            (crop_end_sec, "fft_crop_end_sec"),
+        ):
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not isfinite(float(value))
+                or value < 0
+            ):
+                raise ValueError(f"{name} must be a finite nonnegative number.")
+        epoch_window_sec = self.epoch_window_sec
+        if epoch_window_sec is None:
+            epoch_window_sec = (
+                float(analysis_window_sec) + float(crop_start_sec) + float(crop_end_sec)
+            )
+        if (
+            not isinstance(epoch_window_sec, (int, float))
+            or isinstance(epoch_window_sec, bool)
+            or not isfinite(float(epoch_window_sec))
+            or epoch_window_sec <= 0
+        ):
+            raise ValueError("epoch_window_sec must be a finite number above zero.")
+
+        sampling_rate_hz = float(sampling_rate_hz)
+        analysis_window_sec = float(analysis_window_sec)
+        epoch_window_sec = float(epoch_window_sec)
+        crop_start_sec = float(crop_start_sec)
+        crop_end_sec = float(crop_end_sec)
+        epoch_samples = int(round(epoch_window_sec * sampling_rate_hz))
+        crop_start_samples = int(round(crop_start_sec * sampling_rate_hz))
+        crop_end_samples = int(round(crop_end_sec * sampling_rate_hz))
+        analysis_samples = int(round(analysis_window_sec * sampling_rate_hz))
+        if epoch_samples - crop_start_samples - crop_end_samples != analysis_samples:
+            raise ValueError(
+                "FFT window provenance is inconsistent: the extracted epoch minus "
+                "the start and end crops must equal analysis_window_sec at the "
+                "recorded sampling rate."
+            )
         if (
             not isinstance(self.fpvs_reference_commit, str)
             or not self.fpvs_reference_commit.strip()
@@ -325,8 +369,11 @@ class ParticipantSpectrum:
             self, "fpvs_reference_commit", self.fpvs_reference_commit.strip()
         )
         object.__setattr__(self, "montage_name", self.montage_name.strip())
-        object.__setattr__(self, "sampling_rate_hz", float(sampling_rate_hz))
-        object.__setattr__(self, "analysis_window_sec", float(analysis_window_sec))
+        object.__setattr__(self, "sampling_rate_hz", sampling_rate_hz)
+        object.__setattr__(self, "analysis_window_sec", analysis_window_sec)
+        object.__setattr__(self, "epoch_window_sec", epoch_window_sec)
+        object.__setattr__(self, "fft_crop_start_sec", crop_start_sec)
+        object.__setattr__(self, "fft_crop_end_sec", crop_end_sec)
         object.__setattr__(self, "plot_fmin_hz", float(self.plot_fmin_hz))
         object.__setattr__(self, "plot_fmax_hz", float(self.plot_fmax_hz))
         if self.target_hz is not None:

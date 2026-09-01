@@ -57,11 +57,13 @@ Recording analysis:
 `entrypoint → gui task fields → analysis protocol → batch → pipeline → preprocessing / events / FFT → participant outputs → group outputs`
 
 The numerical order is load/montage → EXG reference/drop → filter → resample
-→ interpolate → average reference → recorded events → SSSEP epochs → trial
-mean within each participant and cue → per-electrode amplitude FFT. After all
-files finish, the batch averages participant amplitude spectra with equal
-participant weight. It writes consolidated participant and group FFT CSVs plus
-one selected-electrode PNG per cue at each level.
+→ interpolate → average reference → recorded events → complete SSSEP epochs
+→ remove 2.5 seconds from each epoch end → trial mean within each participant
+and cue → per-electrode amplitude FFT. The default 15-second epoch therefore
+uses its middle 10 seconds for the FFT. After all files finish, the batch
+averages participant amplitude spectra with equal participant weight. It writes
+consolidated participant and group FFT CSVs plus one selected-electrode PNG per
+cue at each level.
 
 Saved-result plotting is separate:
 
@@ -90,6 +92,9 @@ with zero. Hemisphere comparisons and statistics remain external.
 - Pass the visible condition, duration, epoch count, and that condition's fixed
   cue codes into each analysis batch; do not fall back to unrelated settings.
 - Preserve the validated FPVS analysis method unless a change is authorized.
+- Require a complete configured epoch, then remove 2.5 seconds from its start
+  and end before cue averaging and FFT calculation. This SSSEP analysis window
+  is separate from FPVS's visual-oddball marker crop.
 - Treat one BDF as one participant. Average all same-cue epochs in the time
   domain before that participant's FFT; never average epoch FFT amplitudes.
 - At the group level, average participant amplitude spectra equally rather than
@@ -100,8 +105,8 @@ with zero. Hemisphere comparisons and statistics remain external.
   `group_fft_amplitudes.csv`. The launcher's electrode selection changes PNGs
   only (`PLOT_CHANNEL` supplies its default).
 - Keep the FFT export schema version, FPVS reference commit, montage, actual
-  sampling rate, analysis-window duration, and saved plot range with every
-  reusable spectrum.
+  sampling rate, extracted epoch duration, crop durations, FFT analysis-window
+  duration, and saved plot range with every reusable spectrum.
 - Validate the complete saved participant table before plotting. Use its
   participant identities for later ROI/group calculations rather than pooling
   rows or relying on the already-averaged group CSV.

@@ -29,8 +29,9 @@ def extract_epochs_for_code(
     `events` uses the standard MNE event shape: sample number, previous value,
     trigger code. Each usable event becomes one epoch with shape
     `(n_channels, n_times)`. The returned `EpochSet` keeps both the data and the
-    skip counts so reports can explain missing repetitions. SSSEP trial lengths
-    are retained; FPVS's visual-oddball marker crop does not apply to this task.
+    skip counts so reports can explain missing repetitions. This function keeps
+    each full SSSEP epoch so completeness is checked before the downstream FFT
+    crop. FPVS's visual-oddball marker crop does not apply to this task.
     """
 
     sfreq = float(raw.info["sfreq"])

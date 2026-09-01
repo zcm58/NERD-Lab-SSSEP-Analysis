@@ -29,7 +29,7 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
             assert threading.current_thread() is not threading.main_thread()
             assert plot_channel == "C4"
             assert analysis_protocol.active_event_codes == (11, 12)
-            assert analysis_protocol.event_duration_sec == 7.5
+            assert analysis_protocol.event_duration_sec == 15.0
             with ProcessPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(sum, [1, 2, 3])
                 started.set()

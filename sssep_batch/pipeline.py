@@ -10,11 +10,14 @@ from pathlib import Path
 from sssep_batch.analysis.metrics import add_baseline_comparison, extract_target_metrics
 from sssep_batch.analysis.plotting import plot_spectrum
 from sssep_batch.analysis.protocol import default_analysis_protocol
-from sssep_batch.analysis.spectra import compute_sssep_fft_from_averaged_epochs
+from sssep_batch.analysis.spectra import (
+    compute_sssep_fft_from_averaged_epochs,
+    crop_epochs_for_fft,
+)
 from sssep_batch.config import (
-    DOWNSAMPLE_RATE, FPVS_REFERENCE_COMMIT, HIGHCUT, INCLUDE_POST_STIMULUS, LOWCUT,
-    POST_EVENT_SEC_IF_INCLUDED, PRE_EVENT_SEC, PLOT_CHANNEL, PROCESSING_METHOD,
-    SAVE_PLOTS,
+    DOWNSAMPLE_RATE, FFT_CROP_END_SEC, FFT_CROP_START_SEC, FPVS_REFERENCE_COMMIT,
+    HIGHCUT, INCLUDE_POST_STIMULUS, LOWCUT, POST_EVENT_SEC_IF_INCLUDED,
+    PRE_EVENT_SEC, PLOT_CHANNEL, PROCESSING_METHOD, SAVE_PLOTS,
 )
 from sssep_batch.events.epochs import extract_epochs_for_code
 from sssep_batch.events.status import find_status_events, parse_trigger_label
@@ -129,18 +132,28 @@ def process_one_bdf(
             )
 
         post_sec = POST_EVENT_SEC_IF_INCLUDED if INCLUDE_POST_STIMULUS else 0.0
-        window_sec = PRE_EVENT_SEC + protocol.event_duration_sec + post_sec
+        epoch_window_sec = PRE_EVENT_SEC + protocol.event_duration_sec + post_sec
+        final_sfreq = float(raw.info["sfreq"])
         stage = "baseline_epoch_extraction"
         baseline_epochs = extract_epochs_for_code(
             raw,
             intended_events,
             protocol.baseline_event_code,
             fft_channels,
-            window_sec,
+            epoch_window_sec,
             label=protocol.baseline_label,
         )
+        stage = "baseline_fft_window_cropping"
+        baseline_fft_epochs = crop_epochs_for_fft(baseline_epochs.epochs, final_sfreq)
+        fft_window_sec = baseline_fft_epochs.shape[-1] / final_sfreq
+        log_func(
+            f"Extracted epoch window: {epoch_window_sec:g} s. FFT crop removes "
+            f"{FFT_CROP_START_SEC:g} s from the start and {FFT_CROP_END_SEC:g} s "
+            f"from the end, retaining {fft_window_sec:g} s."
+        )
+        stage = "baseline_fft_calculation"
         baseline_fft = (
-            compute_sssep_fft_from_averaged_epochs(baseline_epochs.epochs, float(raw.info["sfreq"]))
+            compute_sssep_fft_from_averaged_epochs(baseline_fft_epochs, final_sfreq)
             if len(baseline_epochs.epochs) else None
         )
         if baseline_fft is None:
@@ -162,8 +175,11 @@ def process_one_bdf(
                     channel_names=tuple(fft_channels),
                     analysis_channels=tuple(analysis_channels),
                     spectrum=baseline_fft,
-                    sampling_rate_hz=float(raw.info["sfreq"]),
-                    analysis_window_sec=window_sec,
+                    sampling_rate_hz=final_sfreq,
+                    analysis_window_sec=fft_window_sec,
+                    epoch_window_sec=epoch_window_sec,
+                    fft_crop_start_sec=FFT_CROP_START_SEC,
+                    fft_crop_end_sec=FFT_CROP_END_SEC,
                 )
             )
         plotted = 0
@@ -178,7 +194,7 @@ def process_one_bdf(
                 intended_events,
                 code,
                 fft_channels,
-                window_sec,
+                epoch_window_sec,
                 label=label,
             )
             n_epochs = len(epoch_set.epochs)
@@ -198,9 +214,12 @@ def process_one_bdf(
                 "usable_epochs": n_epochs, "skipped_epochs": epoch_set.skipped_epochs,
                 "out_of_bounds_epochs": epoch_set.out_of_bounds_epochs,
                 "edge_excluded_epochs": 0, "epoch_count_ok": count_ok,
-                "analysis_window_sec": window_sec,
+                "epoch_window_sec": epoch_window_sec,
+                "fft_crop_start_sec": FFT_CROP_START_SEC,
+                "fft_crop_end_sec": FFT_CROP_END_SEC,
+                "analysis_window_sec": fft_window_sec,
                 "include_post_stimulus": INCLUDE_POST_STIMULUS,
-                "sampling_rate_hz": float(raw.info["sfreq"]),
+                "sampling_rate_hz": final_sfreq,
                 "analysis_channels": ";".join(analysis_channels),
                 "fft_channels": ";".join(fft_channels),
                 "baseline_trigger_code": protocol.baseline_event_code,
@@ -211,10 +230,14 @@ def process_one_bdf(
                 "fir_edge_margin_samples": 0, "fir_edge_margin_sec": 0.0,
                 "status": "success" if n_epochs else "no_complete_epochs",
             }
+            stage = "active_fft_window_cropping"
+            fft_epochs = crop_epochs_for_fft(epoch_set.epochs, final_sfreq)
+            stage = "active_fft_calculation"
             spectrum = (
-                compute_sssep_fft_from_averaged_epochs(epoch_set.epochs, float(raw.info["sfreq"]))
+                compute_sssep_fft_from_averaged_epochs(fft_epochs, final_sfreq)
                 if n_epochs else None
             )
+            stage = "active_sssep_analysis"
             metrics = extract_target_metrics(spectrum, target_hz, channel_indices)
             row.update({f"sssep_fft_{key}": value for key, value in metrics.items()})
             baseline_metrics = (
@@ -238,8 +261,11 @@ def process_one_bdf(
                     channel_names=tuple(fft_channels),
                     analysis_channels=tuple(analysis_channels),
                     spectrum=spectrum,
-                    sampling_rate_hz=float(raw.info["sfreq"]),
-                    analysis_window_sec=window_sec,
+                    sampling_rate_hz=final_sfreq,
+                    analysis_window_sec=fft_window_sec,
+                    epoch_window_sec=epoch_window_sec,
+                    fft_crop_start_sec=FFT_CROP_START_SEC,
+                    fft_crop_end_sec=FFT_CROP_END_SEC,
                 )
             )
             if SAVE_PLOTS and plot_channel_available:
@@ -280,7 +306,11 @@ def process_one_bdf(
             report_path=report_path, bdf_path=bdf_path,
             original_sfreq=original_sfreq, final_sfreq=float(raw.info["sfreq"]),
             n_bad_by_kurtosis=n_bad, found_codes=found_codes,
-            analysis_window_sec=window_sec, filter_edge_margin_samples=0,
+            analysis_window_sec=fft_window_sec,
+            epoch_window_sec=epoch_window_sec,
+            fft_crop_start_sec=FFT_CROP_START_SEC,
+            fft_crop_end_sec=FFT_CROP_END_SEC,
+            filter_edge_margin_samples=0,
             filter_edge_margin_sec=0.0, analysis_channels=analysis_channels,
             report_lines=report_lines, summary_rows=summary_rows,
             summary_csv_path=summary_path,

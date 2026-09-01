@@ -119,6 +119,9 @@ def _provenance_columns(provenance: FftProvenance) -> dict[str, object]:
         "montage_name": provenance.montage_name,
         "sampling_rate_hz": provenance.sampling_rate_hz,
         "analysis_window_sec": provenance.analysis_window_sec,
+        "epoch_window_sec": provenance.epoch_window_sec,
+        "fft_crop_start_sec": provenance.fft_crop_start_sec,
+        "fft_crop_end_sec": provenance.fft_crop_end_sec,
         "plot_fmin_hz": provenance.plot_fmin_hz,
         "plot_fmax_hz": provenance.plot_fmax_hz,
     }

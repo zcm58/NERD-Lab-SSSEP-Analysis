@@ -5,10 +5,66 @@ The transform preserves the Toolbox's scaling and arithmetic order, including
 doubling the DC and Nyquist bins. No taper, detrending, or padding is applied.
 """
 
+from numbers import Real
+
 import numpy as np
 
-from sssep_batch.config import PROCESSING_METHOD
+from sssep_batch.config import (
+    FFT_CROP_END_SEC,
+    FFT_CROP_START_SEC,
+    PROCESSING_METHOD,
+)
 from sssep_batch.models import Spectrum
+
+
+def crop_epochs_for_fft(
+    epochs: np.ndarray,
+    sfreq: float,
+    *,
+    crop_start_sec: float = FFT_CROP_START_SEC,
+    crop_end_sec: float = FFT_CROP_END_SEC,
+) -> np.ndarray:
+    """Return the stop-exclusive epoch samples retained for the FFT.
+
+    Crop boundaries are converted to samples with the same ``round`` rule used
+    for epoch extraction. A 15-second epoch at 256 Hz therefore keeps samples
+    640 through 3199: exactly the middle 2560 samples, or 10 seconds.
+    """
+
+    epoch_data = np.asarray(epochs)
+    if epoch_data.ndim != 3 or epoch_data.shape[-1] == 0:
+        raise ValueError(
+            "FFT cropping needs epochs shaped as trials, channels, and time samples."
+        )
+    if (
+        not isinstance(sfreq, Real)
+        or isinstance(sfreq, bool)
+        or not np.isfinite(sfreq)
+        or sfreq <= 0
+    ):
+        raise ValueError("FFT sampling frequency must be positive and finite.")
+    if (
+        not isinstance(crop_start_sec, Real)
+        or isinstance(crop_start_sec, bool)
+        or not isinstance(crop_end_sec, Real)
+        or isinstance(crop_end_sec, bool)
+        or not np.isfinite(crop_start_sec)
+        or not np.isfinite(crop_end_sec)
+        or crop_start_sec < 0
+        or crop_end_sec < 0
+    ):
+        raise ValueError("FFT crop durations must be finite nonnegative numbers.")
+
+    start_sample = int(round(crop_start_sec * sfreq))
+    end_samples = int(round(crop_end_sec * sfreq))
+    stop_sample = epoch_data.shape[-1] - end_samples
+    if start_sample >= stop_sample:
+        raise ValueError(
+            "The extracted epoch is too short for the configured FFT crop. "
+            f"It has {epoch_data.shape[-1]} samples, but the crop removes "
+            f"{start_sample} from the start and {end_samples} from the end."
+        )
+    return epoch_data[..., start_sample:stop_sample]
 
 
 def compute_sssep_fft_from_averaged_epochs(
