@@ -22,9 +22,9 @@ This page records the task behavior that the software must preserve.
 - Launcher defaults are `11` for both-hands/left-hand, `12` for
   both-hands/right-hand, `21` for hand-and-ankle/right-hand, and `22` for
   hand-and-ankle/right-ankle. The operator may change them before a run.
-- The marker is sent through the selected serial port on the exact PsychoPy
-  display flip that makes the cue visible.
-- `COM3` is the default port, but the operator can change it.
+- The marker is sent through `COM3` on the exact PsychoPy display flip that
+  makes the cue visible.
+- `COM3` is fixed and is not editable in the launcher.
 - **Space** starts from the fullscreen ready screen; **Escape** aborts.
 - A CSV task log records the scheduled and presented epochs and trigger events.
 - TENS stimulation is controlled externally.
@@ -36,7 +36,7 @@ the TENS unit. The frequency must be inside the usable plot, filter, and FFT
 range (3–50 Hz by default). Leaving it blank still saves the complete
 per-electrode FFT.
 
-The software must open and check the serial port before showing participant
+The software must open and check `COM3` before showing participant
 cues. A missing, busy, or failed trigger connection stops the task instead of
 continuing silently. Hardware marker values and timing still require BioSemi
 bench validation before data collection.

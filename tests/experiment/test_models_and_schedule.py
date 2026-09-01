@@ -13,6 +13,7 @@ from sssep_batch.experiment.models import (
     analysis_protocol_for_task,
 )
 from sssep_batch.experiment.schedule import build_cue_schedule
+from sssep_batch.experiment.triggers import BIOSEMI_SERIAL_PORT
 
 
 def _codes() -> CueTriggerCodes:
@@ -43,6 +44,26 @@ def test_task_settings_require_a_positive_finite_epoch_duration(duration: object
             epoch_duration_sec=duration,  # type: ignore[arg-type]
             total_epochs=2,
             trigger_codes=_codes(),
+        )
+
+
+def test_task_serial_port_is_fixed_to_com3() -> None:
+    settings = TaskSettings(
+        condition=TaskCondition.BOTH_HANDS,
+        epoch_duration_sec=1.0,
+        total_epochs=2,
+        trigger_codes=_codes(),
+    )
+
+    assert BIOSEMI_SERIAL_PORT == "COM3"
+    assert settings.serial_port == BIOSEMI_SERIAL_PORT
+    with pytest.raises(TypeError, match="serial_port"):
+        TaskSettings(
+            condition=TaskCondition.BOTH_HANDS,
+            epoch_duration_sec=1.0,
+            total_epochs=2,
+            trigger_codes=_codes(),
+            serial_port="COM7",  # type: ignore[call-arg]
         )
 
 

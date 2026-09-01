@@ -18,7 +18,7 @@ Once set up, right-click [main.py](main.py) in PyCharm and choose **Run**. The
 launcher has two tabs:
 
 - **Run Participant Task** presents the cues, sends BioSemi markers through the
-  selected serial port, and saves a task log.
+  fixed `COM3` connection, and saves a task log.
 - **Analyze Recordings** processes saved `.bdf` files and creates FFT results.
 
 The analysis uses the condition, epoch duration, epoch count, and trigger codes

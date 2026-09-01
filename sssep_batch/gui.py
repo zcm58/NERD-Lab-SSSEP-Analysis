@@ -285,7 +285,6 @@ def launch_gui() -> int:
             self.both_hands_right_code_spin = self._new_trigger_spin(12)
             self.hand_ankle_hand_code_spin = self._new_trigger_spin(21)
             self.hand_ankle_ankle_code_spin = self._new_trigger_spin(22)
-            self.serial_port_edit = QLineEdit("COM3")
             self.task_log_edit = QLineEdit()
             self.task_log_browse_button = QPushButton("Browse...")
             self.start_task_button = QPushButton("Start Task")
@@ -386,7 +385,6 @@ def launch_gui() -> int:
                 "Hand/ankle: right ankle trigger",
                 self.hand_ankle_ankle_code_spin,
             )
-            task_form.addRow("BioSemi serial port", self.serial_port_edit)
             task_form.addRow("Task log folder", task_log_row)
 
             task_layout = QVBoxLayout()
@@ -524,7 +522,6 @@ def launch_gui() -> int:
                     self.hand_ankle_hand_code_spin.value(),
                     self.hand_ankle_ankle_code_spin.value(),
                 ),
-                serial_port=self.serial_port_edit.text(),
                 output_folder=Path(log_folder),
             )
 
@@ -642,7 +639,6 @@ def launch_gui() -> int:
                 self.both_hands_right_code_spin,
                 self.hand_ankle_hand_code_spin,
                 self.hand_ankle_ankle_code_spin,
-                self.serial_port_edit,
                 self.task_log_edit,
                 self.task_log_browse_button,
                 self.start_task_button,

@@ -65,7 +65,7 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                 ]
                 assert window.plot_channel_combo.count() == 64
                 assert window.plot_channel_combo.currentText() == gui.PLOT_CHANNEL
-                assert window.serial_port_edit.text() == "COM3"
+                assert not hasattr(window, "serial_port_edit")
                 assert window.total_epochs_spin.singleStep() == 2
                 assert window.total_epochs_spin.value() % 2 == 0
                 assert [
@@ -78,7 +78,6 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                 window.condition_combo.setCurrentIndex(1)
                 window.epoch_duration_spin.setValue(2.5)
                 window.total_epochs_spin.setValue(4)
-                window.serial_port_edit.setText("COM7")
                 window.task_log_edit.setText(str(log_folder))
                 window.stimulation_frequency_edit.setText("12.5")
                 analysis_protocol = window._analysis_protocol()
@@ -106,7 +105,7 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                     assert settings.condition is gui.TaskCondition.RIGHT_HAND_AND_ANKLE
                     assert settings.epoch_duration_sec == 2.5
                     assert settings.total_epochs == 4
-                    assert settings.serial_port == "COM7"
+                    assert settings.serial_port == "COM3"
                     assert settings.output_folder == log_folder
                     assert settings.trigger_codes == gui.CueTriggerCodes(11, 12, 21, 22)
                     release[0].set()

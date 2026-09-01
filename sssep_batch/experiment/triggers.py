@@ -8,6 +8,9 @@ from types import ModuleType
 from typing import Any
 
 
+BIOSEMI_SERIAL_PORT = "COM3"
+
+
 class SerialTriggerError(RuntimeError):
     """Raised when a BioSemi trigger cannot be sent."""
 
@@ -27,7 +30,7 @@ class SerialTriggerBackend:
 
     def __init__(
         self,
-        port: str = "COM3",
+        port: str = BIOSEMI_SERIAL_PORT,
         baudrate: int = 115200,
         *,
         serial_module: ModuleType | Any | None = None,
@@ -45,7 +48,7 @@ class SerialTriggerBackend:
         return tuple(SentTrigger(*record) for record in self._raw_records)
 
     def connect(self) -> None:
-        """Open the configured serial port using FPVS Studio's settings."""
+        """Open fixed COM3 using FPVS Studio's serial settings."""
 
         if self._connection is not None:
             return

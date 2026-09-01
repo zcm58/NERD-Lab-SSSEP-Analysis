@@ -15,8 +15,8 @@ Terminal, reinstall the required libraries if needed:
 
 | Problem | What to do |
 | --- | --- |
-| `COM3` is missing | Check that the BioSemi trigger interface is connected and powered. In Windows Device Manager, find its COM number and enter that port in the launcher. |
-| The COM port is busy | Close any program using that port, then restart the launcher. Do not run the task without a working trigger connection. |
+| `COM3` is missing | Check that the BioSemi trigger interface is connected and powered. If Windows assigned another port, ask the lab supervisor to reassign it to `COM3`; the launcher cannot change ports. |
+| `COM3` is busy | Close any program using `COM3`, then restart the launcher. Do not run the task without a working trigger connection. |
 | Fullscreen opens on the wrong display | Make the participant display the Windows primary display before starting, then reopen the launcher. |
 | The ready screen does not continue | Click the fullscreen task window and press **Space**. |
 | I need to stop the task | Press **Escape**. Keep the CSV log and record that the run was aborted. |

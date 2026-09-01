@@ -16,7 +16,7 @@ compatibility wrapper.
 | Task settings and event records | [experiment/models.py](sssep_batch/experiment/models.py) |
 | Balanced alternating cue order | [experiment/schedule.py](sssep_batch/experiment/schedule.py) |
 | Fullscreen prompts, cue timing, or task CSV log | [experiment/runner.py](sssep_batch/experiment/runner.py) |
-| COM-port connection or one-byte BioSemi markers | [experiment/triggers.py](sssep_batch/experiment/triggers.py) |
+| Fixed COM3 connection or one-byte BioSemi markers | [experiment/triggers.py](sssep_batch/experiment/triggers.py) |
 | Finding BDF files, workers, or analysis run folders | [batch.py](sssep_batch/batch.py) |
 | The processing order for one BDF recording | [pipeline.py](sssep_batch/pipeline.py) |
 | Reading a BDF file | [loading.py](sssep_batch/loading.py) |
@@ -40,7 +40,7 @@ Participant task:
 
 `entrypoint → gui → experiment settings → schedule → serial preflight → PsychoPy runner → task CSV`
 
-The runner opens the configured serial port before participant screens. After
+The runner opens the fixed `COM3` connection before participant screens. After
 Space starts the task, it draws each cue and schedules its unique `1..255`
 marker with PsychoPy `callOnFlip`, so the one-byte serial write occurs on the
 cue's visible display flip. Escape aborts. TENS control stays outside this
@@ -67,8 +67,8 @@ are intentionally left to external analysis.
 - Keep one launcher with separate task and analysis tabs.
 - Keep PsychoPy and live serial output inside `experiment/`, separate from BDF
   analysis.
-- Open and check the serial port before participant cues; never continue after
-  a trigger failure.
+- Keep `COM3` fixed and absent from the GUI. Open and check it before participant
+  cues; never continue after a trigger failure.
 - Send each cue's marker on the same display flip that reveals that cue.
 - Require an even epoch count and alternate the two cues from a randomized
   starting cue.

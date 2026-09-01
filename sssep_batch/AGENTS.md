@@ -34,7 +34,8 @@ The package is organized around these boundaries:
 ## Non-Negotiable Design Intent
 
 1. `pipeline.py` defines order; helper modules define implementation.
-2. The GUI owns task/run selections; `config.py` owns analysis defaults.
+2. The GUI owns task/run selections; `config.py` owns analysis defaults. The
+   BioSemi port is fixed at `COM3` and is not a GUI setting.
 3. Keep helpers close to their domain. Do not reintroduce a monolith through
    cross-cutting helper files.
 4. Prefer pure or near-pure functions in submodules where practical.
@@ -113,11 +114,12 @@ The package is organized around these boundaries:
 
 ### `experiment/`
 
-- Open the configured serial port before participant-facing screens.
+- Open the fixed `COM3` connection before participant-facing screens.
 - Keep cue emission flip-locked through PsychoPy `window.callOnFlip(...)`.
 - Keep cue playback frame-counted from a measured display refresh, alternate
   cues, and use the next onset or terminal black flip as the prior cue offset.
-- BioSemi events are one raw byte, codes `1..255`, at 115200 baud by default.
+- BioSemi events are one raw byte, codes `1..255`, over fixed `COM3` at 115200
+  baud by default.
 - Never continue silently after a serial or trigger failure. Preserve partial
   task logs after an in-task abort or write failure.
 - Keep PsychoPy on the launcher's persistent presentation thread on Windows.

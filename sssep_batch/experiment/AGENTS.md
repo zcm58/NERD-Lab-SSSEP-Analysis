@@ -11,9 +11,9 @@ This package runs the participant cue task. TENS is controlled externally.
 
 ## Preserve
 
-- Open the configured serial port before creating participant-facing screens.
+- Open the fixed `COM3` connection before creating participant-facing screens.
 - Send every cue code with `window.callOnFlip(...)` on the cue-onset flip.
-- Use one raw byte per event (`1..255`), default COM3 at 115200 baud, 8N1.
+- Use one raw byte per event (`1..255`) over fixed COM3 at 115200 baud, 8N1.
 - Keep the four condition-and-cue codes unique; code `0` is not an event.
 - Require a positive duration and positive even total epoch count.
 - Measure display refresh before the ready screen, compile each duration to a

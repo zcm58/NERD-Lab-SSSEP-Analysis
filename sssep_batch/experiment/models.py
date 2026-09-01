@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from math import isfinite
 from pathlib import Path
 
 from sssep_batch.config import BASELINE_EVENT_CODE, TRIGGER_LABELS
+from sssep_batch.experiment.triggers import BIOSEMI_SERIAL_PORT
 from sssep_batch.models import AnalysisProtocol, AnalysisTrigger
 
 
@@ -110,7 +111,7 @@ class TaskSettings:
     epoch_duration_sec: float
     total_epochs: int
     trigger_codes: CueTriggerCodes
-    serial_port: str = "COM3"
+    serial_port: str = field(default=BIOSEMI_SERIAL_PORT, init=False)
     output_folder: Path | None = None
     random_seed: int | None = None
 
@@ -133,15 +134,12 @@ class TaskSettings:
             raise ValueError("total_epochs must be a positive even integer for cue balance.")
         if not isinstance(self.trigger_codes, CueTriggerCodes):
             raise TypeError("trigger_codes must be a CueTriggerCodes value.")
-        if not isinstance(self.serial_port, str) or not self.serial_port.strip():
-            raise ValueError("serial_port must be a non-empty port name.")
         if self.random_seed is not None and (
             not isinstance(self.random_seed, int) or isinstance(self.random_seed, bool)
         ):
             raise TypeError("random_seed must be an integer or None.")
 
         object.__setattr__(self, "epoch_duration_sec", float(self.epoch_duration_sec))
-        object.__setattr__(self, "serial_port", self.serial_port.strip())
         if self.output_folder is not None:
             object.__setattr__(self, "output_folder", Path(self.output_folder))
 

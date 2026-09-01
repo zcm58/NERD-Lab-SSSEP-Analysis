@@ -13,7 +13,8 @@ TENS stimulation is controlled separately. Set it up before starting the task.
 3. Enter the length of each cue epoch in seconds.
 4. Enter an **even** total number of epochs. Each cue will appear the same
    number of times. The cues alternate; the first cue is randomized.
-5. Check the serial port. The default is `COM3`.
+5. Connect and power the BioSemi trigger interface. The task always uses
+   `COM3`; there is no port setting in the launcher.
 6. Give each cue a different trigger code from `1` to `255`. Do not use `100`;
    it is reserved for the Gap/Break baseline.
 7. Choose a folder outside the project for the CSV task log.
