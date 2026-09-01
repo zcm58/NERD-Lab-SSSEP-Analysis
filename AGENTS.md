@@ -25,10 +25,11 @@ BDF analysis with per-electrode FFT plots.
   site; test whether the stimulation-frequency scalp peak changes location.
 
 TENS units are controlled externally. This package owns task presentation,
-cue-onset BioSemi triggers, BDF processing, per-electrode FFT CSVs, and plots
-for one user-selected electrode. New ROI averaging, hemisphere comparisons,
-topographies, and other statistical analysis stay outside this package; the
-existing ROI mean compatibility fields remain in exported CSVs/summaries.
+cue-onset BioSemi triggers, BDF processing, consolidated participant/group
+per-electrode FFT CSVs, and participant/group plots for one user-selected
+electrode. New ROI averaging, hemisphere comparisons, topographies, and other
+statistical analysis stay outside this package; the existing ROI mean
+compatibility fields remain in exported CSVs/summaries.
 
 The participant runtime alternates its two balanced cues from a randomized
 starting cue, uses explicit unique cue codes, and presents back-to-back
@@ -89,23 +90,30 @@ pipeline. Preserve this current design unless a further change is authorized:
   exclusion or EEG zero replacement. Do not import the FPVS 1.2 Hz marker crop.
 - Average trials in float64 per electrode and calculate the reference
   microvolt amplitude FFT, `abs(FFT(mean_epoch_uv)) / N * 2`, retaining its
-  DC/Nyquist scaling. No Hann taper, detrending, power, or Welch PSD.
+  DC/Nyquist scaling. Average all epochs for the same cue in the time domain
+  before this FFT. No Hann taper, detrending, power, or Welch PSD.
+- Treat each BDF as one participant. After the participant FFTs, calculate each
+  group cue spectrum by giving every participant amplitude spectrum equal
+  weight, regardless of usable epoch count.
+- A group plot's optional baseline must use the same selected-electrode
+  participant cohort as its cue. Omit the baseline when matching data are
+  unavailable.
 - Exclude unresolved bad channels before the FFT. PNGs show one launcher-selected
-  electrode; if it is unresolved, skip that file's PNGs without suppressing its
-  FFT CSVs. Existing ROI summary/CSV mean fields remain compatibility outputs
-  and report their actual channel lists.
+  electrode; if it is unresolved, skip only the affected participant/group
+  plot and report the contributing participant count. Existing ROI summary/CSV
+  mean fields remain compatibility outputs and report their actual channels.
 - Carry the launcher's condition, cue codes, duration, and expected repetitions
   into the batch through `AnalysisProtocol`. Never analyze task recordings with
   unrelated hard-coded event settings.
-- Keep full per-electrode nonnegative-frequency amplitude CSVs and method
-  metadata. The old power/Welch schema is intentionally retired.
+- Keep full per-electrode nonnegative-frequency amplitudes and method metadata
+  in the root-run `participant_fft_amplitudes.csv` and
+  `group_fft_amplitudes.csv`. These are consolidated CSVs, not Excel workbooks.
+  The old power/Welch schema is intentionally retired.
 - Keep file-level parallelism in `batch.py`. Parallelism is across files, not
   inside a single file.
 - Keep native thread limits at `1` per worker to avoid oversubscription during
   parallel batch runs.
-- Enforce `MAX_INDIVIDUAL_PLOTS` only for plot creation. Do not let it affect
-  metrics or CSV summaries; the default allows up to five amplitude PNGs per
-  file.
+- Create one participant and one group selected-electrode plot per usable cue.
 - Keep each batch in a newly created, unique run subfolder. Preserve previous
   runs and the GUI's parent-root saved setting.
 - Retain GUI workers until completion and block window close while a batch or

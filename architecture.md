@@ -25,9 +25,10 @@ compatibility wrapper.
 | Bad-channel detection or interpolation | [preprocess/bad_channels.py](sssep_batch/preprocess/bad_channels.py) |
 | Recorded trigger detection or trial windows | [events/](sssep_batch/events/) |
 | FFT calculation | [analysis/spectra.py](sssep_batch/analysis/spectra.py) |
+| Consolidated participant tables and equal-participant group averages | [analysis/grouping.py](sssep_batch/analysis/grouping.py) |
 | Event codes and durations passed into analysis | [analysis/protocol.py](sssep_batch/analysis/protocol.py) |
 | Existing summary values | [analysis/metrics.py](sssep_batch/analysis/metrics.py) |
-| Single-electrode graphs or full FFT tables | [analysis/plotting.py](sssep_batch/analysis/plotting.py) |
+| Participant and group single-electrode graphs | [analysis/plotting.py](sssep_batch/analysis/plotting.py) |
 | Analysis summary CSVs, reports, or error files | [outputs.py](sssep_batch/outputs.py) |
 
 [models.py](sssep_batch/models.py) contains analysis data containers.
@@ -47,11 +48,14 @@ program. See [task-protocol.md](docs/task-protocol.md) for the runtime contract.
 
 Recording analysis:
 
-`entrypoint → gui task fields → analysis protocol → batch → pipeline → preprocessing / events / FFT → outputs`
+`entrypoint → gui task fields → analysis protocol → batch → pipeline → preprocessing / events / FFT → participant outputs → group outputs`
 
 The numerical order is load/montage → EXG reference/drop → filter → resample
 → interpolate → average reference → recorded events → SSSEP epochs → trial
-mean → per-electrode amplitude FFT → selected-electrode PNG and full FFT CSV.
+mean within each participant and cue → per-electrode amplitude FFT. After all
+files finish, the batch averages participant amplitude spectra with equal
+participant weight. It writes consolidated participant and group FFT CSVs plus
+one selected-electrode PNG per cue at each level.
 
 `pipeline.py` coordinates analysis stages; low-level work belongs in the
 relevant module. Legacy ROI mean fields remain for output compatibility. New
@@ -71,9 +75,18 @@ are intentionally left to external analysis.
 - Pass the visible condition, duration, epoch count, and cue codes into each
   analysis batch; do not fall back to unrelated event settings.
 - Preserve the validated FPVS analysis method unless a change is authorized.
-- Keep full per-electrode FFT CSVs; the launcher's electrode selection changes
-  PNGs only (`PLOT_CHANNEL` supplies its default). Skip a PNG without failing
-  the recording when its selected electrode is unavailable.
+- Treat one BDF as one participant. Average all same-cue epochs in the time
+  domain before that participant's FFT; never average epoch FFT amplitudes.
+- At the group level, average participant amplitude spectra equally rather than
+  weighting participants by their usable epoch counts.
+- Overlay a group baseline only from the same selected-electrode participants
+  as that cue; omit it when a matching baseline is unavailable.
+- Keep full per-electrode data in `participant_fft_amplitudes.csv` and
+  `group_fft_amplitudes.csv`. The launcher's electrode selection changes PNGs
+  only (`PLOT_CHANNEL` supplies its default).
+- Create one participant PNG and one group PNG per usable cue. If the selected
+  electrode is unavailable, skip only the affected plot and report the actual
+  participant count in group outputs.
 - Keep data outside the repo and each analysis batch in a fresh run folder.
 - Parallelize across recordings; cap native threads at one per worker.
 - Keep warnings and failures visible; do not add silent fallbacks.

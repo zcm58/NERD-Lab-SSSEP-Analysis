@@ -31,7 +31,8 @@ recording; an aborted run still needs review before analysis.
    trigger codes used for these recordings.
 2. Open **Analyze Recordings**.
 3. Choose the folder directly containing the `.bdf` files. Subfolders are not
-   searched.
+   searched. Include one `.bdf` file per participant in the batch. The filename
+   without `.bdf` becomes the participant ID in the results.
 4. Choose a results folder outside the project.
 5. Choose the electrode for the PNG plots.
 6. Enter the TENS frequency if you want it marked and summarized. It must be
@@ -41,14 +42,30 @@ recording; an aborted run still needs review before analysis.
 8. Click **View Output**.
 
 Each analysis run gets a new `run_...` folder. Start with
-`batch_processing_summary.csv`. Each recording also has an event summary,
-processing report, FFT CSV files, and PNG plots. Read warnings even when the
-recording says `success`.
+`batch_processing_summary.csv`. The run also contains:
 
-FFT CSVs contain all usable electrodes. Each PNG shows the electrode selected
-in the launcher. Changing that selection does not change the FFT or CSV data.
-If that electrode is unusable in one recording, that recording still gets FFT
-CSVs and summaries, but its PNGs are skipped.
+- `participant_fft_amplitudes.csv`: every participant, cue, frequency, and
+  usable electrode in one table.
+- `group_fft_amplitudes.csv`: group mean amplitudes and the number of
+  participants contributing to each electrode.
+- One participant PNG per usable cue in that participant's `plots` folder.
+- One group PNG per usable cue in `group_plots`.
+- Each participant folder also keeps its event summary and processing report.
+
+The program writes CSV files, not Excel workbooks. You can still open the CSVs
+in Excel. Read warnings even when a recording says `success`.
+
+For each participant and cue, all usable cue epochs are averaged together in
+the time domain before the FFT. The group result then gives each participant's
+amplitude spectrum equal weight, regardless of how many usable epochs that
+participant had. Each PNG shows the electrode selected in the launcher.
+Changing that selection does not change the full-electrode CSV data.
+
+If the selected electrode is unusable for one participant, that participant's
+PNG is skipped and that participant does not contribute to the group curve for
+that electrode. The group CSV reports how many participants contributed. A
+Gap/Break line uses the same participants as its cue line and is omitted when
+a matching baseline is unavailable.
 
 Legacy ROI mean columns remain in the CSVs for compatibility. New ROI analyses,
 hemisphere comparisons, scalp maps, and statistics are performed outside this

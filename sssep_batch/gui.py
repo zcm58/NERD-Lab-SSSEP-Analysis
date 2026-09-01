@@ -419,8 +419,8 @@ def launch_gui() -> int:
             analysis_layout = QVBoxLayout()
             analysis_layout.addWidget(
                 QLabel(
-                    "Condition, epoch duration, epoch count, and trigger codes come "
-                    "from the Participant Task tab."
+                    "Use one BDF per participant for the condition selected on the "
+                    "Participant Task tab. Same-cue epochs are averaged before FFT."
                 )
             )
             analysis_layout.addLayout(form)
@@ -704,16 +704,64 @@ def launch_gui() -> int:
             self.output_folder = str(result["output_folder"])
             failed = int(result.get("failed", 0) or 0)
             total = int(result.get("total_files", 0) or 0)
-            summary_csv = result.get("summary_csv", "")
+            participant_plot_failures = int(
+                result.get("participant_plot_failures", 0) or 0
+            )
+            group_status = str(result.get("group_output_status", ""))
+            group_plot_count = int(result.get("group_plot_count", 0) or 0)
+            group_error_file = str(result.get("group_output_error_file", ""))
+            group_plot_error_file = str(result.get("group_plot_error_file", ""))
+            group_plot_errors = list(result.get("group_plot_errors", []) or [])
+            skipped_group_cues = list(
+                result.get("group_plot_skipped_trigger_codes", []) or []
+            )
+            group_plot_warnings = list(result.get("group_plot_warnings", []) or [])
+            issues: list[str] = []
             if failed:
+                issues.append(
+                    f"{failed} of {total} participant file(s) failed; check the "
+                    "batch summary"
+                )
+            if participant_plot_failures:
+                issues.append(
+                    f"{participant_plot_failures} participant cue plot(s) failed; "
+                    "FFT data were retained"
+                )
+            if group_status == "failed":
+                issues.append(
+                    "some group results could not be created"
+                    + (f"; see {group_error_file}" if group_error_file else "")
+                )
+            elif group_status == "skipped_no_usable_spectra":
+                issues.append("no usable FFT spectra were available for group results")
+            elif group_plot_errors:
+                issues.append(
+                    f"{len(group_plot_errors)} group cue plot(s) failed"
+                    + (
+                        f"; see {group_plot_error_file}"
+                        if group_plot_error_file
+                        else ""
+                    )
+                )
+            elif skipped_group_cues:
+                issues.append("some cue plots were skipped because data were unavailable")
+            elif group_plot_warnings:
+                issues.append(
+                    "some group plots omit the baseline because matched data "
+                    "were unavailable"
+                )
+            elif group_status == "success_with_warnings":
+                issues.append("group results include warnings; check the batch log")
+
+            if issues:
                 self.status_label.setText(
-                    f"Processing finished with {failed} failed file(s) out of {total}. "
-                    f"Open the batch summary and check the error_file column: {summary_csv}"
+                    "Processing finished with issues: " + "; ".join(issues) + ". "
+                    "Click View Output for details."
                 )
             else:
                 self.status_label.setText(
-                    f"Processing complete: {total} file(s) processed. "
-                    f"Batch summary: {summary_csv}"
+                    f"Processing complete: {total} participant file(s), "
+                    f"{group_plot_count} group cue plot(s). Click View Output."
                 )
             if self.save_checkbox.isChecked():
                 try:

@@ -2,8 +2,9 @@
 
 Run the SSSEP attention task and analyze its BioSemi `.bdf` recordings from one
 simple program. The task shows fullscreen body-part cues and sends cue markers
-to BioSemi. The analysis creates full per-electrode FFT tables and a graph for
-one electrode selected by the user.
+to BioSemi. For each participant, the analysis averages all usable epochs with
+the same cue before the FFT. It creates one graph per cue for the selected
+electrode, then creates the same cue-level graphs for the group.
 
 TENS stimulation is controlled outside this program.
 
@@ -23,6 +24,10 @@ launcher has two tabs:
 The analysis uses the condition, epoch duration, epoch count, and trigger codes
 currently shown in the participant-task tab. Set those fields to match the
 recordings before processing them.
+
+Use one `.bdf` file per participant in an analysis batch. Each run saves one
+consolidated participant FFT CSV and one group FFT CSV. These are CSV files that
+can be opened in Excel; the program does not create Excel workbooks.
 
 ## Where things live
 

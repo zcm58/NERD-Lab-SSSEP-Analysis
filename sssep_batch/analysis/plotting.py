@@ -1,37 +1,12 @@
-"""Write full per-electrode FFT amplitude tables and single-electrode plots.
-
-Frequency tables retain every supplied FFT bin and the existing ROI mean
-columns. Plots show one configured electrode in FMIN/FMAX; plotting limits do
-not change the FFT, tables, or summary calculations.
-"""
+"""Write single-electrode participant and group FFT amplitude plots."""
 
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 
 from sssep_batch.config import FIXED_HZ_LINES, FMAX, FMIN
 from sssep_batch.models import Spectrum
-
-
-def _mean_selected_amplitude(
-    spectrum: Spectrum,
-    channel_names: list[str],
-    analysis_channels: list[str],
-) -> np.ndarray:
-    """Select electrodes by name and average their already-computed amplitudes."""
-    if spectrum.amplitude_uv.shape != (len(channel_names), len(spectrum.freqs)):
-        raise ValueError("Channel names and frequency bins must match the amplitude array.")
-    if len(set(channel_names)) != len(channel_names):
-        raise ValueError("Channel names must be unique in amplitude outputs.")
-    if not analysis_channels:
-        raise ValueError("Select at least one analysis channel for amplitude outputs.")
-    missing = [channel for channel in analysis_channels if channel not in channel_names]
-    if missing:
-        raise ValueError(f"Analysis channels are missing from the spectrum: {missing}")
-    indices = [channel_names.index(channel) for channel in analysis_channels]
-    return np.mean(spectrum.amplitude_uv[indices], axis=0)
 
 
 def _channel_amplitude(
@@ -61,31 +36,6 @@ def _check_baseline_alignment(active: Spectrum, baseline: Spectrum) -> None:
         raise ValueError("Active and baseline spectra must have matching channels and frequency bins.")
 
 
-def spectrum_to_dataframe(
-    active: Spectrum,
-    baseline: Spectrum | None,
-    channel_names: list[str],
-    analysis_channels: list[str],
-) -> pd.DataFrame:
-    """Return full-frequency microvolt amplitudes for each electrode and ROI mean."""
-    columns = {
-        "frequency_hz": active.freqs,
-        "active_mean_amplitude_uv": _mean_selected_amplitude(
-            active, channel_names, analysis_channels
-        ),
-    }
-    if baseline is not None:
-        _check_baseline_alignment(active, baseline)
-        columns["baseline_mean_amplitude_uv"] = _mean_selected_amplitude(
-            baseline, channel_names, analysis_channels
-        )
-    for index, channel in enumerate(channel_names):
-        columns[f"active_{channel}_amplitude_uv"] = active.amplitude_uv[index]
-        if baseline is not None:
-            columns[f"baseline_{channel}_amplitude_uv"] = baseline.amplitude_uv[index]
-    return pd.DataFrame(columns)
-
-
 def plot_spectrum(
     active: Spectrum,
     baseline: Spectrum | None,
@@ -94,6 +44,8 @@ def plot_spectrum(
     target_hz: float | None,
     channel_names: list[str],
     plot_channel: str,
+    active_label: str = "Cue average",
+    baseline_label: str = "Gap/Break baseline",
 ) -> None:
     """Save one electrode's FFT amplitudes in microvolts as a PNG."""
     active_amplitude = _channel_amplitude(active, channel_names, plot_channel)
@@ -110,11 +62,11 @@ def plot_spectrum(
 
     plt.figure(figsize=(14, 6))
     try:
-        plt.plot(active.freqs, active_amplitude, linewidth=1.8, label="Active")
+        plt.plot(active.freqs, active_amplitude, linewidth=1.8, label=active_label)
         if baseline_amplitude is not None:
             plt.plot(
                 baseline.freqs, baseline_amplitude, linestyle="--", linewidth=1.4,
-                label="Gap/Break baseline",
+                label=baseline_label,
             )
         y_text = y_max * 0.98 if y_max > 0 else 1.0
         for hz in FIXED_HZ_LINES:

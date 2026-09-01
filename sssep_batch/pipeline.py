@@ -8,19 +8,19 @@ import traceback
 from pathlib import Path
 
 from sssep_batch.analysis.metrics import add_baseline_comparison, extract_target_metrics
-from sssep_batch.analysis.plotting import plot_spectrum, spectrum_to_dataframe
+from sssep_batch.analysis.plotting import plot_spectrum
 from sssep_batch.analysis.protocol import default_analysis_protocol
 from sssep_batch.analysis.spectra import compute_sssep_fft_from_averaged_epochs
 from sssep_batch.config import (
     DOWNSAMPLE_RATE, FPVS_REFERENCE_COMMIT, HIGHCUT, INCLUDE_POST_STIMULUS, LOWCUT,
-    MAX_INDIVIDUAL_PLOTS, POST_EVENT_SEC_IF_INCLUDED, PRE_EVENT_SEC,
-    PLOT_CHANNEL, PROCESSING_METHOD, SAVE_CSV_SUMMARIES, SAVE_PLOTS,
+    POST_EVENT_SEC_IF_INCLUDED, PRE_EVENT_SEC, PLOT_CHANNEL, PROCESSING_METHOD,
+    SAVE_PLOTS,
 )
 from sssep_batch.events.epochs import extract_epochs_for_code
 from sssep_batch.events.status import find_status_events, parse_trigger_label
 from sssep_batch.loading import load_bdf
 from sssep_batch.logging_utils import ensure_folder, make_file_log_func
-from sssep_batch.models import AnalysisProtocol
+from sssep_batch.models import AnalysisProtocol, ParticipantSpectrum
 from sssep_batch.outputs import write_error_report, write_processing_report, write_summary_csv
 from sssep_batch.preprocess.bad_channels import detect_and_interpolate_bad_channels_by_kurtosis
 from sssep_batch.preprocess.channels import (
@@ -148,7 +148,24 @@ def process_one_bdf(
 
         stage = "active_sssep_analysis"
         summary_rows = []
+        participant_spectra: list[ParticipantSpectrum] = []
+        if baseline_fft is not None:
+            participant_spectra.append(
+                ParticipantSpectrum(
+                    participant_id=file_stem,
+                    file_name=bdf_path.name,
+                    event_type="baseline",
+                    trigger_code=protocol.baseline_event_code,
+                    trigger_label=protocol.baseline_label,
+                    target_hz=None,
+                    usable_epochs=len(baseline_epochs.epochs),
+                    channel_names=tuple(fft_channels),
+                    analysis_channels=tuple(analysis_channels),
+                    spectrum=baseline_fft,
+                )
+            )
         plotted = 0
+        plot_failures = 0
         for trigger in protocol.active_triggers:
             code = trigger.code
             label = trigger.label
@@ -207,32 +224,48 @@ def process_one_bdf(
             if spectrum is None:
                 continue
 
-            code_dir = plots_dir / f"trigger_{code:03d}_{label.replace(' ', '_')}"
-            if SAVE_CSV_SUMMARIES or (
-                SAVE_PLOTS
-                and plot_channel_available
-                and plotted < MAX_INDIVIDUAL_PLOTS
-            ):
-                ensure_folder(code_dir)
-            output_stem = f"{file_stem}_trigger_{code:03d}_sssep_fft_amplitude"
-            if SAVE_CSV_SUMMARIES:
-                spectrum_to_dataframe(
-                    spectrum, baseline_fft, fft_channels, analysis_channels,
-                ).to_csv(code_dir / f"{output_stem}.csv", index=False)
-            if (
-                SAVE_PLOTS
-                and plot_channel_available
-                and plotted < MAX_INDIVIDUAL_PLOTS
-            ):
-                plot_spectrum(
-                    active=spectrum, baseline=baseline_fft,
-                    title=f"{file_stem} - Trigger {code} {label} - FFT amplitude",
-                    outpath=code_dir / f"{output_stem}.png", target_hz=target_hz,
-                    channel_names=fft_channels, plot_channel=plot_channel,
+            participant_spectra.append(
+                ParticipantSpectrum(
+                    participant_id=file_stem,
+                    file_name=bdf_path.name,
+                    event_type="cue",
+                    trigger_code=code,
+                    trigger_label=label,
+                    target_hz=target_hz,
+                    usable_epochs=n_epochs,
+                    channel_names=tuple(fft_channels),
+                    analysis_channels=tuple(analysis_channels),
+                    spectrum=spectrum,
                 )
-                plotted += 1
+            )
+            if SAVE_PLOTS and plot_channel_available:
+                try:
+                    ensure_folder(plots_dir)
+                    output_stem = f"{file_stem}_cue_{code:03d}_fft_amplitude"
+                    plot_spectrum(
+                        active=spectrum, baseline=baseline_fft,
+                        title=f"{file_stem} - Cue {code} {label} - FFT amplitude",
+                        outpath=plots_dir / f"{output_stem}.png", target_hz=target_hz,
+                        channel_names=fft_channels, plot_channel=plot_channel,
+                        active_label=f"Cue average ({n_epochs} epochs)",
+                        baseline_label=(
+                            f"Gap/Break average ({len(baseline_epochs.epochs)} epochs)"
+                        ),
+                    )
+                except Exception as exc:
+                    plot_failures += 1
+                    message = str(exc) or type(exc).__name__
+                    log_func(
+                        f"WARNING: Participant plot skipped for trigger {code} "
+                        f"({label}) after a plotting error: {message}"
+                    )
+                else:
+                    plotted += 1
 
-        log_func(f"Created {plotted} amplitude plots; MAX_INDIVIDUAL_PLOTS={MAX_INDIVIDUAL_PLOTS} limits plots only.")
+        log_func(
+            f"Created {plotted} participant amplitude plot(s), one per usable cue; "
+            f"{plot_failures} plot(s) failed."
+        )
         stage = "saving_outputs"
         summary_path = write_summary_csv(output_folder, file_stem, summary_rows)
         report_path = output_folder / f"{file_stem}_processing_report.txt"
@@ -259,6 +292,9 @@ def process_one_bdf(
             "original_sfreq_hz": original_sfreq,
             "final_sfreq_hz": float(raw.info["sfreq"]),
             "bad_channels_by_kurtosis": n_bad,
+            "participant_plot_count": plotted,
+            "participant_plot_failures": plot_failures,
+            "_participant_spectra": tuple(participant_spectra),
         }
     except Exception as exc:
         error_path = output_folder / "ERROR.txt"

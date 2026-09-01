@@ -111,7 +111,7 @@ def test_actual_bdf_reader_preserves_microvolts_channels_and_digital_events(synt
         np.testing.assert_array_equal(events, known["events"])
 
 
-def _check_processing_outputs(result: dict[str, object], known: dict[str, object]) -> pd.DataFrame:
+def _check_processing_summary(result: dict[str, object], known: dict[str, object]) -> pd.DataFrame:
     assert result["status"] == "success", result
     assert result["original_sfreq_hz"] == 512
     assert result["final_sfreq_hz"] == 256
@@ -140,31 +140,50 @@ def _check_processing_outputs(result: dict[str, object], known: dict[str, object
     assert not bool(detected.loc[detected["trigger_code"] == 9, "intended_for_analysis_or_baseline"].iloc[0])
     assert detected["sample"].iloc[0] == 32  # The complete first trial is retained near the FIR boundary.
 
-    amplitude_files = sorted(output.rglob("*_sssep_fft_amplitude.csv"))
-    assert len(amplitude_files) == len(known["active_counts"])
-    frame = pd.read_csv(next(output.rglob("*_trigger_011_sssep_fft_amplitude.csv")))
-    assert len(frame) == 961  # Exactly 1920 samples per 7.5-second trial, not an inclusive extra sample.
-    np.testing.assert_allclose(frame["frequency_hz"], np.fft.rfftfreq(1920, 1 / 256))
-    active_columns = [f"active_{channel}_amplitude_uv" for channel in known["scalp_channels"]]
-    assert all(column in frame for column in active_columns)
-    assert len([column for column in frame if column.startswith("active_")]) == 65
-    roi_columns = [f"active_{channel}_amplitude_uv" for channel in config.ANALYSIS_CHANNELS]
-    np.testing.assert_allclose(frame["active_mean_amplitude_uv"], frame[roi_columns].mean(axis=1))
-    nearest = int(np.argmin(abs(frame["frequency_hz"] - 10)))
-    assert frame.loc[nearest, f"active_{known['probe_channel']}_amplitude_uv"] == pytest.approx(
-        known["target_amplitude_uv"], rel=0.05,
-    )
-    assert summary.loc[11, "sssep_fft_nearest_amplitude_uv"] == pytest.approx(
-        frame.loc[nearest, "active_mean_amplitude_uv"],
-    )
+    assert not list(output.rglob("*_sssep_fft_amplitude.csv"))
     assert not list(output.rglob("*welch*"))
     assert not (output / "ERROR.txt").exists()
     report = next(output.glob("*_processing_report.txt")).read_text(encoding="utf-8")
     assert "FPVS" in report and "amplitude" in report.lower()
-    return frame
+    return summary
 
 
-def test_actual_bdf_processing_writes_full_electrode_amplitudes(synthetic_bdf, tmp_path, monkeypatch):
+def _check_participant_spectra(
+    result: dict[str, object], known: dict[str, object], summary: pd.DataFrame
+) -> None:
+    records = result["_participant_spectra"]
+    assert len(records) == 1 + len(known["active_counts"])
+    baseline_records = [record for record in records if record.event_type == "baseline"]
+    cue_records = [record for record in records if record.event_type == "cue"]
+    assert len(baseline_records) == 1
+    assert [record.trigger_code for record in cue_records] == config.ACTIVE_EVENT_CODES
+    assert baseline_records[0].usable_epochs == known["baseline_count"]
+    assert [record.usable_epochs for record in cue_records] == [
+        known["active_counts"][code] for code in config.ACTIVE_EVENT_CODES
+    ]
+    assert all(record.channel_names == tuple(known["scalp_channels"]) for record in records)
+
+    cue_11 = next(record for record in cue_records if record.trigger_code == 11)
+    expected_frequencies = np.fft.rfftfreq(1920, 1 / 256)
+    np.testing.assert_allclose(cue_11.spectrum.freqs, expected_frequencies)
+    assert cue_11.spectrum.amplitude_uv.shape == (64, 961)
+    probe_index = cue_11.channel_names.index(known["probe_channel"])
+    nearest = int(np.argmin(abs(cue_11.spectrum.freqs - 10)))
+    assert cue_11.spectrum.amplitude_uv[probe_index, nearest] == pytest.approx(
+        known["target_amplitude_uv"], rel=0.05,
+    )
+    analysis_indices = [
+        cue_11.channel_names.index(channel) for channel in cue_11.analysis_channels
+    ]
+    analysis_mean = cue_11.spectrum.amplitude_uv[analysis_indices].mean(axis=0)
+    assert summary.loc[11, "sssep_fft_nearest_amplitude_uv"] == pytest.approx(
+        analysis_mean[nearest]
+    )
+
+
+def test_actual_bdf_processing_preserves_full_electrode_spectra(
+    synthetic_bdf, tmp_path, monkeypatch
+):
     path, known = synthetic_bdf
     monkeypatch.setattr(pipeline, "SAVE_PLOTS", False)
     result = pipeline.process_one_bdf(
@@ -172,11 +191,14 @@ def test_actual_bdf_processing_writes_full_electrode_amplitudes(synthetic_bdf, t
         tmp_path / "direct_output",
         analysis_protocol=TEST_PROTOCOL,
     )
-    _check_processing_outputs(result, known)
+    summary = _check_processing_summary(result, known)
+    _check_participant_spectra(result, known, summary)
     assert not list(Path(result["output_folder"]).rglob("*.png"))
 
 
-def test_real_batch_workers_write_pngs_and_keep_reruns_separate(synthetic_bdf, tmp_path, monkeypatch):
+def test_real_batch_workers_write_consolidated_group_outputs_and_keep_reruns_separate(
+    synthetic_bdf, tmp_path, monkeypatch
+):
     path, known = synthetic_bdf
     shutil.copyfile(path, path.with_name("Synthetic_B.bdf"))
     monkeypatch.setenv("MPLBACKEND", "Agg")
@@ -190,18 +212,97 @@ def test_real_batch_workers_write_pngs_and_keep_reruns_separate(synthetic_bdf, t
 
     assert first["status"] == "success", first
     assert first["succeeded"] == 2 and first["failed"] == 0
+    assert first["participant_plot_count"] == 2 * len(known["active_counts"])
+    assert first["participant_plot_failures"] == 0
     first_run = Path(first["output_folder"])
     assert first_run.parent == output_root
-    spectra = [_check_processing_outputs(result, known) for result in first["results"]]
-    pd.testing.assert_frame_equal(spectra[0], spectra[1])
+    summaries = [_check_processing_summary(result, known) for result in first["results"]]
+    pd.testing.assert_frame_equal(
+        summaries[0].drop(columns="file_name"),
+        summaries[1].drop(columns="file_name"),
+    )
     for result in first["results"]:
-        plots = list(Path(result["output_folder"]).rglob("*_sssep_fft_amplitude.png"))
-        assert len(plots) == min(config.MAX_INDIVIDUAL_PLOTS, len(known["active_counts"]))
+        assert "_participant_spectra" not in result
+        plots = sorted(Path(result["output_folder"]).glob("plots/*_cue_*_fft_amplitude.png"))
+        assert len(plots) == len(known["active_counts"])
         for plot in plots:
             with Image.open(plot) as image:
                 assert image.format == "PNG" and image.width >= 1000 and image.height >= 500
                 image.verify()
+
+    participant_csv = Path(first["participant_fft_csv"])
+    group_csv = Path(first["group_fft_csv"])
+    group_plots_folder = Path(first["group_plots_folder"])
+    assert "_participant_spectra" not in pd.read_csv(first["summary_csv"]).columns
+    assert participant_csv == first_run / "participant_fft_amplitudes.csv"
+    assert group_csv == first_run / "group_fft_amplitudes.csv"
+    assert group_plots_folder == first_run / "group_plots"
+    assert first["group_output_status"] == "success"
+    assert first["group_plot_count"] == len(known["active_counts"])
+    assert first["group_plot_skipped_trigger_codes"] == []
+    assert sorted(first["group_plot_files"]) == sorted(
+        str(group_plots_folder / f"group_cue_{code:03d}_fft_amplitude.png")
+        for code in config.ACTIVE_EVENT_CODES
+    )
+
+    participant_frame = pd.read_csv(participant_csv, float_precision="round_trip")
+    assert len(participant_frame) == 2 * (1 + len(known["active_counts"])) * 961
+    assert participant_frame.groupby(
+        ["participant_id", "event_type", "trigger_code"]
+    ).ngroups == 2 * (1 + len(known["active_counts"]))
+    assert set(participant_frame.participant_id) == {"Synthetic_A", "Synthetic_B"}
+    assert set(participant_frame[participant_frame.event_type == "cue"].trigger_code) == set(
+        config.ACTIVE_EVENT_CODES
+    )
+    assert all(
+        f"{channel}_amplitude_uv" in participant_frame
+        for channel in known["scalp_channels"]
+    )
+    participant_11 = participant_frame[
+        (participant_frame.participant_id == "Synthetic_A")
+        & (participant_frame.event_type == "cue")
+        & (participant_frame.trigger_code == 11)
+    ].reset_index(drop=True)
+    assert len(participant_11) == 961
+    np.testing.assert_allclose(
+        participant_11.frequency_hz,
+        np.fft.rfftfreq(1920, 1 / 256),
+    )
+    roi_columns = [f"{channel}_amplitude_uv" for channel in config.ANALYSIS_CHANNELS]
+    np.testing.assert_allclose(
+        participant_11.analysis_mean_amplitude_uv,
+        participant_11[roi_columns].mean(axis=1),
+    )
+    nearest = int(np.argmin(abs(participant_11.frequency_hz - 10)))
+    assert participant_11.loc[
+        nearest, f"{known['probe_channel']}_amplitude_uv"
+    ] == pytest.approx(known["target_amplitude_uv"], rel=0.05)
+
+    group_frame = pd.read_csv(group_csv, float_precision="round_trip")
+    assert len(group_frame) == (1 + len(known["active_counts"])) * 961
+    assert group_frame.groupby(["event_type", "trigger_code"]).ngroups == (
+        1 + len(known["active_counts"])
+    )
+    group_11 = group_frame[
+        (group_frame.event_type == "cue") & (group_frame.trigger_code == 11)
+    ].reset_index(drop=True)
+    assert group_11.participant_count.unique().tolist() == [2]
+    assert group_11[f"{known['probe_channel']}_n_participants"].unique().tolist() == [2]
+    np.testing.assert_allclose(
+        group_11[f"{known['probe_channel']}_mean_amplitude_uv"],
+        participant_11[f"{known['probe_channel']}_amplitude_uv"],
+    )
+
+    group_plots = sorted(group_plots_folder.glob("group_cue_*_fft_amplitude.png"))
+    assert len(group_plots) == len(known["active_counts"])
+    for plot in group_plots:
+        with Image.open(plot) as image:
+            assert image.format == "PNG" and image.width >= 1000 and image.height >= 500
+            image.verify()
+
     first_summary = Path(first["summary_csv"]).read_bytes()
+    first_participant_csv = participant_csv.read_bytes()
+    first_group_csv = group_csv.read_bytes()
     second_input = tmp_path / "second_input"
     second_input.mkdir()
     shutil.copyfile(path, second_input / path.name)
@@ -216,5 +317,9 @@ def test_real_batch_workers_write_pngs_and_keep_reruns_separate(synthetic_bdf, t
     assert Path(second["output_folder"]) != first_run
     assert Path(second["output_folder"]).parent == output_root
     assert Path(first["summary_csv"]).read_bytes() == first_summary
+    assert participant_csv.read_bytes() == first_participant_csv
+    assert group_csv.read_bytes() == first_group_csv
     assert len(list(output_root.glob("run_*"))) == 2
-    _check_processing_outputs(second["results"][0], known)
+    _check_processing_summary(second["results"][0], known)
+    assert Path(second["participant_fft_csv"]).exists()
+    assert Path(second["group_fft_csv"]).exists()

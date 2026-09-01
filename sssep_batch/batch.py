@@ -3,7 +3,8 @@
 This module is the bridge between the launcher and the per-file processing
 pipeline. It performs beginner-friendly preflight checks, finds `.bdf` files,
 limits native math-library threads, starts one worker process per file up to
-`BATCH_WORKERS`, collects results, and writes `batch_processing_summary.csv`.
+`BATCH_WORKERS`, collects participant spectra, and writes the batch summary,
+consolidated FFT tables, and equal-participant group plots.
 
 The important design rule is that parallelism happens across files only. A
 single file's filtering, epoch extraction, metrics, plots, and reports all stay
@@ -18,10 +19,18 @@ from numbers import Real
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile, mkdtemp
+import traceback
 from typing import Callable
 
+import numpy as np
 import pandas as pd
 
+from sssep_batch.analysis.grouping import (
+    GroupSpectrum,
+    average_group_spectra,
+    group_spectra_to_dataframe,
+    participant_spectra_to_dataframe,
+)
 from sssep_batch.analysis.protocol import default_analysis_protocol
 from sssep_batch.config import (
     ACTIVE_EVENT_CODES,
@@ -35,14 +44,17 @@ from sssep_batch.config import (
     HIGHCUT,
     INPUT_FOLDER,
     LOWCUT,
-    MAX_INDIVIDUAL_PLOTS,
     OUTPUT_ROOT,
     PLOT_CHANNEL,
+    PROCESSING_METHOD,
+    SAVE_CSV_SUMMARIES,
+    SAVE_PLOTS,
     TRIGGER_HZ_MAP,
     TRIGGER_LABELS,
 )
 from sssep_batch.logging_utils import ensure_folder, setup_batch_logger
-from sssep_batch.models import AnalysisProtocol
+from sssep_batch.models import AnalysisProtocol, ParticipantSpectrum, Spectrum
+from sssep_batch.outputs import write_error_report
 
 
 THREAD_LIMIT_ENV_VARS = (
@@ -173,8 +185,6 @@ def validate_config_settings() -> None:
         or EVENT_DURATION_SEC <= 0
     ):
         problems.append("EVENT_DURATION_SEC must be a finite number above zero.")
-    if not isinstance(MAX_INDIVIDUAL_PLOTS, int) or MAX_INDIVIDUAL_PLOTS < 0:
-        problems.append("MAX_INDIVIDUAL_PLOTS cannot be negative.")
     if not isinstance(PLOT_CHANNEL, str) or not PLOT_CHANNEL.strip():
         problems.append("PLOT_CHANNEL must be a non-empty electrode label, such as 'Cz'.")
     if not ACTIVE_EVENT_CODES:
@@ -343,16 +353,54 @@ def make_worker_crash_result(
     output_root: str | Path,
     exc: Exception,
 ) -> dict[str, object]:
-    """Build a normal-looking failure row for an unexpected worker crash."""
+    """Write a durable per-file report for an unexpected worker crash."""
+
     bdf_path = Path(bdf_file)
+    output_folder = Path(output_root) / bdf_path.stem
+    ensure_folder(output_folder)
+    error_path = output_folder / "ERROR.txt"
+    crash_error = RuntimeError(f"Worker crashed before returning a result: {exc}")
+    write_error_report(
+        error_path=error_path,
+        bdf_path=bdf_path,
+        stage="worker_crash",
+        exc=crash_error,
+        error_text="".join(
+            traceback.format_exception(type(exc), exc, exc.__traceback__)
+        ),
+        report_lines=[
+            "The batch parent detected an unexpected worker-process failure.",
+            "No normal per-file result was returned by the worker.",
+        ],
+    )
     return {
         "file_name": bdf_path.name,
         "status": "failed",
         "failed_stage": "worker_crash",
-        "output_folder": str(Path(output_root) / bdf_path.stem),
-        "error": f"Worker crashed before returning a result: {exc}",
-        "error_file": "",
+        "output_folder": str(output_folder),
+        "error": str(crash_error),
+        "error_file": str(error_path),
+        "processing_method": PROCESSING_METHOD,
     }
+
+
+def _selected_group_channel(
+    group: GroupSpectrum,
+    channel: str,
+) -> tuple[Spectrum, int] | None:
+    """Return a one-electrode group spectrum and its participant count."""
+
+    if channel not in group.channel_names:
+        return None
+    index = group.channel_names.index(channel)
+    return (
+        Spectrum(
+            freqs=group.spectrum.freqs,
+            amplitude_uv=group.spectrum.amplitude_uv[[index]],
+            method=group.spectrum.method,
+        ),
+        group.channel_participant_counts[index],
+    )
 
 
 def run_batch(
@@ -412,6 +460,7 @@ def run_batch(
     )
 
     indexed_results: list[dict[str, object] | None] = [None] * total_files
+    indexed_spectra: list[tuple[ParticipantSpectrum, ...] | None] = [None] * total_files
     process_one_bdf = get_process_one_bdf()
     with ProcessPoolExecutor(max_workers=selected_workers) as executor:
         future_to_file = {}
@@ -442,6 +491,12 @@ def run_batch(
                 result = future.result()
             except Exception as exc:
                 result = make_worker_crash_result(str(bdf_file), output_path, exc)
+            payload = result.pop("_participant_spectra", ())
+            indexed_spectra[index] = (
+                tuple(payload)
+                if isinstance(payload, (tuple, list))
+                else (payload,)
+            )
             indexed_results[index] = result
             completed_count += 1
             status = result.get("status", "unknown")
@@ -468,10 +523,273 @@ def run_batch(
             )
 
     all_results = [result for result in indexed_results if result is not None]
+    participant_plot_count = sum(
+        int(result.get("participant_plot_count", 0) or 0) for result in all_results
+    )
+    participant_plot_failures = sum(
+        int(result.get("participant_plot_failures", 0) or 0)
+        for result in all_results
+    )
+    participant_spectra = tuple(
+        spectrum
+        for file_spectra in indexed_spectra
+        if file_spectra is not None
+        for spectrum in file_spectra
+    )
 
     batch_summary = pd.DataFrame(all_results)
     batch_summary_path = output_path / "batch_processing_summary.csv"
     batch_summary.to_csv(batch_summary_path, index=False)
+
+    group_output_status = "disabled"
+    group_output_error = ""
+    group_output_error_file = ""
+    participant_fft_csv = ""
+    group_fft_csv = ""
+    group_plots_folder = ""
+    group_plot_files: list[str] = []
+    group_plot_skipped_trigger_codes: list[int] = []
+    group_plot_warnings: list[str] = []
+    group_plot_errors: list[str] = []
+    group_plot_error_file = ""
+    participant_fft_csv_status = "disabled" if not SAVE_CSV_SUMMARIES else "pending"
+    group_fft_csv_status = "disabled" if not SAVE_CSV_SUMMARIES else "pending"
+    group_plot_status = "disabled" if not SAVE_PLOTS else "pending"
+
+    group_outputs_requested = SAVE_CSV_SUMMARIES or SAVE_PLOTS
+    if group_outputs_requested and not participant_spectra and success_count == 0:
+        group_output_status = "skipped_no_usable_spectra"
+        if SAVE_CSV_SUMMARIES:
+            participant_fft_csv_status = "skipped_no_usable_spectra"
+            group_fft_csv_status = "skipped_no_usable_spectra"
+        if SAVE_PLOTS:
+            group_plot_status = "skipped_no_usable_spectra"
+        logger.warning("Group outputs skipped because no recording produced usable FFT spectra.")
+    elif group_outputs_requested:
+        try:
+            if not participant_spectra:
+                raise RuntimeError(
+                    "Successful recording results did not include participant FFT spectra."
+                )
+
+            _notify_progress(
+                progress_callback,
+                phase="group_outputs",
+                message="Creating consolidated FFT tables and group plots...",
+                completed=total_files,
+                total=total_files,
+            )
+            if SAVE_CSV_SUMMARIES:
+                participant_fft_path = output_path / "participant_fft_amplitudes.csv"
+                participant_frames = [
+                    participant_spectra_to_dataframe((record,))
+                    for record in participant_spectra
+                ]
+                pd.concat(participant_frames, ignore_index=True, sort=False).to_csv(
+                    participant_fft_path, index=False
+                )
+                participant_fft_csv = str(participant_fft_path)
+                participant_fft_csv_status = "success"
+                logger.info(f"Participant FFT table saved to: {participant_fft_path}")
+
+            groups = average_group_spectra(participant_spectra)
+            if SAVE_CSV_SUMMARIES:
+                group_fft_path = output_path / "group_fft_amplitudes.csv"
+                group_spectra_to_dataframe(groups).to_csv(group_fft_path, index=False)
+                group_fft_csv = str(group_fft_path)
+                group_fft_csv_status = "success"
+                logger.info(f"Group FFT table saved to: {group_fft_path}")
+
+            if SAVE_PLOTS:
+                from sssep_batch.analysis.plotting import plot_spectrum
+
+                groups_by_event = {
+                    (group.event_type, group.trigger_code): group for group in groups
+                }
+                baseline_records_by_participant = {
+                    record.participant_id: record
+                    for record in participant_spectra
+                    if record.event_type == "baseline"
+                    and record.trigger_code == selected_protocol.baseline_event_code
+                }
+
+                group_plots_path = output_path / "group_plots"
+                ensure_folder(group_plots_path)
+                group_plots_folder = str(group_plots_path)
+                plot_error_details: list[str] = []
+                for trigger in selected_protocol.active_triggers:
+                    cue_group = groups_by_event.get(("cue", trigger.code))
+                    if cue_group is None:
+                        group_plot_skipped_trigger_codes.append(trigger.code)
+                        logger.warning(
+                            "Group plot skipped for trigger %d (%s): no participant "
+                            "spectrum was available.",
+                            trigger.code,
+                            trigger.label,
+                        )
+                        continue
+                    selected_cue = _selected_group_channel(
+                        cue_group, selected_plot_channel
+                    )
+                    if selected_cue is None:
+                        group_plot_skipped_trigger_codes.append(trigger.code)
+                        logger.warning(
+                            "Group plot skipped for trigger %d (%s): electrode %s was "
+                            "unavailable for every contributing participant.",
+                            trigger.code,
+                            trigger.label,
+                            selected_plot_channel,
+                        )
+                        continue
+
+                    cue_spectrum, cue_count = selected_cue
+                    baseline_spectrum = None
+                    baseline_label = "Gap/Break group mean"
+                    cue_plot_records = [
+                        record
+                        for record in participant_spectra
+                        if record.event_type == "cue"
+                        and record.trigger_code == trigger.code
+                        and selected_plot_channel in record.channel_names
+                    ]
+                    matched_baseline_records = [
+                        baseline_records_by_participant.get(record.participant_id)
+                        for record in cue_plot_records
+                    ]
+                    missing_baseline_participants = [
+                        cue_record.participant_id
+                        for cue_record, baseline_record in zip(
+                            cue_plot_records, matched_baseline_records
+                        )
+                        if baseline_record is None
+                        or selected_plot_channel not in baseline_record.channel_names
+                    ]
+                    if missing_baseline_participants:
+                        baseline_warning = (
+                            f"Group baseline omitted for trigger {trigger.code} "
+                            f"({trigger.label}): selected-electrode baseline data were "
+                            "missing for cue participant(s) "
+                            f"{missing_baseline_participants}."
+                        )
+                        group_plot_warnings.append(baseline_warning)
+                        logger.warning(baseline_warning)
+                    elif matched_baseline_records:
+                        baseline_amplitudes = np.stack(
+                            [
+                                baseline_record.spectrum.amplitude_uv[
+                                    baseline_record.channel_names.index(
+                                        selected_plot_channel
+                                    )
+                                ]
+                                for baseline_record in matched_baseline_records
+                                if baseline_record is not None
+                            ]
+                        )
+                        baseline_spectrum = Spectrum(
+                            freqs=cue_spectrum.freqs,
+                            amplitude_uv=np.mean(
+                                baseline_amplitudes.astype(np.float64, copy=False),
+                                axis=0,
+                            )[None, :],
+                            method=cue_spectrum.method,
+                        )
+                        baseline_label = (
+                            f"Gap/Break group mean (matched N={cue_count})"
+                        )
+                    plot_path = group_plots_path / (
+                        f"group_cue_{trigger.code:03d}_fft_amplitude.png"
+                    )
+                    try:
+                        plot_spectrum(
+                            active=cue_spectrum,
+                            baseline=baseline_spectrum,
+                            title=(
+                                f"Group - Cue {trigger.code} {trigger.label} - FFT amplitude"
+                            ),
+                            outpath=plot_path,
+                            target_hz=trigger.target_hz,
+                            channel_names=[selected_plot_channel],
+                            plot_channel=selected_plot_channel,
+                            active_label=f"Cue group mean (N={cue_count})",
+                            baseline_label=baseline_label,
+                        )
+                    except Exception as exc:
+                        message = (
+                            f"Group plot failed for trigger {trigger.code} "
+                            f"({trigger.label}): {exc}"
+                        )
+                        group_plot_errors.append(message)
+                        group_plot_skipped_trigger_codes.append(trigger.code)
+                        plot_error_details.append(
+                            f"{message}\n\n{traceback.format_exc()}"
+                        )
+                        logger.error(message)
+                        try:
+                            plot_path.unlink(missing_ok=True)
+                        except OSError as cleanup_exc:
+                            logger.error(
+                                "Could not remove incomplete group plot %s: %s",
+                                plot_path,
+                                cleanup_exc,
+                            )
+                        continue
+                    group_plot_files.append(str(plot_path))
+
+                if plot_error_details:
+                    plot_error_path = output_path / "GROUP_PLOT_ERRORS.txt"
+                    plot_error_path.write_text(
+                        "One or more group cue plots failed. Consolidated FFT CSV "
+                        "files and successful plots were preserved.\n\n"
+                        + "\n\n".join(plot_error_details),
+                        encoding="utf-8",
+                    )
+                    group_plot_error_file = str(plot_error_path)
+                    group_plot_status = "completed_with_failures"
+                elif group_plot_skipped_trigger_codes or group_plot_warnings:
+                    group_plot_status = "success_with_warnings"
+                else:
+                    group_plot_status = "success"
+                logger.info(
+                    "Created %d group plot(s), one per usable cue for electrode %s.",
+                    len(group_plot_files),
+                    selected_plot_channel,
+                )
+
+            group_output_status = (
+                "success_with_warnings"
+                if (
+                    group_plot_skipped_trigger_codes
+                    or group_plot_warnings
+                    or group_plot_errors
+                )
+                else "success"
+            )
+        except Exception as exc:
+            group_output_status = "failed"
+            if participant_fft_csv_status == "pending":
+                participant_fft_csv_status = "failed"
+            if group_fft_csv_status == "pending":
+                group_fft_csv_status = "failed"
+            if group_plot_status == "pending":
+                group_plot_status = "failed"
+            group_output_error = str(exc) or type(exc).__name__
+            group_error_path = output_path / "GROUP_OUTPUT_ERROR.txt"
+            group_error_path.write_text(
+                "Group output creation failed.\n\n"
+                "Per-recording result folders and batch_processing_summary.csv "
+                "were preserved. Any consolidated CSVs completed before this "
+                "error were also preserved.\n\n"
+                f"Error: {group_output_error}\n\n"
+                f"{traceback.format_exc()}",
+                encoding="utf-8",
+            )
+            group_output_error_file = str(group_error_path)
+            logger.error(
+                "Group output creation failed; per-recording outputs were preserved. "
+                "See %s. Error: %s",
+                group_error_path,
+                group_output_error,
+            )
 
     logger.info("=" * 78)
     logger.info("BATCH PROCESSING COMPLETE")
@@ -479,11 +797,23 @@ def run_batch(
     logger.info(f"Batch summary saved to: {batch_summary_path}")
     logger.info("\n" + batch_summary.to_string(index=False))
 
-    final_status = "success" if failed_count == 0 else "completed_with_failures"
+    final_status = (
+        "success"
+        if (
+            failed_count == 0
+            and group_output_status != "failed"
+            and not group_plot_errors
+        )
+        else "completed_with_failures"
+    )
+    completion_message = (
+        f"Batch summary saved to: {batch_summary_path}. "
+        f"Group outputs: {group_output_status}."
+    )
     _notify_progress(
         progress_callback,
         phase="complete",
-        message=f"Batch summary saved to: {batch_summary_path}",
+        message=completion_message,
         completed=total_files,
         total=total_files,
     )
@@ -496,6 +826,23 @@ def run_batch(
         "succeeded": success_count,
         "failed": failed_count,
         "results": all_results,
+        "participant_plot_count": participant_plot_count,
+        "participant_plot_failures": participant_plot_failures,
+        "group_output_status": group_output_status,
+        "participant_fft_csv": participant_fft_csv,
+        "group_fft_csv": group_fft_csv,
+        "group_plots_folder": group_plots_folder,
+        "group_plot_files": group_plot_files,
+        "group_plot_count": len(group_plot_files),
+        "group_plot_skipped_trigger_codes": group_plot_skipped_trigger_codes,
+        "group_plot_status": group_plot_status,
+        "group_plot_warnings": group_plot_warnings,
+        "group_plot_errors": group_plot_errors,
+        "group_plot_error_file": group_plot_error_file,
+        "participant_fft_csv_status": participant_fft_csv_status,
+        "group_fft_csv_status": group_fft_csv_status,
+        "group_output_error": group_output_error,
+        "group_output_error_file": group_output_error_file,
     }
 
 

@@ -20,12 +20,9 @@ SAVE_PLOTS = True
 # Default electrode selected in the launcher's analysis tab. Each run can choose
 # another electrode without editing this file.
 PLOT_CHANNEL = "Cz"
-# Maximum amplitude PNGs per recording. This limits images only, not
-# calculations, condition summaries, or spectrum CSV files.
-MAX_INDIVIDUAL_PLOTS = 5
 
-# True saves per-electrode FFT spectrum CSVs for every usable active condition.
-# The main event summary CSV is always written, even when this is False.
+# True saves consolidated participant and group per-electrode FFT tables.
+# Event summary CSVs are always written, even when this is False.
 SAVE_CSV_SUMMARIES = True
 
 # Optional starting folders, used only when no saved launcher folders exist.
@@ -82,7 +79,7 @@ POST_EVENT_SEC_IF_INCLUDED = 2.5
 EXPECTED_REPETITIONS_PER_TRIGGER = 5
 
 # Electrodes included in the region of interest (ROI) for SSSEP summaries and
-# the existing mean columns in spectrum CSVs. PNGs use PLOT_CHANNEL instead.
+# compatibility mean columns in the participant FFT CSV. PNGs use PLOT_CHANNEL.
 # The FFT retains every good scalp electrode after the final average reference.
 ANALYSIS_CHANNELS = [
     "Pz", "P2", "P4", "P6",
@@ -92,7 +89,7 @@ ANALYSIS_CHANNELS = [
 ]
 
 # Plot AND peak-search limits in Hz, so changing these can change summary values.
-# Full per-electrode spectrum CSVs still retain every nonnegative FFT bin.
+# Consolidated per-electrode FFT CSVs retain every nonnegative FFT bin.
 # These limits may extend beyond the filter cutoffs (for example, 0 to 128 Hz).
 FMIN = 3.0
 FMAX = 50.0

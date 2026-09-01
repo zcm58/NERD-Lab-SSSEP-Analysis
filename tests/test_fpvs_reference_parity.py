@@ -173,15 +173,29 @@ def test_bdf_pipeline_is_exactly_equal_to_fpvs(fpvs_source, tmp_path, monkeypatc
         assert result["bad_channels_by_kurtosis"] == reference_n_bad
         assert len(captured_spectra) == 5  # Baseline plus four present active conditions.
         summary = pd.read_csv(result["summary_csv"])
-        fft_channels = summary.iloc[0]["fft_channels"].split(";")
-        outputs = sorted(Path(result["output_folder"]).rglob("*_sssep_fft_amplitude.csv"))
-        for csv_path, expected in zip(outputs, captured_spectra[1:], strict=True):
-            frame = pd.read_csv(csv_path, float_precision="round_trip")
-            np.testing.assert_array_equal(frame["frequency_hz"], expected.freqs)
-            np.testing.assert_array_equal(
-                frame[[f"active_{channel}_amplitude_uv" for channel in fft_channels]].to_numpy().T,
-                expected.amplitude_uv,
-            )
+        fft_channels = tuple(summary.iloc[0]["fft_channels"].split(";"))
+        participant_records = result["_participant_spectra"]
+        assert len(participant_records) == 5
+        baseline_records = [
+            record for record in participant_records if record.event_type == "baseline"
+        ]
+        cue_records = [
+            record for record in participant_records if record.event_type == "cue"
+        ]
+        assert len(baseline_records) == 1
+        assert [record.trigger_code for record in cue_records] == config.ACTIVE_EVENT_CODES
+        assert all(record.channel_names == fft_channels for record in participant_records)
+        np.testing.assert_array_equal(
+            baseline_records[0].spectrum.freqs,
+            captured_spectra[0].freqs,
+        )
+        np.testing.assert_array_equal(
+            baseline_records[0].spectrum.amplitude_uv,
+            captured_spectra[0].amplitude_uv,
+        )
+        for record, expected in zip(cue_records, captured_spectra[1:], strict=True):
+            np.testing.assert_array_equal(record.spectrum.freqs, expected.freqs)
+            np.testing.assert_array_equal(record.spectrum.amplitude_uv, expected.amplitude_uv)
     finally:
         reference_raw.close()
         sssep_raw.close()

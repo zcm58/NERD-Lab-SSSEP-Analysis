@@ -58,7 +58,8 @@ changes, the test fails rather than silently accepting a different reference.
    the last floating-point bits even after the continuous reference projection
    was applied; it is necessary for exact numerical parity. Do not
    add an FIR edge margin or replace EEG NaNs/infinities with zeros.
-9. **Trial average and FFT:** For epochs shaped trials × electrodes × samples:
+9. **Participant cue average and FFT:** For one participant's same-cue epochs
+   shaped trials × electrodes × samples:
 
    ```python
    avg_data = np.mean(epochs.astype(np.float64), axis=0)
@@ -74,6 +75,11 @@ changes, the test fails rather than silently accepting a different reference.
    tapered FFT, FFT padding, channel averaging before the FFT, or a differently
    ordered scaling expression. FPVS also doubles DC and Nyquist; this method
    preserves that convention.
+
+Group output is a later SSSEP reporting step. It gives each participant's
+already-computed amplitude spectrum equal weight; usable epoch count does not
+change a participant's weight. Participant time-domain signals are never
+averaged together across people.
 
 ## How FPVS interpolation works
 
@@ -130,6 +136,9 @@ experiment-specific choices remain:
   not FPVS's neighboring-bin SNR, BCA, or Z-score exports. Existing summary
   values and CSV mean columns use the configured ROI, with actual contributing
   channels recorded. PNGs display one electrode selected in the launcher.
+- Each BDF is treated as one participant. A batch must therefore contain one
+  BDF per participant. Group spectra average participant amplitude spectra
+  equally and remain downstream of the FPVS parity boundary.
 
 For parity, FPVS's logged warning-and-continue behavior is preserved for
 reference/filter/resampling/interpolation failures. Successful completion
@@ -142,13 +151,21 @@ active epochs is reported as failed.
 - Every batch creates a fresh `run_YYYYMMDD_HHMMSS_<unique>` folder. Older
   reports, errors, and plots cannot leak into a rerun. The GUI keeps the chosen
   parent folder as its default; View Output opens the completed run.
-- Each usable active condition gets `*_sssep_fft_amplitude.csv` when CSV
-  spectra are enabled, containing every retained EEG electrode and the full
-  nonnegative spectrum (0–128 Hz with default settings).
-- Amplitude PNGs plot active and available baseline amplitudes for the selected
-  electrode in µV over 3–50 Hz. The five-plot cap affects PNG creation only. If
-  that electrode is unavailable in one recording, its PNGs are skipped while
-  its FFT tables and summaries continue.
+- `participant_fft_amplitudes.csv` consolidates all participants, cues, the
+  baseline, retained EEG electrodes, and the full nonnegative spectrum
+  (0–128 Hz with default settings). The baseline is stored once per participant
+  rather than repeated in every cue table.
+- `group_fft_amplitudes.csv` contains equal-participant group means and the
+  contributing participant count for each electrode. Both exports are CSV
+  files that can be opened in Excel; the program does not create workbooks.
+- The group CSV's baseline row uses all available participant baselines. A cue
+  plot instead uses a cue-matched baseline cohort and omits the baseline line
+  if any cue contributor lacks matching selected-electrode data.
+- Each participant folder contains one selected-electrode amplitude PNG per
+  usable cue under `plots/`. `group_plots/` contains one
+  `group_cue_###_fft_amplitude.png` per usable cue. If the selected electrode
+  is unavailable, only the affected plot is skipped; spectra and participant
+  counts remain available.
 - New summary fields use explicit `*_amplitude_uv` names. Amplitude ratios use
   `20 * log10(ratio)`. Missing active/baseline measurements remain unavailable.
 - Old power and Welch outputs are retired. Do not combine them with the new
@@ -165,13 +182,11 @@ check accepted every pin in `requirements.txt`, including PsychoPy 2026.2.3
 and pyserial 3.5. Different versions or platforms are not assumed to be
 bitwise identical.
 
-Verified on 2026-09-01: **174 feature tests passed and one optional
-participant-recording test skipped** with FPVS source comparisons enabled. All
-49 tracked-or-new feature Python files compiled. Isolated Qt subprocess tests
-opened and closed the launcher through normal close, application quit, and
-application exit paths. The remaining 14 warnings are matplotlib/Pyparsing
-deprecation notices, not numerical comparison failures. PsychoPy presentation
-and COM3 marker timing still require the hardware check described below.
+The automated checks include direct FPVS source comparisons, consolidated
+participant/group output checks, and isolated Qt launcher checks. The optional
+participant-recording test skips when no external BDF is selected. PsychoPy
+presentation and COM3 marker timing still require the hardware check described
+below.
 
 From the repository root in PowerShell:
 
@@ -186,8 +201,9 @@ The source comparison directly exercises the reference loader/preprocessor
 on deterministic 67-channel BDFs at 256, 512, and 2048 Hz. Four cases cover
 clean data, automatic bad-channel detection/interpolation, a pre-marked bad
 channel, and disabled interpolation. Assertions require exact array equality
-for final continuous samples, events, epochs, FFT amplitudes, and round-trip
-CSV electrode amplitudes. No numerical tolerance is used for those comparisons.
+for final continuous samples, events, epochs, and participant FFT amplitudes.
+No numerical tolerance is used for those source-parity comparisons. Separate
+end-to-end tests check the consolidated participant and group CSV values.
 
 Other tests exercise BDF calibration and digital triggers, two real process
 workers, complete amplitude outputs/PNGs, fresh rerun folders, per-electrode

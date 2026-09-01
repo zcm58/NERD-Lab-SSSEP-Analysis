@@ -33,9 +33,10 @@ BioSemi Status channel before collecting study data.
 | No `.bdf` files found | Choose the folder containing the files themselves, not its parent. |
 | Cannot save results | Choose a writable folder such as Documents and check that the drive is connected. |
 | Computer is slow | Close other large programs. Lower `BATCH_WORKERS` in `sssep_batch/config.py` for the next run. |
-| The requested plot electrode is missing | The FFT CSVs and summaries are still saved, but that recording has no PNG. Choose another usable electrode and process again if you need its graph. |
-| Only some graphs appear | Check the plot limit in `sssep_batch/config.py`. FFT CSVs are still created for all usable electrodes. |
+| The requested plot electrode is missing | The consolidated FFT CSVs and summaries are still saved, but that participant has no PNG for the missing electrode. The group plot uses participants who have that electrode and the group CSV reports their count. |
+| Only some graphs appear | Check the participant event summary and processing report. For group plot errors, open `GROUP_PLOT_ERRORS.txt` in the run folder. |
 | A recording failed | Open `batch_processing_summary.csv`, then read the listed `ERROR.txt` or the batch log. |
+| Group results failed | Open `GROUP_OUTPUT_ERROR.txt`. Participant folders and any CSVs completed before the error are preserved. |
 
 Do not upload participant recordings to this repository. Give your supervisor
 the task log, processing report, and exact error message when asking for help.

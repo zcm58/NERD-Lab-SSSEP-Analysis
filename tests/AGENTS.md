@@ -15,7 +15,9 @@ Keep the default test suite lightweight:
 
 - `analysis/`
   Per-electrode amplitude FFT, SSSEP summaries, and full-spectrum table/plot
-  contracts. Include trial averaging, channel order, units, and DC/Nyquist.
+  contracts. Include time-domain same-cue trial averaging, channel order,
+  units, DC/Nyquist, equal-participant group means, missing-electrode counts,
+  and consolidated participant/group tables.
 - `events/`
   Trigger parsing, intended-event filtering, and epoch extraction behavior.
 - `preprocess/`
@@ -30,8 +32,8 @@ Keep the default test suite lightweight:
 - `test_regression_external_bdf.py`
   Optional real-data regression path using an external local fixture.
 - `test_batch.py`
-  Discovery, preflight, worker results, unique run directories, and preservation
-  of earlier outputs.
+  Discovery, preflight, worker results, unique run directories, consolidated
+  CSVs, group plots, and preservation of earlier outputs.
 - `test_gui_settings.py`, `test_gui_lifecycle.py`, and `test_task_gui.py`
   Saved parent-root settings plus batch and persistent task-worker shutdown in
   isolated SSSEP subprocesses. Do not modify the user's actual settings file.
@@ -68,8 +70,10 @@ generated BDF fixtures. Run from the repo root:
 
 - `analysis/`
   Exact float64 trial-mean FFT amplitudes, output shapes, frequency bins,
-  electrode amplitude averaging, and invalid-input handling. Test absence of
-  Hann taper/detrending and preservation of the reference's factor of two.
+  electrode amplitude averaging, equal participant weighting after FFT, and
+  invalid-input handling. Test absence of Hann taper/detrending, preservation
+  of the reference's factor of two, and rejection of incompatible frequency
+  grids or duplicate participant/cue inputs.
 - `events/`
   Reference MNE event behavior after preprocessing, SSSEP epoch counts,
   onset indexing, and out-of-bounds behavior. Extra FIR edge exclusion is no

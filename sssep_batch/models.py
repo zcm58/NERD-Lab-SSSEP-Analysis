@@ -2,8 +2,8 @@
 
 These dataclasses do not perform analysis themselves. They give a clear shape
 to data passed between modules: `AnalysisProtocol` for event settings,
-`EpochSet` for repeated time-domain EEG windows, and `Spectrum` for
-per-electrode FFT amplitudes.
+`EpochSet` for repeated time-domain EEG windows, `Spectrum` for per-electrode
+FFT amplitudes, and `ParticipantSpectrum` for one participant/event result.
 """
 
 from dataclasses import dataclass
@@ -163,3 +163,98 @@ class Spectrum:
     freqs: np.ndarray
     amplitude_uv: np.ndarray
     method: str
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantSpectrum:
+    """One participant's already epoch-averaged FFT for one recorded event."""
+
+    participant_id: str
+    file_name: str
+    event_type: str
+    trigger_code: int
+    trigger_label: str
+    target_hz: float | None
+    usable_epochs: int
+    channel_names: tuple[str, ...]
+    analysis_channels: tuple[str, ...]
+    spectrum: Spectrum
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.participant_id, str) or not self.participant_id.strip():
+            raise ValueError("participant_id must be a non-empty string.")
+        if not isinstance(self.file_name, str) or not self.file_name.strip():
+            raise ValueError("file_name must be a non-empty string.")
+        if self.event_type not in {"cue", "baseline"}:
+            raise ValueError("event_type must be 'cue' or 'baseline'.")
+        if (
+            not isinstance(self.trigger_code, int)
+            or isinstance(self.trigger_code, bool)
+            or self.trigger_code < 1
+        ):
+            raise ValueError("trigger_code must be a positive integer.")
+        if not isinstance(self.trigger_label, str) or not self.trigger_label.strip():
+            raise ValueError("trigger_label must be a non-empty string.")
+        if self.target_hz is not None and (
+            not isinstance(self.target_hz, (int, float))
+            or isinstance(self.target_hz, bool)
+            or not isfinite(float(self.target_hz))
+            or self.target_hz <= 0
+        ):
+            raise ValueError("target_hz must be a finite number above zero, or None.")
+        if (
+            not isinstance(self.usable_epochs, int)
+            or isinstance(self.usable_epochs, bool)
+            or self.usable_epochs < 1
+        ):
+            raise ValueError("usable_epochs must be 1 or more.")
+        if not isinstance(self.spectrum, Spectrum):
+            raise ValueError("spectrum must be a Spectrum value.")
+
+        channel_names = tuple(self.channel_names)
+        analysis_channels = tuple(self.analysis_channels)
+        if not channel_names or any(
+            not isinstance(channel, str) or not channel.strip()
+            for channel in channel_names
+        ):
+            raise ValueError("channel_names must contain non-empty electrode labels.")
+        if len(channel_names) != len(set(channel_names)):
+            raise ValueError("channel_names must be unique.")
+        if not analysis_channels or any(
+            not isinstance(channel, str) or not channel.strip()
+            for channel in analysis_channels
+        ):
+            raise ValueError("analysis_channels must contain non-empty electrode labels.")
+        if len(analysis_channels) != len(set(analysis_channels)):
+            raise ValueError("analysis_channels must be unique.")
+        missing_analysis_channels = [
+            channel for channel in analysis_channels if channel not in channel_names
+        ]
+        if missing_analysis_channels:
+            raise ValueError(
+                "analysis_channels are missing from channel_names: "
+                f"{missing_analysis_channels}"
+            )
+
+        freqs = np.asarray(self.spectrum.freqs)
+        amplitude_uv = np.asarray(self.spectrum.amplitude_uv)
+        if freqs.ndim != 1 or freqs.size == 0:
+            raise ValueError("spectrum frequencies must be a non-empty one-dimensional array.")
+        if amplitude_uv.shape != (len(channel_names), len(freqs)):
+            raise ValueError(
+                "spectrum amplitudes must match channel_names and frequency bins."
+            )
+        if not np.isfinite(freqs).all() or not np.isfinite(amplitude_uv).all():
+            raise ValueError("spectrum frequencies and amplitudes must all be finite.")
+        if np.any(np.diff(freqs) <= 0):
+            raise ValueError("spectrum frequencies must be strictly increasing.")
+        if not isinstance(self.spectrum.method, str) or not self.spectrum.method.strip():
+            raise ValueError("spectrum method must be a non-empty string.")
+
+        object.__setattr__(self, "participant_id", self.participant_id.strip())
+        object.__setattr__(self, "file_name", self.file_name.strip())
+        object.__setattr__(self, "trigger_label", self.trigger_label.strip())
+        object.__setattr__(self, "channel_names", channel_names)
+        object.__setattr__(self, "analysis_channels", analysis_channels)
+        if self.target_hz is not None:
+            object.__setattr__(self, "target_hz", float(self.target_hz))

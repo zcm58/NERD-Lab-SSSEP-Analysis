@@ -7,9 +7,17 @@ verify batch orchestration behavior without loading real EEG data.
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from sssep_batch import batch
+from sssep_batch.models import (
+    AnalysisProtocol,
+    AnalysisTrigger,
+    ParticipantSpectrum,
+    Spectrum,
+)
 
 
 def test_discover_bdf_files_rejects_missing_input_folder(tmp_path):
@@ -136,6 +144,7 @@ def test_preflight_rejects_invalid_filter_and_plot_settings(monkeypatch, setting
 
 def test_run_batch_reports_progress_and_writes_summary(monkeypatch, tmp_path):
     """A mixed success/failure batch should report progress and write a summary."""
+    monkeypatch.setattr(batch, "SAVE_PLOTS", False)
     input_folder = tmp_path / "input"
     output_folder = tmp_path / "output"
     input_folder.mkdir()
@@ -186,11 +195,42 @@ def test_run_batch_reports_progress_and_writes_summary(monkeypatch, tmp_path):
             submitted_plot_channels.append(plot_channel)
             submitted_protocols.append(analysis_protocol)
             if bdf_file.name == "a_file.bdf":
+                spectrum = Spectrum(
+                    freqs=np.array([0.0, 10.0, 20.0]),
+                    amplitude_uv=np.array([[1.0, 4.0, 2.0]]),
+                    method="FPVS test amplitude",
+                )
                 result = {
                     "file_name": bdf_file.name,
                     "status": "success",
                     "output_folder": str(output_root / bdf_file.stem),
                     "summary_csv": str(output_root / bdf_file.stem / "summary.csv"),
+                    "_participant_spectra": (
+                        ParticipantSpectrum(
+                            participant_id=bdf_file.stem,
+                            file_name=bdf_file.name,
+                            event_type="baseline",
+                            trigger_code=analysis_protocol.baseline_event_code,
+                            trigger_label=analysis_protocol.baseline_label,
+                            target_hz=None,
+                            usable_epochs=2,
+                            channel_names=("C4",),
+                            analysis_channels=("C4",),
+                            spectrum=spectrum,
+                        ),
+                        ParticipantSpectrum(
+                            participant_id=bdf_file.stem,
+                            file_name=bdf_file.name,
+                            event_type="cue",
+                            trigger_code=analysis_protocol.active_triggers[0].code,
+                            trigger_label=analysis_protocol.active_triggers[0].label,
+                            target_hz=analysis_protocol.active_triggers[0].target_hz,
+                            usable_epochs=2,
+                            channel_names=("C4",),
+                            analysis_channels=("C4",),
+                            spectrum=spectrum,
+                        ),
+                    ),
                 }
             else:
                 result = {
@@ -232,6 +272,11 @@ def test_run_batch_reports_progress_and_writes_summary(monkeypatch, tmp_path):
     assert summary_path == run_folder / "batch_processing_summary.csv"
     assert summary_path.exists()
     assert all(Path(row["output_folder"]).parent == run_folder for row in result["results"])
+    assert all("_participant_spectra" not in row for row in result["results"])
+    assert "_participant_spectra" not in pd.read_csv(summary_path).columns
+    assert result["group_output_status"] == "success"
+    assert Path(result["participant_fft_csv"]).exists()
+    assert Path(result["group_fft_csv"]).exists()
 
     log_path = run_folder / "sssep_batch_processing.log"
     log_text = log_path.read_text(encoding="utf-8")
@@ -255,3 +300,231 @@ def test_run_batch_reports_progress_and_writes_summary(monkeypatch, tmp_path):
     assert old_error.read_text(encoding="utf-8") == "previous run only"
     assert not (next_folder / "ERROR.txt").exists()
     assert submitted_plot_channels[-2:] == [batch.PLOT_CHANNEL, batch.PLOT_CHANNEL]
+
+
+def test_worker_crash_writes_detailed_per_file_error(tmp_path):
+    result = batch.make_worker_crash_result(
+        "participant_01.bdf",
+        tmp_path,
+        RuntimeError("synthetic worker failure"),
+    )
+
+    output_folder = tmp_path / "participant_01"
+    error_path = output_folder / "ERROR.txt"
+    assert result["status"] == "failed"
+    assert result["failed_stage"] == "worker_crash"
+    assert result["processing_method"] == batch.PROCESSING_METHOD
+    assert result["output_folder"] == str(output_folder)
+    assert result["error_file"] == str(error_path)
+    assert error_path.exists()
+    error_text = error_path.read_text(encoding="utf-8")
+    assert "participant_01.bdf" in error_text
+    assert "worker_crash" in error_text
+    assert "synthetic worker failure" in error_text
+    assert "unexpected worker-process failure" in error_text
+
+
+def _participant_record(
+    participant_id: str,
+    *,
+    event_type: str,
+    trigger_code: int,
+    trigger_label: str,
+    amplitude: float,
+) -> ParticipantSpectrum:
+    return ParticipantSpectrum(
+        participant_id=participant_id,
+        file_name=f"{participant_id}.bdf",
+        event_type=event_type,
+        trigger_code=trigger_code,
+        trigger_label=trigger_label,
+        target_hz=10.0 if event_type == "cue" else None,
+        usable_epochs=2,
+        channel_names=("Cz",),
+        analysis_channels=("Cz",),
+        spectrum=Spectrum(
+            freqs=np.array([0.0, 10.0, 20.0]),
+            amplitude_uv=np.full((1, 3), amplitude),
+            method="FPVS test amplitude",
+        ),
+    )
+
+
+def _run_fake_spectrum_batch(
+    monkeypatch,
+    tmp_path,
+    payloads: dict[str, tuple[ParticipantSpectrum, ...]],
+    protocol: AnalysisProtocol,
+    fake_plot,
+) -> dict[str, object]:
+    input_folder = tmp_path / "input"
+    output_folder = tmp_path / "output"
+    input_folder.mkdir()
+    for file_name in payloads:
+        (input_folder / file_name).write_bytes(b"")
+
+    class FakeFuture:
+        def __init__(self, result):
+            self._result = result
+
+        def result(self):
+            return self._result
+
+    class FakeExecutor:
+        def __init__(self, max_workers):
+            self.max_workers = max_workers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, func, bdf_file, output_root, plot_channel, analysis_protocol):
+            return FakeFuture(
+                {
+                    "file_name": bdf_file.name,
+                    "status": "success",
+                    "output_folder": str(output_root / bdf_file.stem),
+                    "summary_csv": str(output_root / bdf_file.stem / "summary.csv"),
+                    "_participant_spectra": payloads[bdf_file.name],
+                }
+            )
+
+    import sssep_batch.analysis.plotting as plotting
+
+    monkeypatch.setattr(batch, "ProcessPoolExecutor", FakeExecutor)
+    monkeypatch.setattr(batch, "as_completed", lambda future_to_file: list(future_to_file))
+    monkeypatch.setattr(batch, "get_process_one_bdf", lambda: lambda *args: None)
+    monkeypatch.setattr(batch, "SAVE_CSV_SUMMARIES", True)
+    monkeypatch.setattr(batch, "SAVE_PLOTS", True)
+    monkeypatch.setattr(plotting, "plot_spectrum", fake_plot)
+    return batch.run_batch(
+        input_folder,
+        output_folder,
+        plot_channel="Cz",
+        analysis_protocol=protocol,
+    )
+
+
+def test_group_plot_failure_does_not_stop_later_plots_or_hide_csv_success(
+    monkeypatch, tmp_path
+):
+    protocol = AnalysisProtocol(
+        active_triggers=(
+            AnalysisTrigger(11, "BothHands Left Hand", 10.0),
+            AnalysisTrigger(12, "BothHands Right Hand", 10.0),
+        ),
+        event_duration_sec=7.5,
+        expected_repetitions_per_trigger=2,
+        baseline_event_code=100,
+    )
+    payloads = {
+        "P01.bdf": (
+            _participant_record(
+                "P01", event_type="baseline", trigger_code=100,
+                trigger_label="Gap/Break", amplitude=1.0,
+            ),
+            _participant_record(
+                "P01", event_type="cue", trigger_code=11,
+                trigger_label="BothHands Left Hand", amplitude=2.0,
+            ),
+            _participant_record(
+                "P01", event_type="cue", trigger_code=12,
+                trigger_label="BothHands Right Hand", amplitude=3.0,
+            ),
+        )
+    }
+    calls: list[int] = []
+
+    def fake_plot(**kwargs):
+        trigger_code = 11 if "Cue 11" in kwargs["title"] else 12
+        calls.append(trigger_code)
+        if trigger_code == 11:
+            raise RuntimeError("synthetic plot failure")
+        Path(kwargs["outpath"]).write_bytes(b"png")
+
+    result = _run_fake_spectrum_batch(
+        monkeypatch, tmp_path, payloads, protocol, fake_plot
+    )
+
+    assert calls == [11, 12]
+    assert result["status"] == "completed_with_failures"
+    assert result["group_output_status"] == "success_with_warnings"
+    assert result["participant_fft_csv_status"] == "success"
+    assert result["group_fft_csv_status"] == "success"
+    assert result["group_plot_status"] == "completed_with_failures"
+    assert result["group_plot_count"] == 1
+    assert result["group_plot_skipped_trigger_codes"] == [11]
+    assert "synthetic plot failure" in result["group_plot_errors"][0]
+    assert Path(result["group_plot_error_file"]).exists()
+    assert Path(result["participant_fft_csv"]).exists()
+    assert Path(result["group_fft_csv"]).exists()
+    assert Path(result["group_plots_folder"]).is_dir()
+    assert Path(result["group_plot_files"][0]).name == (
+        "group_cue_012_fft_amplitude.png"
+    )
+
+
+def test_group_plot_baseline_uses_only_complete_matched_cue_participants(
+    monkeypatch, tmp_path
+):
+    protocol = AnalysisProtocol(
+        active_triggers=(
+            AnalysisTrigger(11, "BothHands Left Hand", 10.0),
+            AnalysisTrigger(12, "BothHands Right Hand", 10.0),
+        ),
+        event_duration_sec=7.5,
+        expected_repetitions_per_trigger=2,
+        baseline_event_code=100,
+    )
+    payloads = {
+        "P01.bdf": (
+            _participant_record(
+                "P01", event_type="baseline", trigger_code=100,
+                trigger_label="Gap/Break", amplitude=10.0,
+            ),
+            _participant_record(
+                "P01", event_type="cue", trigger_code=11,
+                trigger_label="BothHands Left Hand", amplitude=2.0,
+            ),
+            _participant_record(
+                "P01", event_type="cue", trigger_code=12,
+                trigger_label="BothHands Right Hand", amplitude=3.0,
+            ),
+        ),
+        "P02.bdf": (
+            _participant_record(
+                "P02", event_type="cue", trigger_code=11,
+                trigger_label="BothHands Left Hand", amplitude=4.0,
+            ),
+        ),
+        "P03.bdf": (
+            _participant_record(
+                "P03", event_type="baseline", trigger_code=100,
+                trigger_label="Gap/Break", amplitude=1000.0,
+            ),
+        ),
+    }
+    captured: dict[int, dict[str, object]] = {}
+
+    def fake_plot(**kwargs):
+        trigger_code = 11 if "Cue 11" in kwargs["title"] else 12
+        captured[trigger_code] = kwargs
+        Path(kwargs["outpath"]).write_bytes(b"png")
+
+    result = _run_fake_spectrum_batch(
+        monkeypatch, tmp_path, payloads, protocol, fake_plot
+    )
+
+    assert captured[11]["baseline"] is None
+    matched_baseline = captured[12]["baseline"]
+    assert matched_baseline is not None
+    np.testing.assert_array_equal(matched_baseline.amplitude_uv, [[10.0, 10.0, 10.0]])
+    assert captured[12]["baseline_label"] == "Gap/Break group mean (matched N=1)"
+    assert result["status"] == "success"
+    assert result["group_output_status"] == "success_with_warnings"
+    assert result["group_plot_status"] == "success_with_warnings"
+    assert result["group_plot_count"] == 2
+    assert result["group_plot_skipped_trigger_codes"] == []
+    assert any("P02" in warning for warning in result["group_plot_warnings"])

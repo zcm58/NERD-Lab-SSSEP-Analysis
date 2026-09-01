@@ -19,6 +19,7 @@ The package is organized around these boundaries:
   FPVS-compatible BioSemi channel-subset loading from external input.
 - `analysis/`
   Batch event protocol, per-electrode amplitude FFT, SSSEP amplitude summaries,
+  consolidated participant/group tables, equal-participant group averaging,
   and plotting helpers.
 - `experiment/`
   Task models, balanced scheduling, PsychoPy presentation, BioSemi serial
@@ -56,11 +57,19 @@ The package is organized around these boundaries:
   replacement. The FPVS visual-oddball 1.2 Hz marker crop is not applicable.
 - Average trials in float64 per electrode, convert to microvolts, then use
   `abs(np.fft.fft(mean_epoch_uv)[:, :N // 2 + 1]) / N * 2` without a taper,
-  detrending, or power squaring. Preserve the reference DC/Nyquist scaling.
+  detrending, or power squaring. Average same-cue epochs in the time domain
+  before this participant FFT. Preserve the reference DC/Nyquist scaling.
+- Treat one BDF as one participant. Group cue results are arithmetic means of
+  the participant amplitude spectra, with equal participant weight regardless
+  of usable epoch count. Group averaging is downstream of FPVS parity.
+- Match each optional group baseline overlay to that cue's selected-electrode
+  participant cohort; omit it if any cue contributor lacks matching baseline
+  data.
 - Exclude unresolved bad channels before FFT. Retain full good-scalp amplitude
-  spectra and nonnegative frequencies in CSVs. PNGs show one selected electrode;
-  skip only those PNGs when it is unresolved. Existing ROI means remain only in
-  downstream summaries and CSV mean columns.
+  spectra and nonnegative frequencies in consolidated CSVs. PNGs show one
+  selected electrode; skip only affected PNGs when it is unresolved and retain
+  contributing-participant counts. Existing ROI means remain only in downstream
+  summaries and CSV mean columns.
 - Use the `AnalysisProtocol` supplied by the launcher for active codes, labels,
   epoch duration, expected counts, and optional stimulation frequency.
 - Local SSSEP amplitude SNR and Gap/Break comparisons are downstream summaries,
@@ -71,7 +80,8 @@ The package is organized around these boundaries:
 ## Parallel Processing Notes
 
 - Worker parallelism is file-level and process-based.
-- The parent process owns the shared batch log and final batch summary.
+- The parent process owns the shared batch log, final batch summary, consolidated
+  participant/group CSVs, and equal-participant group plots.
 - Worker detail should stay in per-file reports and per-file outputs.
 - `BATCH_WORKERS = 3` is the recommended ceiling for typical 16 GB systems, but
   it remains configurable in `config.py`.
@@ -89,7 +99,12 @@ The package is organized around these boundaries:
 - Add or update tests before changing frequency-domain behavior.
 - Preserve the current microvolt amplitude schema. The former power/Welch
   outputs were deliberately retired with the method change.
-- `MAX_INDIVIDUAL_PLOTS` limits amplitude PNGs only, never calculations or CSVs.
+- `grouping.py` combines already-computed participant spectra; it must not
+  recompute FFTs or weight participants by their epoch counts.
+- Keep `participant_fft_amplitudes.csv` and `group_fft_amplitudes.csv` at the
+  run root. They contain all participant/cue/electrode spectra and group means,
+  respectively; they are CSV files, not Excel workbooks.
+- Save one participant and one group selected-electrode PNG per usable cue.
 
 ### `events/`
 

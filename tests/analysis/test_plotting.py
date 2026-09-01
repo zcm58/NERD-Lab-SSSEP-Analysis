@@ -1,4 +1,4 @@
-"""Check full-frequency electrode exports and microvolt amplitude plots."""
+"""Check participant and group single-electrode FFT amplitude plots."""
 
 import matplotlib
 matplotlib.use("Agg")
@@ -10,9 +10,6 @@ from sssep_batch.models import Spectrum
 
 
 CHANNELS = ["C3", "Cz", "C4"]
-ROI = ["C3", "C4"]
-
-
 def make_spectrum(scale=1.0):
     return Spectrum(
         freqs=np.array([0.0, 10.0, 50.0, 128.0]),
@@ -23,18 +20,6 @@ def make_spectrum(scale=1.0):
         ]),
         method="test",
     )
-
-
-def test_frequency_csv_preserves_all_electrodes_and_full_fft_range():
-    frame = plotting.spectrum_to_dataframe(make_spectrum(), make_spectrum(0.5), CHANNELS, ROI)
-
-    np.testing.assert_array_equal(frame["frequency_hz"], [0.0, 10.0, 50.0, 128.0])
-    np.testing.assert_array_equal(frame["active_mean_amplitude_uv"], [1000.0, 4.0, 2.0, 3000.0])
-    assert frame.loc[1, "baseline_mean_amplitude_uv"] == 2.0
-    assert frame.loc[1, "active_Cz_amplitude_uv"] == 1000.0
-    assert frame.loc[1, "baseline_C4_amplitude_uv"] == 3.0
-    assert len(frame.columns) == 9
-    assert not any("power" in column for column in frame.columns)
 
 
 def test_plot_uses_selected_electrode_and_visible_frequency_limits(monkeypatch, tmp_path):
@@ -55,6 +40,10 @@ def test_plot_uses_selected_electrode_and_visible_frequency_limits(monkeypatch, 
     np.testing.assert_array_equal(axes.lines[1].get_ydata(), [500.0, 3.0, 1.5, 1500.0])
     assert axes.get_title() == "Amplitude example - Electrode C4"
     assert axes.get_ylabel() == "FFT amplitude at C4 (µV)"
+    assert [line.get_label() for line in axes.lines[:2]] == [
+        "Cue average",
+        "Gap/Break baseline",
+    ]
     assert axes.get_xlim() == (plotting.FMIN, plotting.FMAX)
     assert axes.get_ylim()[1] == pytest.approx(6.0 * 1.08)
     assert saved["path"] == output
@@ -65,12 +54,10 @@ def test_baseline_frequency_mismatch_fails_instead_of_silently_mislabeling():
     baseline = make_spectrum()
     baseline.freqs = np.array([0.0, 11.0, 50.0, 128.0])
     with pytest.raises(ValueError, match="matching channels and frequency bins"):
-        plotting.spectrum_to_dataframe(make_spectrum(), baseline, CHANNELS, ROI)
-
-
-def test_missing_analysis_channel_fails_instead_of_changing_roi_silently():
-    with pytest.raises(ValueError, match="missing from the spectrum"):
-        plotting.spectrum_to_dataframe(make_spectrum(), None, CHANNELS, ["Oz"])
+        plotting.plot_spectrum(
+            make_spectrum(), baseline, "Amplitude example", None,
+            10.0, CHANNELS, "C4",
+        )
 
 
 def test_missing_plot_electrode_fails_clearly():
