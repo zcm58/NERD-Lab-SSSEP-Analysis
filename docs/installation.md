@@ -2,11 +2,10 @@
 
 Do this once per computer. You need an internet connection.
 
-1. **Install Python 3.11.** Open the official
-   [Python 3.11.9 download page](https://www.python.org/downloads/release/python-3119/).
-   Under **Files**, choose **Windows installer (64-bit)**. Run it and select
-   **Add python.exe to PATH** if shown. Use Python 3.11 because the task's
-   PsychoPy version does not support Python 3.13.
+1. **Install Python 3.13.** Open the official
+   [Python downloads page](https://www.python.org/downloads/windows/). Choose a
+   Python 3.13 **Windows installer (64-bit)**. Run it and select **Add
+   python.exe to PATH** if shown.
 
 2. **Install PyCharm.** [Download PyCharm](https://www.jetbrains.com/pycharm/download/)
    and run its installer. The free version is sufficient.
@@ -20,8 +19,8 @@ Do this once per computer. You need an internet connection.
    folder containing `README.md`.
 
 5. **Install the libraries.** Open PyCharm's **Terminal** in the project folder
-   and run this one command. It creates `.venv`, installs the pinned PsychoPy
-   version, and checks the installation.
+   and run this one command. It creates `.venv`, installs the pinned libraries,
+   and checks the installation.
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1

@@ -25,7 +25,7 @@ The package is organized around these boundaries:
   saved-table reloading, later ROI aggregation, plot/source-data output, and
   plotting helpers.
 - `experiment/`
-  Task models, balanced scheduling, PsychoPy presentation, BioSemi serial
+  Task models, balanced scheduling, PySide6 presentation, BioSemi serial
   triggers, and task-event logs. It does not control TENS hardware.
 - `events/`
   Status-channel event detection and epoch extraction.
@@ -127,14 +127,15 @@ The package is organized around these boundaries:
 ### `experiment/`
 
 - Open the fixed `COM3` connection before participant-facing screens.
-- Keep cue emission flip-locked through PsychoPy `window.callOnFlip(...)`.
-- Keep cue playback frame-counted from a measured display refresh, alternate
-  cues, and use the next onset or terminal black flip as the prior cue offset.
+- Keep cue emission as the first external action in the matching
+  `QOpenGLWindow.frameSwapped` callback for each newly drawn cue.
+- Align a Qt `PreciseTimer` deadline to each accepted cue swap, alternate cues,
+  and use the next onset or terminal black swap as the prior cue offset.
 - BioSemi events are one raw byte, codes `1..255`, over fixed `COM3` at 115200
   baud by default.
 - Never continue silently after a serial or trigger failure. Preserve partial
   task logs after an in-task abort or write failure.
-- Keep PsychoPy on the launcher's persistent presentation thread on Windows.
+- Keep the participant presenter on the Qt main thread.
 
 ### `preprocess/`
 

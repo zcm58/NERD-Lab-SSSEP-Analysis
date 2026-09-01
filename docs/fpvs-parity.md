@@ -187,16 +187,13 @@ active epochs is reported as failed.
 
 The numerical parity environment uses Python 3.13.5 on Windows with
 MNE 1.9.0, NumPy 2.3.1, SciPy 1.16.0, pandas 2.3.0, matplotlib 3.10.3, and
-PySide6 6.9.1. PsychoPy is not installed in that older local environment. The
-combined task-and-analysis application installs on Python 3.11 because the
-pinned PsychoPy does not support Python 3.13. A clean Python 3.11.9 resolver
-check accepted every pin in `requirements.txt`, including PsychoPy 2026.2.3
-and pyserial 3.5. Different versions or platforms are not assumed to be
-bitwise identical.
+PySide6 6.9.1. A clean Python 3.13.5 installation accepted every pin in
+`requirements.txt`, including pyserial 3.5. Different versions or platforms
+are not assumed to be bitwise identical.
 
 The automated checks include direct FPVS source comparisons, consolidated
 participant/group output checks, and isolated Qt launcher checks. The optional
-participant-recording test skips when no external BDF is selected. PsychoPy
+participant-recording test skips when no external BDF is selected. PySide6
 presentation and COM3 marker timing still require the hardware check described
 below.
 
@@ -219,7 +216,7 @@ end-to-end tests check the consolidated participant and group CSV values.
 
 Other tests exercise BDF calibration and digital triggers, two real process
 workers, complete amplitude outputs/PNGs, fresh rerun folders, per-electrode
-phase preservation, FFT DC/Nyquist scaling, and real SSSEP Qt worker lifetime.
+phase preservation, FFT DC/Nyquist scaling, and real SSSEP Qt runner lifetime.
 
 No participant recording was supplied for this verification. Synthetic tests
 establish the implemented numerical contract but cannot validate a study's

@@ -26,8 +26,8 @@ Keep the default test suite lightweight:
   Channel/montage/reference behavior, scaled filtering before downsampling,
   bad-channel handling, and reference-compatible warning paths.
 - `experiment/`
-  Task validation, balanced alternating schedules, frame-counted cue timing,
-  one-byte triggers, flip ordering, aborts, and task-event logs using fakes
+  Task validation, balanced alternating schedules, swap-timed cue onsets,
+  one-byte triggers, frame ordering, aborts, and task-event logs using fakes
   rather than a real display or COM port.
 - `test_pipeline.py`
   High-signal orchestration behavior that can be tested with stubs.
@@ -37,8 +37,8 @@ Keep the default test suite lightweight:
   Discovery, preflight, worker results, unique run directories, consolidated
   CSVs, group plots, and preservation of earlier outputs.
 - `test_gui_settings.py`, `test_gui_lifecycle.py`, and `test_task_gui.py`
-  Saved parent-root settings plus batch and persistent task-worker shutdown in
-  isolated SSSEP subprocesses. Do not modify the user's actual settings file.
+  Saved parent-root settings plus batch and main-thread task lifecycle behavior
+  in isolated SSSEP subprocesses. Do not modify the user's actual settings file.
 - `test_saved_plot_gui.py`
   Saved-result loading and post-processing worker lifecycle in an isolated GUI
   subprocess.

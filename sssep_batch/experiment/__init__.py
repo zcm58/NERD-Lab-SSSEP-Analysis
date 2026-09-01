@@ -10,7 +10,7 @@ from .models import (
     TaskSettings,
     analysis_protocol_for_task,
 )
-from .runner import PsychoPyTaskRunner, run_participant_task, write_task_event_log
+from .runner import QtTaskRunner, write_task_event_log
 from .schedule import build_cue_schedule
 
 __all__ = [
@@ -18,12 +18,11 @@ __all__ = [
     "CuePresentationRecord",
     "CueTarget",
     "CueTriggerCodes",
-    "PsychoPyTaskRunner",
+    "QtTaskRunner",
     "TaskCondition",
     "TaskRunResult",
     "TaskSettings",
     "analysis_protocol_for_task",
     "build_cue_schedule",
-    "run_participant_task",
     "write_task_event_log",
 ]

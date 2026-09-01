@@ -58,10 +58,11 @@ or counterbalancing change in `docs/task-protocol.md` before implementation.
 - `requirements.txt`
   Pinned runtime dependencies for the local `.venv`; `requirements-dev.txt`
   adds pytest 9.0.1 and edfio 0.4.16 for tests and generated BDF fixtures.
-  Use Python 3.11 because the pinned PsychoPy does not support Python 3.13.
+  Use 64-bit Python 3.13.
 - `install.ps1`
-  Creates the Python 3.11 `.venv`, installs `requirements.txt`, and verifies
-  the pinned PsychoPy task imports. Keep it as the simple Windows setup path.
+  Creates the Python 3.13 `.venv`, installs `requirements.txt`, and verifies
+  the PySide6 presentation and pyserial imports. Keep it as the simple Windows
+  setup path.
 - `docs/fpvs-parity.md`
   FPVS reference, method boundary, and comparison evidence.
 
@@ -125,9 +126,9 @@ pipeline. Preserve this current design unless a further change is authorized:
 - Keep each batch in a newly created, unique run subfolder. Preserve previous
   runs and the GUI's parent-root saved setting.
 - Retain GUI workers until completion and block window close while a batch,
-  participant task, saved-data load, or saved plot is active. Keep long work off
-  the UI thread and reuse one persistent presentation thread for PsychoPy on
-  Windows.
+  participant task, saved-data load, or saved plot is active. Keep BDF and
+  saved-plot work off the UI thread. Run the PySide6 participant presenter on
+  the Qt main thread.
 
 ## Before Making Structural Changes
 

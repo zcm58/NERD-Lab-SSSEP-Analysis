@@ -4,7 +4,7 @@
 
 Run `main.py` for participant tasks, recording analysis, and saved-result
 plotting. Keep this entrypoint thin. The PySide6 launcher selects a workflow;
-PsychoPy is used only by the fullscreen participant task.
+PySide6 also presents the fullscreen participant task.
 `sssep_bdf_batch_processor.py` remains a compatibility wrapper.
 
 ## Find the right file
@@ -42,13 +42,15 @@ PsychoPy is used only by the fullscreen participant task.
 
 Participant task:
 
-`entrypoint → gui → experiment settings → schedule → serial preflight → PsychoPy runner → task CSV`
+`entrypoint → gui → experiment settings → schedule → serial preflight → PySide6 presenter → task CSV`
 
 The runner opens the fixed `COM3` connection before participant screens. After
-Space starts the task, it draws each cue and schedules its unique `1..255`
-marker with PsychoPy `callOnFlip`, so the one-byte serial write occurs on the
-cue's visible display flip. Escape aborts. TENS control stays outside this
-program. See [task-protocol.md](docs/task-protocol.md) for the runtime contract.
+Space starts the task, a main-thread `QOpenGLWindow` draws each cue. Its
+matching `frameSwapped` callback immediately requests the cue's unique
+`1..255` serial marker after Qt completes that frame's buffer swap. A Qt
+`PreciseTimer` requests the next cue at the configured software deadline.
+Escape aborts. TENS control stays outside this program. See
+[task-protocol.md](docs/task-protocol.md) for the runtime contract.
 
 Recording analysis:
 
@@ -77,11 +79,12 @@ with zero. Hemisphere comparisons and statistics remain external.
   FFT plotting tabs.
 - Keep saved-result plotting separate from BDF processing so one FFT calculation
   can support many later plots.
-- Keep PsychoPy and live serial output inside `experiment/`, separate from BDF
-  analysis.
+- Keep PySide6 presentation and live serial output inside `experiment/`,
+  separate from BDF analysis.
 - Keep `COM3` fixed and absent from the GUI. Open and check it before participant
   cues; never continue after a trigger failure.
-- Send each cue's marker on the same display flip that reveals that cue.
+- Request each cue's marker immediately from the callback for its matching Qt
+  buffer swap.
 - Require an even epoch count and alternate the two cues from a randomized
   starting cue.
 - Pass the visible condition, duration, epoch count, and that condition's fixed
@@ -122,7 +125,7 @@ with zero. Hemisphere comparisons and statistics remain external.
 3. Run the PyCharm entrypoint and check the affected tab.
 4. Update the relevant guide when a setting, output, or workflow changes.
 
-Use Python 3.11 and the existing dependency pins. Synthetic tests do not prove
+Use Python 3.13 and the existing dependency pins. Synthetic tests do not prove
 hardware timing. Before data collection, verify the sent codes and timing on a
 real BioSemi Status channel. For numerical changes, also use the optional
 [FPVS reference checks](docs/fpvs-parity.md#verification-and-reproducibility)

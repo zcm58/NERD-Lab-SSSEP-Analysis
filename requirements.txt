@@ -1,4 +1,4 @@
-# Install with 64-bit Python 3.11; use install.ps1 to create the environment.
+# Install with 64-bit Python 3.13; use install.ps1 to create the environment.
 # Numerical/plotting versions used by FPVS Toolbox reference 185d803f.
 mne==1.9.0
 numpy==2.3.1
@@ -6,7 +6,5 @@ scipy==1.16.0
 matplotlib==3.10.3
 pandas==2.3.0
 PySide6==6.9.1
-# Participant-task presentation and BioSemi USB trigger output.
-# PsychoPy 2026.2.3 supports Python 3.10-3.12; this project uses Python 3.11.
-psychopy==2026.2.3
+# BioSemi USB trigger output for the participant task.
 pyserial==3.5

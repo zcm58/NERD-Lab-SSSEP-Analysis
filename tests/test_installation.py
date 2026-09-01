@@ -1,19 +1,14 @@
 from importlib.metadata import version
 from pathlib import Path
 
-import pytest
-
-from sssep_batch.experiment.runner import (
-    PsychoPyUnavailableError,
-    _load_psychopy_modules,
-)
+from PySide6.QtOpenGL import QOpenGLWindow
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_requirements_pin_supported_psychopy_release() -> None:
-    requirements = [
+def _runtime_requirements() -> list[str]:
+    return [
         line.strip().casefold()
         for line in (PROJECT_ROOT / "requirements.txt").read_text(
             encoding="utf-8"
@@ -21,30 +16,25 @@ def test_requirements_pin_supported_psychopy_release() -> None:
         if line.strip() and not line.lstrip().startswith("#")
     ]
 
-    assert requirements.count("psychopy==2026.2.3") == 1
+
+def test_requirements_use_qt_presentation_without_psychopy() -> None:
+    requirements = _runtime_requirements()
+
+    assert requirements.count("pyside6==6.9.1") == 1
+    assert requirements.count("pyserial==3.5") == 1
+    assert not any(line.startswith("psychopy") for line in requirements)
 
 
-def test_installed_psychopy_matches_pin_and_task_imports() -> None:
-    assert version("psychopy") == "2026.2.3"
-
-    visual, core, keyboard_module = _load_psychopy_modules()
-
-    assert visual.__name__ == "psychopy.visual"
-    assert core.__name__ == "psychopy.core"
-    assert keyboard_module.__name__ == "psychopy.hardware.keyboard"
+def test_installed_task_libraries_match_pins() -> None:
+    assert version("PySide6") == "6.9.1"
+    assert version("pyserial") == "3.5"
+    assert hasattr(QOpenGLWindow, "frameSwapped")
 
 
-def test_missing_psychopy_error_points_to_installer(monkeypatch) -> None:
-    def fail_import(_name: str):
-        raise ModuleNotFoundError("No module named 'psychopy'")
+def test_installer_creates_a_python_313_environment() -> None:
+    installer = (PROJECT_ROOT / "install.ps1").read_text(encoding="utf-8")
 
-    monkeypatch.setattr(
-        "sssep_batch.experiment.runner.importlib.import_module",
-        fail_import,
-    )
-
-    with pytest.raises(PsychoPyUnavailableError, match=r"install\.ps1") as error:
-        _load_psychopy_modules()
-
-    assert "Python 3.11" in str(error.value)
-    assert "-Recreate" in str(error.value)
+    assert '"3.13"' in installer
+    assert '"-3.13"' in installer
+    assert "QOpenGLWindow" in installer
+    assert "psychopy" not in installer.casefold()

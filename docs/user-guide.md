@@ -24,7 +24,8 @@ TENS stimulation is controlled separately. Set it up before starting the task.
    the one paired with this task log. Then press **Space** on the fullscreen
    ready screen.
 
-Each cue marker is sent on the same screen refresh that displays its cue.
+The marker write is requested immediately after Qt reports the cue frame's
+buffer swap. Confirm physical screen and BioSemi timing before data collection.
 Press **Escape** to abort. Keep the task log with the matching BioSemi
 recording; an aborted run still needs review before analysis.
 

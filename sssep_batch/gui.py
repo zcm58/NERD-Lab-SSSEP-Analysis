@@ -1,8 +1,7 @@
 """One PySide6 launcher for participant tasks and recording analysis.
 
-PsychoPy task runs and BDF batches stay off the UI thread. Presentation runs
-reuse one long-lived worker thread because PsychoPy's window backend is tied to
-the thread that imports it.
+Participant presentation runs on Qt's GUI thread. BDF processing and saved
+plot work stay off the GUI thread.
 """
 
 from __future__ import annotations
@@ -11,7 +10,6 @@ import json
 import sys
 from math import isfinite
 from pathlib import Path
-from threading import Event
 
 import mne
 
@@ -26,10 +24,10 @@ from sssep_batch.config import (
 )
 from sssep_batch.experiment import (
     CueTriggerCodes,
+    QtTaskRunner,
     TaskCondition,
     TaskSettings,
     analysis_protocol_for_task,
-    run_participant_task,
 )
 from sssep_batch.models import AnalysisProtocol
 
@@ -81,7 +79,7 @@ def save_folder_defaults(
 def _require_pyside6():
     """Import PySide6 lazily and provide a clear install message if missing."""
     try:
-        from PySide6.QtCore import QObject, QThread, QUrl, Signal, Slot
+        from PySide6.QtCore import QThread, QUrl, Signal
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtWidgets import (
             QApplication,
@@ -118,7 +116,6 @@ def _require_pyside6():
         "QLabel": QLabel,
         "QLineEdit": QLineEdit,
         "QMessageBox": QMessageBox,
-        "QObject": QObject,
         "QPushButton": QPushButton,
         "QSpinBox": QSpinBox,
         "QTabWidget": QTabWidget,
@@ -127,7 +124,6 @@ def _require_pyside6():
         "QVBoxLayout": QVBoxLayout,
         "QWidget": QWidget,
         "Signal": Signal,
-        "Slot": Slot,
     }
 
 
@@ -147,7 +143,6 @@ def launch_gui() -> int:
     QLabel = qt["QLabel"]
     QLineEdit = qt["QLineEdit"]
     QMessageBox = qt["QMessageBox"]
-    QObject = qt["QObject"]
     QPushButton = qt["QPushButton"]
     QSpinBox = qt["QSpinBox"]
     QTabWidget = qt["QTabWidget"]
@@ -156,7 +151,6 @@ def launch_gui() -> int:
     QVBoxLayout = qt["QVBoxLayout"]
     QWidget = qt["QWidget"]
     Signal = qt["Signal"]
-    Slot = qt["Slot"]
 
     class BatchWorker(QThread):
         """Run `run_batch()` off the UI thread and emit Qt progress signals."""
@@ -202,58 +196,14 @@ def launch_gui() -> int:
             total = int(event.get("total", 0) or 0)
             self.progress_changed.emit(message, completed, total)
 
-    class TaskWorker(QObject):
-        """Run every PsychoPy presentation on one long-lived worker thread."""
-
-        progress_changed = Signal(int, int)
-        task_finished = Signal(object)
-        task_failed = Signal(object)
-        task_done = Signal()
-
-        def __init__(self) -> None:
-            super().__init__()
-            self._busy = False
-            self._stop_requested = Event()
-
-        @Slot(object)
-        def run_task(self, settings: TaskSettings) -> None:
-            """Run one task, reporting all results through Qt signals."""
-            if self._busy:
-                self.task_failed.emit(RuntimeError("A participant task is already running."))
-                self.task_done.emit()
-                return
-            self._busy = True
-            try:
-                result = run_participant_task(
-                    settings,
-                    progress_callback=self._handle_progress,
-                    abort_requested=self._stop_requested.is_set,
-                )
-            except Exception as exc:
-                self.task_failed.emit(exc)
-            else:
-                self.task_finished.emit(result)
-            finally:
-                self._busy = False
-                self.task_done.emit()
-
-        def _handle_progress(self, completed: int, total: int) -> None:
-            """Forward task progress without touching GUI widgets."""
-            self.progress_changed.emit(completed, total)
-
-        def request_stop(self) -> None:
-            """Request a cooperative stop from the GUI thread during app shutdown."""
-            self._stop_requested.set()
-
     class LauncherWindow(QWidget):
         """Single launcher for task presentation and BDF analysis."""
-
-        task_requested = Signal(object)
 
         def __init__(self) -> None:
             """Create widgets, load saved folders, and wire up button actions."""
             super().__init__()
             self.worker: BatchWorker | None = None
+            self.task_runner: QtTaskRunner | None = None
             self.task_running = False
             self.output_folder = ""
 
@@ -323,7 +273,6 @@ def launch_gui() -> int:
             self._load_initial_folders()
             self._build_layout()
             self._connect_signals()
-            self._start_task_thread()
 
         @staticmethod
         def _new_fixed_trigger_spin(code: int):
@@ -334,20 +283,6 @@ def launch_gui() -> int:
             spin.setEnabled(False)
             spin.setToolTip("Fixed BioSemi trigger code for this study")
             return spin
-
-        def _start_task_thread(self) -> None:
-            """Create the one presentation thread reused by every task launch."""
-            self.task_thread = QThread(self)
-            self.task_thread.setObjectName("sssep-presentation-thread")
-            self.task_worker = TaskWorker()
-            self.task_worker.moveToThread(self.task_thread)
-            self.task_requested.connect(self.task_worker.run_task)
-            self.task_worker.progress_changed.connect(self._update_task_progress)
-            self.task_worker.task_finished.connect(self._task_finished)
-            self.task_worker.task_failed.connect(self._task_failed)
-            self.task_worker.task_done.connect(self._task_done)
-            self.task_thread.finished.connect(self.task_worker.deleteLater)
-            self.task_thread.start()
 
         def _load_initial_folders(self) -> None:
             """Populate folder fields from saved settings or config defaults."""
@@ -565,7 +500,7 @@ def launch_gui() -> int:
             )
 
         def _start_task(self) -> None:
-            """Validate task fields and queue a presentation on the worker."""
+            """Validate task fields and start the Qt presentation session."""
             if self.task_running or self.worker is not None:
                 return
             try:
@@ -581,10 +516,15 @@ def launch_gui() -> int:
             self.task_status_label.setText(
                 f"Opening {settings.serial_port} before the participant screen..."
             )
-            self.task_requested.emit(settings)
+            self.task_runner = QtTaskRunner(parent=self)
+            self.task_runner.progress_changed.connect(self._update_task_progress)
+            self.task_runner.task_finished.connect(self._task_finished)
+            self.task_runner.task_failed.connect(self._task_failed)
+            self.task_runner.task_done.connect(self._task_done)
+            self.task_runner.start(settings)
 
         def closeEvent(self, event) -> None:
-            """Block active work, then stop the idle presentation thread safely."""
+            """Block closing while participant or analysis work is active."""
             if self.worker is not None and self.worker.isRunning():
                 event.ignore()
                 self.status_label.setText(
@@ -602,28 +542,15 @@ def launch_gui() -> int:
                     "screen before closing this window."
                 )
                 return
-            if not self._shutdown_task_thread():
-                event.ignore()
-                self.task_status_label.setText(
-                    "The presentation worker is still stopping. Please try again."
-                )
-                return
             super().closeEvent(event)
-
-        def _shutdown_task_thread(self) -> bool:
-            """Stop the presentation thread safely; repeated calls are harmless."""
-            if not self.task_thread.isRunning():
-                return True
-            self.task_worker.request_stop()
-            self.task_thread.quit()
-            return bool(self.task_thread.wait())
 
         def _shutdown_application(self) -> None:
             """Finish active background work before Qt destroys its threads."""
+            if self.task_runner is not None:
+                self.task_runner.request_stop()
             if self.worker is not None and self.worker.isRunning():
                 self.worker.wait()
             self.saved_plots_tab.wait_for_workers()
-            self._shutdown_task_thread()
 
         def _worker_finished(self) -> None:
             """Release the stopped worker before accepting another run."""
@@ -665,7 +592,7 @@ def launch_gui() -> int:
             self.tabs.setTabEnabled(1, not working)
 
         def _update_task_progress(self, completed: int, total: int) -> None:
-            """Show cue progress emitted by the presentation worker."""
+            """Show cue progress emitted by the presentation runner."""
             if completed == 0:
                 self.task_status_label.setText(
                     f"Task started. Waiting to present {total} cue epochs."
@@ -692,7 +619,7 @@ def launch_gui() -> int:
             )
 
         def _task_failed(self, exc: Exception) -> None:
-            """Make task setup, PsychoPy, serial, and log failures visible."""
+            """Make task setup, display, serial, and log failures visible."""
             message = str(exc) or type(exc).__name__
             self.task_status_label.setText(message.splitlines()[0])
             QMessageBox.critical(
@@ -702,7 +629,11 @@ def launch_gui() -> int:
             )
 
         def _task_done(self) -> None:
-            """Release the task controls while retaining the worker thread."""
+            """Release the completed task session and re-enable its controls."""
+            runner = self.task_runner
+            self.task_runner = None
+            if runner is not None:
+                runner.deleteLater()
             self.task_running = False
             self._set_task_running(False)
 

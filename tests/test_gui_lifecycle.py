@@ -171,10 +171,10 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
     ("app_mode", "shutdown_method"),
     [("owned", "quit"), ("owned", "exit"), ("existing", "quit")],
 )
-def test_application_shutdown_stops_presentation_thread(
+def test_application_shutdown_without_active_task_runner(
     tmp_path, app_mode, shutdown_method
 ):
-    """Qt-level quit paths must stop the idle persistent presentation thread."""
+    """Qt-level quit paths must cleanly close when no task runner is active."""
     script = tmp_path / "application_shutdown_probe.py"
     script.write_text(
         textwrap.dedent(
@@ -201,7 +201,7 @@ def test_application_shutdown_stops_presentation_thread(
                 app = QApplication.instance()
                 window = app._sssep_launcher_window
                 assert window.isVisible()
-                assert window.task_thread.isRunning()
+                assert window.task_runner is None
                 if shutdown_method == "quit":
                     app.quit()
                 else:
@@ -241,7 +241,7 @@ def test_application_shutdown_stops_presentation_thread(
                 assert exit_code == 0, (exit_code, errors)
                 assert not errors, errors
                 window = app._sssep_launcher_window
-                assert not window.task_thread.isRunning()
+                assert window.task_runner is None
                 print("APPLICATION_SHUTDOWN_OK")
             '''
         ),
@@ -263,7 +263,7 @@ def test_application_shutdown_stops_presentation_thread(
 
 
 def test_application_exit_cooperatively_stops_active_participant_task(tmp_path):
-    """A direct Qt exit must abort and join an active presentation worker."""
+    """A direct Qt exit must stop and release an active main-thread runner."""
     script = tmp_path / "active_task_shutdown_probe.py"
     script.write_text(
         textwrap.dedent(
@@ -272,35 +272,54 @@ def test_application_exit_cooperatively_stops_active_participant_task(tmp_path):
             from types import SimpleNamespace
             import sys
             import threading
-            import time
 
-            from PySide6.QtCore import QTimer
+            from PySide6.QtCore import QObject, QTimer, Signal
             from PySide6.QtWidgets import QApplication
             import sssep_batch.gui as gui
 
-            started = threading.Event()
+            class FakeTaskRunner(QObject):
+                progress_changed = Signal(int, int)
+                task_finished = Signal(object)
+                task_failed = Signal(object)
+                task_done = Signal()
 
-            def fake_task(settings, *, progress_callback=None, abort_requested=None):
-                assert threading.current_thread() is not threading.main_thread()
-                assert abort_requested is not None
-                started.set()
-                deadline = time.monotonic() + 10
-                while not abort_requested() and time.monotonic() < deadline:
-                    time.sleep(0.001)
-                assert abort_requested(), "shutdown request never reached active task"
-                return SimpleNamespace(
-                    aborted=True,
-                    abort_reason="Application shutdown requested during a cue epoch.",
-                    completed_epochs=0,
-                    log_path=None,
-                )
+                def __init__(self, *, parent=None):
+                    super().__init__(parent)
+                    self.started = False
+                    self.stop_calls = 0
+                    self.start_thread_id = None
+                    self.stop_thread_id = None
+                    runners.append(self)
+
+                def start(self, settings):
+                    assert threading.current_thread() is threading.main_thread()
+                    self.started = True
+                    self.start_thread_id = threading.get_ident()
+                    self.progress_changed.emit(0, settings.total_epochs)
+
+                def request_stop(self):
+                    assert threading.current_thread() is threading.main_thread()
+                    self.stop_calls += 1
+                    self.stop_thread_id = threading.get_ident()
+                    self.task_finished.emit(
+                        SimpleNamespace(
+                            aborted=True,
+                            abort_reason=(
+                                "Application shutdown requested during a cue epoch."
+                            ),
+                            completed_epochs=0,
+                            log_path=None,
+                        )
+                    )
+                    self.task_done.emit()
 
             def request_shutdown_when_started():
-                if not started.is_set():
+                if not runners or not runners[0].started:
                     QTimer.singleShot(10, request_shutdown_when_started)
                     return
                 window = QApplication.instance()._sssep_launcher_window
                 assert window.task_running
+                assert window.task_runner is runners[0]
                 QApplication.instance().exit(0)
 
             class AppFactory:
@@ -322,8 +341,10 @@ def test_application_exit_cooperatively_stops_active_participant_task(tmp_path):
 
             if __name__ == "__main__":
                 log_folder = Path(sys.argv[1])
+                main_thread_id = threading.get_ident()
+                runners = []
                 gui.load_saved_folders = lambda: {}
-                gui.run_participant_task = fake_task
+                gui.QtTaskRunner = FakeTaskRunner
                 qt = gui._require_pyside6()
                 qt.update(QApplication=AppFactory)
                 gui._require_pyside6 = lambda: qt
@@ -332,7 +353,12 @@ def test_application_exit_cooperatively_stops_active_participant_task(tmp_path):
                 app = QApplication.instance()
                 window = app._sssep_launcher_window
                 assert exit_code == 0
-                assert not window.task_thread.isRunning()
+                assert len(runners) == 1
+                assert runners[0].stop_calls == 1
+                assert runners[0].start_thread_id == main_thread_id
+                assert runners[0].stop_thread_id == main_thread_id
+                assert window.task_runner is None
+                assert not window.task_running
                 print("ACTIVE_TASK_SHUTDOWN_OK")
             '''
         ),
@@ -422,7 +448,7 @@ def test_application_exit_waits_for_active_batch_worker(tmp_path):
                 window = app._sssep_launcher_window
                 assert exit_code == 0
                 assert window.worker is not None and not window.worker.isRunning()
-                assert not window.task_thread.isRunning()
+                assert window.task_runner is None
                 print("ACTIVE_BATCH_SHUTDOWN_OK")
             '''
         ),

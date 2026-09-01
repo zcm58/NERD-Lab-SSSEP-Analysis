@@ -10,14 +10,14 @@ Check the Python version in PyCharm's Terminal:
 .\.venv\Scripts\python.exe --version
 ```
 
-It must say `Python 3.11`. If it shows another version, rebuild the environment
+It must say `Python 3.13`. If it shows another version, rebuild the environment
 and install every required library with:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Recreate
 ```
 
-If it already shows Python 3.11, run the same command without `-Recreate`.
+If it already shows Python 3.13, run the same command without `-Recreate`.
 
 ## Participant task problems
 
@@ -30,9 +30,10 @@ If it already shows Python 3.11, run the same command without `-Recreate`.
 | I need to stop the task | Press **Escape**. Keep the CSV log and record that the run was aborted. |
 | Cues or markers seem late | Stop using that session. Save its log and ask the supervisor to check the display and BioSemi Status channel. |
 
-The software sends a one-byte marker on the cue's display flip, but this does
-not replace a hardware timing check. Confirm marker values and timing on the
-BioSemi Status channel before collecting study data.
+The software requests a one-byte marker from the callback for the cue's Qt
+buffer swap. This does not measure physical screen onset or marker arrival.
+Confirm timing with a photodiode and the BioSemi Status channel before collecting
+study data.
 
 ## Analysis problems
 

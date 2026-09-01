@@ -1,4 +1,4 @@
-"""Exercise participant-task GUI settings and persistent worker lifecycle."""
+"""Exercise participant-task GUI settings and main-thread runner lifecycle."""
 
 import os
 from pathlib import Path
@@ -7,8 +7,8 @@ import sys
 import textwrap
 
 
-def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
-    """Two task launches should reuse a worker and keep Qt widgets on the UI thread."""
+def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
+    """Two task launches should create main-thread runners and restore controls."""
     script = tmp_path / "task_gui_probe.py"
     script.write_text(
         textwrap.dedent(
@@ -19,26 +19,53 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
             import threading
             import traceback
 
-            from PySide6.QtCore import QTimer
+            from PySide6.QtCore import QObject, QTimer, Signal
             from PySide6.QtWidgets import QApplication, QLabel
             import sssep_batch.gui as gui
 
-            def fake_task(settings, progress_callback=None, abort_requested=None):
-                assert abort_requested is not None
-                assert not abort_requested()
-                run_index = len(settings_seen)
-                settings_seen.append(settings)
-                worker_thread_ids.append(threading.get_ident())
-                progress_callback(0, settings.total_epochs)
-                started[run_index].set()
-                assert release[run_index].wait(10), "GUI did not release task worker"
-                progress_callback(settings.total_epochs, settings.total_epochs)
-                return SimpleNamespace(
-                    aborted=False,
-                    abort_reason=None,
-                    completed_epochs=settings.total_epochs,
-                    log_path=settings.output_folder / f"task_{run_index + 1}.csv",
-                )
+            class FakeTaskRunner(QObject):
+                progress_changed = Signal(int, int)
+                task_finished = Signal(object)
+                task_failed = Signal(object)
+                task_done = Signal()
+
+                def __init__(self, *, parent=None):
+                    super().__init__(parent)
+                    self.settings = None
+                    self.stop_requested = False
+                    self.finished = False
+                    runners.append(self)
+
+                def start(self, settings):
+                    assert threading.current_thread() is threading.main_thread()
+                    assert self.parent() is window_ref[0]
+                    self.settings = settings
+                    settings_seen.append(settings)
+                    start_thread_ids.append(threading.get_ident())
+                    self.progress_changed.emit(0, settings.total_epochs)
+
+                def complete(self):
+                    assert threading.current_thread() is threading.main_thread()
+                    assert not self.finished
+                    self.finished = True
+                    completion_thread_ids.append(threading.get_ident())
+                    self.progress_changed.emit(
+                        self.settings.total_epochs,
+                        self.settings.total_epochs,
+                    )
+                    self.task_finished.emit(
+                        SimpleNamespace(
+                            aborted=False,
+                            abort_reason=None,
+                            completed_epochs=self.settings.total_epochs,
+                            log_path=self.settings.output_folder
+                            / f"task_{len(settings_seen)}.csv",
+                        )
+                    )
+                    self.task_done.emit()
+
+                def request_stop(self):
+                    self.stop_requested = True
 
             def checked(callback):
                 def wrapped(*args):
@@ -46,12 +73,6 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                         callback(*args)
                     except BaseException:
                         errors.append(traceback.format_exc())
-                        for event in release:
-                            event.set()
-                        if window_ref:
-                            window_ref[0].task_running = False
-                            window_ref[0].task_thread.quit()
-                            window_ref[0].task_thread.wait(2000)
                         QApplication.instance().exit(1)
                 return wrapped
 
@@ -82,6 +103,7 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                 assert not hasattr(window, "serial_port_edit")
                 assert window.total_epochs_spin.singleStep() == 2
                 assert window.total_epochs_spin.value() % 2 == 0
+                assert window.task_runner is None
                 assert_trigger_codes_locked(window)
 
                 window.condition_combo.setCurrentIndex(1)
@@ -96,68 +118,63 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                 assert [
                     trigger.target_hz for trigger in analysis_protocol.active_triggers
                 ] == [12.5, 12.5]
-                original_worker = window.task_worker
                 window._start_task()
+                QTimer.singleShot(0, check_first_run)
 
-                @checked
-                def wait_for_first_start():
-                    if not started[0].is_set():
-                        QTimer.singleShot(10, wait_for_first_start)
-                        return
-                    assert window.task_running
-                    assert window.task_worker is original_worker
-                    assert window.task_thread.isRunning()
-                    assert not window.start_task_button.isEnabled()
-                    assert not window.tabs.isTabEnabled(1)
-                    assert not window.tabs.isTabEnabled(2)
-                    assert_trigger_codes_locked(window)
-                    assert not window.close(), "Active participant task accepted close"
-                    settings = settings_seen[0]
-                    assert settings.condition is gui.TaskCondition.RIGHT_HAND_AND_ANKLE
-                    assert settings.epoch_duration_sec == 2.5
-                    assert settings.total_epochs == 4
-                    assert settings.serial_port == "COM3"
-                    assert settings.output_folder == log_folder
-                    assert settings.trigger_codes == gui.CueTriggerCodes(11, 12, 21, 22)
-                    release[0].set()
-                    QTimer.singleShot(10, wait_for_first_finish)
+            @checked
+            def check_first_run():
+                window = window_ref[0]
+                assert window.task_running
+                assert window.task_runner is runners[0]
+                assert start_thread_ids == [main_thread_id]
+                assert not window.start_task_button.isEnabled()
+                assert not window.tabs.isTabEnabled(1)
+                assert not window.tabs.isTabEnabled(2)
+                assert_trigger_codes_locked(window)
+                assert not window.close(), "Active participant task accepted close"
+                settings = settings_seen[0]
+                assert settings.condition is gui.TaskCondition.RIGHT_HAND_AND_ANKLE
+                assert settings.epoch_duration_sec == 2.5
+                assert settings.total_epochs == 4
+                assert settings.serial_port == "COM3"
+                assert settings.output_folder == log_folder
+                assert settings.trigger_codes == gui.CueTriggerCodes(11, 12, 21, 22)
+                runners[0].complete()
+                QTimer.singleShot(0, start_second_run)
 
-                @checked
-                def wait_for_first_finish():
-                    if window.task_running:
-                        QTimer.singleShot(10, wait_for_first_finish)
-                        return
-                    assert window.start_task_button.isEnabled()
-                    assert window.tabs.isTabEnabled(1)
-                    assert window.tabs.isTabEnabled(2)
-                    assert_trigger_codes_locked(window)
-                    assert "Task complete: 4 epoch(s)." in window.task_status_label.text()
-                    assert window.task_worker is original_worker
-                    window._start_task()
-                    QTimer.singleShot(10, wait_for_second_start)
+            @checked
+            def start_second_run():
+                window = window_ref[0]
+                assert not window.task_running
+                assert window.task_runner is None
+                assert window.start_task_button.isEnabled()
+                assert window.tabs.isTabEnabled(1)
+                assert window.tabs.isTabEnabled(2)
+                assert_trigger_codes_locked(window)
+                assert "Task complete: 4 epoch(s)." in window.task_status_label.text()
+                window._start_task()
+                QTimer.singleShot(0, check_second_run)
 
-                @checked
-                def wait_for_second_start():
-                    if not started[1].is_set():
-                        QTimer.singleShot(10, wait_for_second_start)
-                        return
-                    assert window.task_worker is original_worker
-                    release[1].set()
-                    QTimer.singleShot(10, wait_for_second_finish)
+            @checked
+            def check_second_run():
+                window = window_ref[0]
+                assert len(runners) == 2
+                assert runners[1] is not runners[0]
+                assert window.task_runner is runners[1]
+                assert start_thread_ids == [main_thread_id, main_thread_id]
+                runners[1].complete()
+                QTimer.singleShot(0, finish_probe)
 
-                @checked
-                def wait_for_second_finish():
-                    if window.task_running:
-                        QTimer.singleShot(10, wait_for_second_finish)
-                        return
-                    assert len(settings_seen) == 2
-                    assert worker_thread_ids[0] == worker_thread_ids[1]
-                    assert not messages
-                    assert window.close(), "Idle presentation worker prevented close"
-                    assert not window.task_thread.isRunning()
-                    observed.add("closed")
-
-                QTimer.singleShot(0, wait_for_first_start)
+            @checked
+            def finish_probe():
+                window = window_ref[0]
+                assert len(settings_seen) == 2
+                assert completion_thread_ids == [main_thread_id, main_thread_id]
+                assert window.task_runner is None
+                assert not any(runner.stop_requested for runner in runners)
+                assert not messages
+                assert window.close(), "Completed task runner prevented close"
+                observed.add("closed")
 
             class AppFactory:
                 @staticmethod
@@ -178,12 +195,12 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
 
             if __name__ == "__main__":
                 log_folder = Path(sys.argv[1])
-                started = [threading.Event(), threading.Event()]
-                release = [threading.Event(), threading.Event()]
-                settings_seen, worker_thread_ids = [], []
+                main_thread_id = threading.get_ident()
+                runners, settings_seen = [], []
+                start_thread_ids, completion_thread_ids = [], []
                 messages, errors, window_ref = [], [], []
                 observed = set()
-                gui.run_participant_task = fake_task
+                gui.QtTaskRunner = FakeTaskRunner
                 gui.load_saved_folders = lambda: {}
                 qt = gui._require_pyside6()
                 qt.update(QApplication=AppFactory, QMessageBox=MessageBox)
