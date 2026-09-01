@@ -22,6 +22,13 @@ class GroupSpectrum:
     channel_participant_counts: tuple[int, ...]
     analysis_mean_amplitude_uv: np.ndarray
     spectrum: Spectrum
+    fpvs_reference_commit: str
+    montage_name: str
+    sampling_rate_hz: float
+    analysis_window_sec: float
+    plot_fmin_hz: float
+    plot_fmax_hz: float
+    fft_schema_version: int
 
 
 def _validate_records(
@@ -38,6 +45,15 @@ def _validate_records(
     first = records[0]
     expected_freqs = np.asarray(first.spectrum.freqs)
     expected_method = first.spectrum.method
+    expected_provenance = (
+        first.fpvs_reference_commit,
+        first.montage_name,
+        first.sampling_rate_hz,
+        first.analysis_window_sec,
+        first.plot_fmin_hz,
+        first.plot_fmax_hz,
+        first.fft_schema_version,
+    )
     definitions: dict[tuple[str, int], tuple[str, float | None]] = {}
     seen_records: set[tuple[str, str, int]] = set()
 
@@ -67,6 +83,17 @@ def _validate_records(
                 "Participant spectra must use exactly matching frequency grids; "
                 f"participant {record.participant_id!r} does not match."
             )
+        provenance = (
+            record.fpvs_reference_commit,
+            record.montage_name,
+            record.sampling_rate_hz,
+            record.analysis_window_sec,
+            record.plot_fmin_hz,
+            record.plot_fmax_hz,
+            record.fft_schema_version,
+        )
+        if provenance != expected_provenance:
+            raise ValueError("Participant spectra use inconsistent FFT provenance.")
         if (
             record.spectrum.amplitude_uv.shape
             != (len(record.channel_names), len(record.spectrum.freqs))
@@ -131,6 +158,13 @@ def participant_spectra_to_dataframe(
             ),
             "usable_epochs": record.usable_epochs,
             "processing_method": record.spectrum.method,
+            "fft_schema_version": record.fft_schema_version,
+            "fpvs_reference_commit": record.fpvs_reference_commit,
+            "montage_name": record.montage_name,
+            "sampling_rate_hz": record.sampling_rate_hz,
+            "analysis_window_sec": record.analysis_window_sec,
+            "plot_fmin_hz": record.plot_fmin_hz,
+            "plot_fmax_hz": record.plot_fmax_hz,
             "analysis_channels": ";".join(record.analysis_channels),
             "frequency_hz": record.spectrum.freqs,
             "analysis_mean_amplitude_uv": _participant_analysis_mean(record),
@@ -199,6 +233,13 @@ def average_group_spectra(
                     amplitude_uv=np.stack(channel_means),
                     method=first.spectrum.method,
                 ),
+                fpvs_reference_commit=first.fpvs_reference_commit,
+                montage_name=first.montage_name,
+                sampling_rate_hz=first.sampling_rate_hz,
+                analysis_window_sec=first.analysis_window_sec,
+                plot_fmin_hz=first.plot_fmin_hz,
+                plot_fmax_hz=first.plot_fmax_hz,
+                fft_schema_version=first.fft_schema_version,
             )
         )
 
@@ -216,6 +257,15 @@ def group_spectra_to_dataframe(groups: Iterable[GroupSpectrum]) -> pd.DataFrame:
 
     expected_freqs = groups[0].spectrum.freqs
     expected_method = groups[0].spectrum.method
+    expected_provenance = (
+        groups[0].fpvs_reference_commit,
+        groups[0].montage_name,
+        groups[0].sampling_rate_hz,
+        groups[0].analysis_window_sec,
+        groups[0].plot_fmin_hz,
+        groups[0].plot_fmax_hz,
+        groups[0].fft_schema_version,
+    )
     seen_groups: set[tuple[str, int]] = set()
     all_channels: list[str] = []
     seen_channels: set[str] = set()
@@ -226,6 +276,17 @@ def group_spectra_to_dataframe(groups: Iterable[GroupSpectrum]) -> pd.DataFrame:
         seen_groups.add(key)
         if group.spectrum.method != expected_method:
             raise ValueError("Group spectra use inconsistent processing methods.")
+        provenance = (
+            group.fpvs_reference_commit,
+            group.montage_name,
+            group.sampling_rate_hz,
+            group.analysis_window_sec,
+            group.plot_fmin_hz,
+            group.plot_fmax_hz,
+            group.fft_schema_version,
+        )
+        if provenance != expected_provenance:
+            raise ValueError("Group spectra use inconsistent FFT provenance.")
         if not np.array_equal(group.spectrum.freqs, expected_freqs):
             raise ValueError("Group spectra must use exactly matching frequency grids.")
         if group.spectrum.amplitude_uv.shape != (
@@ -258,6 +319,13 @@ def group_spectra_to_dataframe(groups: Iterable[GroupSpectrum]) -> pd.DataFrame:
             ),
             "participant_count": group.participant_count,
             "processing_method": group.spectrum.method,
+            "fft_schema_version": group.fft_schema_version,
+            "fpvs_reference_commit": group.fpvs_reference_commit,
+            "montage_name": group.montage_name,
+            "sampling_rate_hz": group.sampling_rate_hz,
+            "analysis_window_sec": group.analysis_window_sec,
+            "plot_fmin_hz": group.plot_fmin_hz,
+            "plot_fmax_hz": group.plot_fmax_hz,
             "frequency_hz": group.spectrum.freqs,
             "analysis_mean_amplitude_uv": group.analysis_mean_amplitude_uv,
             "analysis_mean_n_participants": group.participant_count,

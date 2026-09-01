@@ -38,14 +38,15 @@ recording; an aborted run still needs review before analysis.
    without `.bdf` becomes the participant ID in the results.
 4. Choose a results folder outside the project.
 5. Choose the electrode for the PNG plots.
-6. Enter the TENS frequency if you want it marked and summarized. It must be
-   inside the usable plot, filter, and FFT range (3–50 Hz by default). Otherwise,
-   leave this field blank; the full FFT is still saved.
+6. Enter the **TENS Unit Stimulation Frequency (Hz)** if you want it marked and
+   summarized. It must be inside the usable plot, filter, and FFT range (3–50 Hz
+   by default). Otherwise, leave this field blank; the full FFT is still saved.
 7. Click **Process Data** and leave the program open until it finishes.
 8. Click **View Output**.
 
-Each analysis run gets a new `run_...` folder. Start with
-`batch_processing_summary.csv`. The run also contains:
+Each analysis run gets a folder named with its date and 24-hour start time, such
+as `2026-09-01 @ 10h23`. If another run starts in the same minute, its folder
+ends in ` (2)`. Start with `batch_processing_summary.csv`. The run also contains:
 
 - `participant_fft_amplitudes.csv`: every participant, cue, frequency, and
   usable electrode in one table.
@@ -70,9 +71,38 @@ that electrode. The group CSV reports how many participants contributed. A
 Gap/Break line uses the same participants as its cue line and is omitted when
 a matching baseline is unavailable.
 
-Legacy ROI mean columns remain in the CSVs for compatibility. New ROI analyses,
-hemisphere comparisons, scalp maps, and statistics are performed outside this
-package.
+## Plot saved FFT results
+
+Use this after processing when you want another electrode, a later ROI, or a
+scalp map. The BDF files are not processed again.
+
+1. Open **Plot Saved FFT** and choose the earlier analysis results folder.
+2. Click **Load Results**.
+3. Choose **Group average** or one participant, then choose the cue or event.
+4. For an FFT plot, select one electrode or click several electrodes to average
+   as an ROI. Enter a short name and click **Create Electrode / ROI FFT Plot**.
+5. For a scalp map, enter the **TENS Unit Stimulation Frequency (Hz)** and click
+   **Create Scalp Map**.
+
+The saved-results tab requires the versioned `participant_fft_amplitudes.csv`
+created by this workflow. If an older run reports missing provenance columns,
+process its original BDF files once with the current version before plotting.
+Older folders whose names begin with `run_` can still be loaded.
+
+Each action creates `<selected run>/saved_fft_plots/plot_...`. Click **View New
+Plot** to open the newest folder. It contains the PNG and CSV source values. An
+ROI also saves each participant's curve and the electrodes that contributed to
+it. If one selected ROI electrode is missing for a participant, the remaining
+selected electrodes are averaged; that participant is omitted only when none
+remain. The group curve gives each contributing participant equal weight.
+
+Scalp maps use the nearest saved FFT bin and show the actual bin in the status
+message. Missing participant/electrode values are omitted, so the participant
+count can differ by electrode. The source CSV reports each count. Labels with
+no montage coordinates are listed and left off the map. No missing value is
+replaced with zero.
+
+Hemisphere comparisons and statistics remain outside this package.
 
 For the processing method, see [FPVS parity](fpvs-parity.md). For code changes,
 see the [code map](../architecture.md).

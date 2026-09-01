@@ -1,10 +1,17 @@
-"""Write single-electrode participant and group FFT amplitude plots."""
+"""Write immediate and saved-data FFT amplitude plots."""
 
+from functools import lru_cache
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
+import mne
 import numpy as np
 
+from sssep_batch.analysis.saved_fft import RoiSpectrum, ScalpMapValues
 from sssep_batch.config import FIXED_HZ_LINES, FMAX, FMIN
 from sssep_batch.models import Spectrum
 
@@ -90,3 +97,147 @@ def plot_spectrum(
         plt.savefig(outpath, dpi=300)
     finally:
         plt.close()
+
+
+def plot_saved_roi_spectrum(
+    spectrum: RoiSpectrum,
+    roi_name: str,
+    outpath: Path,
+) -> None:
+    """Save a participant or group ROI curve reconstructed from the FFT CSV."""
+
+    plot_fmin = spectrum.provenance.plot_fmin_hz
+    plot_fmax = spectrum.provenance.plot_fmax_hz
+    visible = (spectrum.frequencies >= plot_fmin) & (
+        spectrum.frequencies <= plot_fmax
+    )
+    if not np.any(visible):
+        raise ValueError("The saved spectrum contains no bins in the plot frequency range.")
+    visible_amplitude = spectrum.amplitude_uv[visible]
+    y_max = float(np.max(visible_amplitude))
+    level = (
+        f"Participant {spectrum.participant_id}"
+        if spectrum.participant_id is not None
+        else f"Group average (N={spectrum.participant_count})"
+    )
+
+    figure, axes = plt.subplots(figsize=(14, 6))
+    try:
+        axes.plot(
+            spectrum.frequencies,
+            spectrum.amplitude_uv,
+            linewidth=1.8,
+            label=level,
+        )
+        if spectrum.event.target_hz is not None:
+            axes.axvline(spectrum.event.target_hz, linestyle="-", linewidth=1.8)
+            axes.text(
+                spectrum.event.target_hz + 0.15,
+                y_max * 0.88 if y_max > 0 else 1.0,
+                f"Expected {spectrum.event.target_hz:g} Hz",
+                rotation=90,
+                va="top",
+                fontsize=9,
+            )
+        axes.set_title(
+            f"{level} - {spectrum.event.trigger_label} - {roi_name}"
+        )
+        axes.set_xlabel("Frequency (Hz)")
+        axes.set_ylabel("FFT amplitude (µV)")
+        axes.set_xlim(plot_fmin, plot_fmax)
+        axes.set_ylim(0, y_max * 1.08 if y_max > 0 else 1.0)
+        axes.set_xticks(
+            np.arange(np.ceil(plot_fmin), np.floor(plot_fmax) + 1, 1)
+        )
+        axes.grid(True, axis="y", alpha=0.3)
+        axes.legend()
+        figure.tight_layout()
+        figure.savefig(outpath, dpi=300)
+    finally:
+        plt.close(figure)
+
+
+@lru_cache(maxsize=8)
+def _saved_plot_montage(montage_name: str):
+    """Return the montage recorded in the reusable FFT table."""
+
+    try:
+        return mne.channels.make_standard_montage(montage_name)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(
+            f"The saved montage {montage_name!r} is not available in this MNE "
+            "installation."
+        ) from exc
+
+
+def plot_saved_scalp_map(values: ScalpMapValues, outpath: Path) -> tuple[str, ...]:
+    """Save one FFT-amplitude scalp map and return labels without coordinates."""
+
+    montage = _saved_plot_montage(values.provenance.montage_name)
+    montage_lookup = {name.casefold(): name for name in montage.ch_names}
+    mapped_names: list[str] = []
+    mapped_values: list[float] = []
+    mapped_counts: list[int] = []
+    unmapped: list[str] = []
+    for channel, amplitude, count in zip(
+        values.channel_names,
+        values.amplitude_uv,
+        values.participant_counts,
+    ):
+        mapped = montage_lookup.get(channel.casefold())
+        if mapped is None:
+            unmapped.append(channel)
+            continue
+        if not np.isfinite(amplitude):
+            raise ValueError(f"Scalp-map electrode {channel!r} has a nonfinite value.")
+        mapped_names.append(mapped)
+        mapped_values.append(float(amplitude))
+        mapped_counts.append(count)
+    if len(mapped_names) < 4:
+        omitted_text = f" Unmapped electrodes: {unmapped}." if unmapped else ""
+        raise ValueError(
+            "At least four montage electrodes with finite values are required for a "
+            f"scalp map.{omitted_text}"
+        )
+
+    info = mne.create_info(mapped_names, sfreq=100.0, ch_types="eeg")
+    info.set_montage(montage)
+    amplitude_array = np.asarray(mapped_values, dtype=np.float64)
+    upper_limit = float(np.max(amplitude_array))
+    if upper_limit <= 0:
+        upper_limit = 1.0
+    if values.participant_id is not None:
+        level = f"Participant {values.participant_id}"
+    else:
+        count_min = min(mapped_counts)
+        count_max = max(mapped_counts)
+        count_text = (
+            f"N={count_min}"
+            if count_min == count_max
+            else f"electrode N={count_min}–{count_max}"
+        )
+        level = f"Group average ({count_text})"
+
+    figure, axes = plt.subplots(figsize=(7, 6))
+    try:
+        image, _ = mne.viz.plot_topomap(
+            amplitude_array,
+            info,
+            axes=axes,
+            show=False,
+            sensors=True,
+            contours=6,
+            cmap="viridis",
+            vlim=(0.0, upper_limit),
+        )
+        axes.set_title(
+            f"{level} - {values.event.trigger_label}\n"
+            f"FFT amplitude at {values.actual_frequency_hz:g} Hz"
+        )
+        colorbar = figure.colorbar(image, ax=axes, shrink=0.82)
+        colorbar.set_label("FFT amplitude (µV)")
+        figure.tight_layout()
+        figure.savefig(outpath, dpi=300)
+    finally:
+        plt.close(figure)
+    return tuple(unmapped)

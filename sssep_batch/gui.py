@@ -134,6 +134,7 @@ def _require_pyside6():
 def launch_gui() -> int:
     """Open the launcher window and return the Qt application exit code."""
     qt = _require_pyside6()
+    from sssep_batch.saved_plots_gui import SavedPlotsPanel
 
     QApplication = qt["QApplication"]
     QCheckBox = qt["QCheckBox"]
@@ -317,6 +318,7 @@ def launch_gui() -> int:
             self.view_output_button = QPushButton("View Output")
             self.view_output_button.setEnabled(False)
             self.status_label = QLabel("Choose folders, then click Process Data.")
+            self.saved_plots_tab = SavedPlotsPanel(parent=self)
 
             self._load_initial_folders()
             self._build_layout()
@@ -360,6 +362,7 @@ def launch_gui() -> int:
             self.input_edit.setText(input_default)
             self.output_edit.setText(output_default)
             self.task_log_edit.setText(output_default)
+            self.saved_plots_tab.set_results_folder(output_default)
 
         def _build_layout(self) -> None:
             """Assemble the task and analysis tabs."""
@@ -408,7 +411,7 @@ def launch_gui() -> int:
             form.addRow("Output folder", output_row)
             form.addRow("Electrode to plot", self.plot_channel_combo)
             form.addRow(
-                "Stimulation frequency (Hz)",
+                "TENS Unit Stimulation Frequency (Hz)",
                 self.stimulation_frequency_edit,
             )
 
@@ -431,6 +434,7 @@ def launch_gui() -> int:
 
             self.tabs.addTab(self.task_tab, "Run Participant Task")
             self.tabs.addTab(self.analysis_tab, "Analyze Recordings")
+            self.tabs.addTab(self.saved_plots_tab, "Plot Saved FFT")
             layout = QVBoxLayout()
             layout.addWidget(self.tabs)
             self.setLayout(layout)
@@ -443,6 +447,9 @@ def launch_gui() -> int:
             self.output_browse_button.clicked.connect(self._browse_output)
             self.process_button.clicked.connect(self._start_processing)
             self.view_output_button.clicked.connect(self._view_output)
+            self.saved_plots_tab.busy_changed.connect(
+                self._saved_plot_busy_changed
+            )
 
         def _browse_task_log(self) -> None:
             """Choose where the participant-task CSV log will be saved."""
@@ -584,6 +591,10 @@ def launch_gui() -> int:
                     "Processing is still running. Keep this window open until it finishes."
                 )
                 return
+            if self.saved_plots_tab.is_busy():
+                event.ignore()
+                self.saved_plots_tab.show_busy_close_message()
+                return
             if self.task_running:
                 event.ignore()
                 self.task_status_label.setText(
@@ -611,6 +622,7 @@ def launch_gui() -> int:
             """Finish active background work before Qt destroys its threads."""
             if self.worker is not None and self.worker.isRunning():
                 self.worker.wait()
+            self.saved_plots_tab.wait_for_workers()
             self._shutdown_task_thread()
 
         def _worker_finished(self) -> None:
@@ -630,6 +642,7 @@ def launch_gui() -> int:
             self.process_button.setEnabled(not running)
             self.view_output_button.setEnabled(False if running else bool(self.output_folder))
             self.tabs.setTabEnabled(0, not running)
+            self.tabs.setTabEnabled(2, not running)
 
         def _set_task_running(self, running: bool) -> None:
             """Enable or disable task fields during a presentation."""
@@ -643,6 +656,13 @@ def launch_gui() -> int:
             ):
                 widget.setEnabled(not running)
             self.tabs.setTabEnabled(1, not running)
+            self.tabs.setTabEnabled(2, not running)
+
+        def _saved_plot_busy_changed(self, working: bool) -> None:
+            """Keep the task and analysis tabs idle during saved-result work."""
+
+            self.tabs.setTabEnabled(0, not working)
+            self.tabs.setTabEnabled(1, not working)
 
         def _update_task_progress(self, completed: int, total: int) -> None:
             """Show cue progress emitted by the presentation worker."""
@@ -696,6 +716,7 @@ def launch_gui() -> int:
         def _processing_finished(self, result: dict[str, object]) -> None:
             """Show batch results while retaining the thread until it finishes."""
             self.output_folder = str(result["output_folder"])
+            self.saved_plots_tab.set_results_folder(self.output_folder)
             failed = int(result.get("failed", 0) or 0)
             total = int(result.get("total_files", 0) or 0)
             participant_plot_failures = int(
@@ -810,7 +831,7 @@ def launch_gui() -> int:
     window = LauncherWindow()
     app.aboutToQuit.connect(window._shutdown_application)
     app._sssep_launcher_window = window
-    window.resize(760, 520)
+    window.resize(820, 680)
     window.show()
 
     if owns_app:

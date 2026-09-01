@@ -40,6 +40,8 @@ def make_record(
         usable_epochs=usable_epochs,
         channel_names=channel_names,
         analysis_channels=analysis_channels or channel_names,
+        sampling_rate_hz=2.0 * float(frequencies[-1]),
+        analysis_window_sec=1.0 / float(frequencies[1] - frequencies[0]),
         spectrum=Spectrum(
             freqs=frequencies.copy(),
             amplitude_uv=np.array(list(amplitudes.values()), dtype=np.float64),
@@ -73,6 +75,13 @@ def test_participant_table_has_one_row_per_event_and_frequency() -> None:
     np.testing.assert_array_equal(cue_rows.analysis_mean_amplitude_uv, [3.0, 6.0, 9.0])
     np.testing.assert_array_equal(cue_rows.C3_amplitude_uv, [2.0, 4.0, 6.0])
     assert cue_rows.analysis_channels.unique().tolist() == ["C3;C4"]
+    assert cue_rows.fft_schema_version.unique().tolist() == [1]
+    assert cue_rows.montage_name.unique().tolist() == ["standard_1005"]
+    assert cue_rows.sampling_rate_hz.unique().tolist() == [40.0]
+    assert cue_rows.analysis_window_sec.unique().tolist() == [0.1]
+    assert cue_rows.plot_fmin_hz.unique().tolist() == [3.0]
+    assert cue_rows.plot_fmax_hz.unique().tolist() == [50.0]
+    assert cue_rows.fpvs_reference_commit.str.len().min() == 40
     assert frame[frame.event_type == "baseline"].shape[0] == len(FREQUENCIES)
 
 
@@ -137,6 +146,8 @@ def test_consolidated_tables_mark_unavailable_electrodes_and_report_group_ns() -
     assert trigger_11.analysis_mean_n_participants.unique().tolist() == [2]
     assert trigger_11.C3_n_participants.unique().tolist() == [1]
     assert trigger_11.C4_n_participants.unique().tolist() == [2]
+    assert trigger_11.fft_schema_version.unique().tolist() == [1]
+    assert trigger_11.montage_name.unique().tolist() == ["standard_1005"]
     trigger_12 = group_frame[group_frame.trigger_code == 12]
     assert trigger_12.C3_n_participants.unique().tolist() == [1]
     assert trigger_12.C4_n_participants.unique().tolist() == [0]

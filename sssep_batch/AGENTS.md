@@ -2,8 +2,8 @@
 
 ## Package Role
 
-`sssep_batch` implements the SSSEP participant task and BDF processor in
-focused modules with small, dedicated responsibilities.
+`sssep_batch` implements the SSSEP participant task, BDF processor, and saved
+FFT plotting workflow in focused modules with dedicated responsibilities.
 
 The root `README.md` links the short student setup and user guides. Use
 `architecture.md` for the code map and validation steps, and
@@ -15,12 +15,15 @@ The package is organized around these boundaries:
   Batch discovery, worker setup, and parent-process summary writing.
 - `pipeline.py`
   Per-file stage order only.
+- `saved_plots_gui.py`
+  Saved-result tab and its background load/plot workers.
 - `loading.py`
   FPVS-compatible BioSemi channel-subset loading from external input.
 - `analysis/`
   Batch event protocol, per-electrode amplitude FFT, SSSEP amplitude summaries,
   consolidated participant/group tables, equal-participant group averaging,
-  and plotting helpers.
+  saved-table reloading, later ROI aggregation, plot/source-data output, and
+  plotting helpers.
 - `experiment/`
   Task models, balanced scheduling, PsychoPy presentation, BioSemi serial
   triggers, and task-event logs. It does not control TENS hardware.
@@ -107,6 +110,13 @@ The package is organized around these boundaries:
 - Keep `participant_fft_amplitudes.csv` and `group_fft_amplitudes.csv` at the
   run root. They contain all participant/cue/electrode spectra and group means,
   respectively; they are CSV files, not Excel workbooks.
+- Use the participant CSV as the canonical input for later plots. It preserves
+  participant identity for within-participant ROI means and equal-participant
+  group aggregation, plus the schema version, FPVS reference, montage, actual
+  sampling rate, analysis-window duration, and plot-frequency range. ROI source
+  exports retain each participant's contributing electrodes and curve. Scalp
+  maps keep variable electrode Ns visible, omit labels without montage
+  coordinates, and never replace missing channels with zero.
 - Save one participant and one group selected-electrode PNG per usable cue.
 
 ### `events/`

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from sssep_batch.analysis.spectra import compute_sssep_fft_from_averaged_epochs
+from sssep_batch.config import PROCESSING_METHOD
 
 
 def test_fft_preserves_each_electrodes_microvolt_amplitude_without_taper():
@@ -18,7 +19,7 @@ def test_fft_preserves_each_electrodes_microvolt_amplitude_without_taper():
     np.testing.assert_array_equal(spectrum.freqs, np.arange(129))
     np.testing.assert_allclose(spectrum.amplitude_uv[:, 10], [2.0, 5.0], atol=1e-12)
     assert np.max(spectrum.amplitude_uv[:, [9, 11]]) < 1e-12
-    assert "FPVS Toolbox amplitude FFT" in spectrum.method
+    assert spectrum.method == PROCESSING_METHOD
 
 
 def test_fft_matches_fpvs_doubling_of_dc_and_nyquist_without_demeaning():

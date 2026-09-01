@@ -18,6 +18,8 @@ Keep the default test suite lightweight:
   contracts. Include time-domain same-cue trial averaging, channel order,
   units, DC/Nyquist, equal-participant group means, missing-electrode counts,
   and consolidated participant/group tables.
+  Saved-FFT tests also cover strict CSV reloading, participant-first later ROI
+  means, nearest-bin scalp values, and plotted-value exports.
 - `events/`
   Trigger parsing, intended-event filtering, and epoch extraction behavior.
 - `preprocess/`
@@ -37,6 +39,9 @@ Keep the default test suite lightweight:
 - `test_gui_settings.py`, `test_gui_lifecycle.py`, and `test_task_gui.py`
   Saved parent-root settings plus batch and persistent task-worker shutdown in
   isolated SSSEP subprocesses. Do not modify the user's actual settings file.
+- `test_saved_plot_gui.py`
+  Saved-result loading and post-processing worker lifecycle in an isolated GUI
+  subprocess.
 
 ## Regression Fixture Rule
 

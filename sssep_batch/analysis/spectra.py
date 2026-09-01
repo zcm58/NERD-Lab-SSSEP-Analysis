@@ -7,6 +7,7 @@ doubling the DC and Nyquist bins. No taper, detrending, or padding is applied.
 
 import numpy as np
 
+from sssep_batch.config import PROCESSING_METHOD
 from sssep_batch.models import Spectrum
 
 
@@ -43,5 +44,5 @@ def compute_sssep_fft_from_averaged_epochs(
     return Spectrum(
         freqs=freqs[keep],
         amplitude_uv=amplitude_uv[:, keep],
-        method="FPVS Toolbox amplitude FFT after averaging repeated epochs (uV)",
+        method=PROCESSING_METHOD,
     )

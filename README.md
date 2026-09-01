@@ -15,11 +15,13 @@ TENS stimulation is controlled outside this program.
 3. **Something went wrong?** See [troubleshooting](docs/troubleshooting.md).
 
 Once set up, right-click [main.py](main.py) in PyCharm and choose **Run**. The
-launcher has two tabs:
+launcher has three tabs:
 
 - **Run Participant Task** presents the cues, sends BioSemi markers through the
   fixed `COM3` connection, and saves a task log.
 - **Analyze Recordings** processes saved `.bdf` files and creates FFT results.
+- **Plot Saved FFT** reopens an earlier FFT CSV to make participant/group
+  electrode or ROI plots and scalp maps without processing the BDF files again.
 
 The analysis uses the condition, epoch duration, epoch count, and fixed trigger
 codes shown in the participant-task tab. Set the condition, duration, and epoch
@@ -28,6 +30,8 @@ count to match the recordings before processing them.
 Use one `.bdf` file per participant in an analysis batch. Each run saves one
 consolidated participant FFT CSV and one group FFT CSV. These are CSV files that
 can be opened in Excel; the program does not create Excel workbooks.
+`participant_fft_amplitudes.csv` is the reusable source for later plots.
+It keeps the pipeline version and settings needed to validate a later reload.
 
 ## Where things live
 

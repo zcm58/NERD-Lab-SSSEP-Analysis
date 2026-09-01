@@ -18,7 +18,7 @@ from math import isfinite
 from numbers import Real
 import os
 from pathlib import Path
-from tempfile import NamedTemporaryFile, mkdtemp
+from tempfile import NamedTemporaryFile
 import traceback
 from typing import Callable
 
@@ -275,8 +275,16 @@ def ensure_output_folder_ready(output_path: Path) -> None:
 
 def create_run_output_folder(output_root: Path) -> Path:
     """Atomically create a new run folder without reusing earlier results."""
-    prefix = datetime.now().strftime("run_%Y%m%d_%H%M%S_")
-    return Path(mkdtemp(prefix=prefix, dir=output_root))
+    base_name = datetime.now().strftime("%Y-%m-%d @ %Hh%M")
+    candidate = output_root / base_name
+    suffix = 2
+    while True:
+        try:
+            candidate.mkdir()
+            return candidate
+        except FileExistsError:
+            candidate = output_root / f"{base_name} ({suffix})"
+            suffix += 1
 
 
 def validate_batch_request(

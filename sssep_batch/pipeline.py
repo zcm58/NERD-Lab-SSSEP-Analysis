@@ -162,6 +162,8 @@ def process_one_bdf(
                     channel_names=tuple(fft_channels),
                     analysis_channels=tuple(analysis_channels),
                     spectrum=baseline_fft,
+                    sampling_rate_hz=float(raw.info["sfreq"]),
+                    analysis_window_sec=window_sec,
                 )
             )
         plotted = 0
@@ -236,6 +238,8 @@ def process_one_bdf(
                     channel_names=tuple(fft_channels),
                     analysis_channels=tuple(analysis_channels),
                     spectrum=spectrum,
+                    sampling_rate_hz=float(raw.info["sfreq"]),
+                    analysis_window_sec=window_sec,
                 )
             )
             if SAVE_PLOTS and plot_channel_available:

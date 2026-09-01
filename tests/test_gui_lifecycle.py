@@ -59,7 +59,7 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
             window = next(w for w in QApplication.topLevelWidgets()
                           if w.windowTitle() == "SSSEP Task and Analysis")
             assert [window.tabs.tabText(index) for index in range(window.tabs.count())] == [
-                "Run Participant Task", "Analyze Recordings"
+                "Run Participant Task", "Analyze Recordings", "Plot Saved FFT"
             ]
             window.input_edit.setText(str(input_folder))
             window.output_edit.setText(str(output_root))
@@ -81,6 +81,7 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
                 assert not window.close(), "Active worker window accepted close"
                 assert window.isVisible()
                 assert not window.process_button.isEnabled()
+                assert not window.tabs.isTabEnabled(2)
                 release.set()
                 QTimer.singleShot(10, wait_for_finished)
 
@@ -90,6 +91,7 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
                     QTimer.singleShot(10, wait_for_finished)
                     return
                 assert window.process_button.isEnabled()
+                assert window.tabs.isTabEnabled(2)
                 assert window.output_edit.text() == str(output_root)
                 if outcome == "success":
                     assert window.output_folder == str(run_folder)

@@ -30,7 +30,7 @@ Do this once per computer. You need an internet connection.
    .\.venv\Scripts\python.exe -m pip install -r .\requirements.txt
    ```
 
-7. **Check the launcher.** Right-click `main.py` and select **Run**. A window
-   with **Run Participant Task** and **Analyze Recordings** tabs should open.
+7. **Check the launcher.** Right-click `main.py` and select **Run**. The task,
+   recording-analysis, and saved-FFT plotting tabs should open.
 
 [User guide](user-guide.md) | [Help](troubleshooting.md) | [Home](../README.md)

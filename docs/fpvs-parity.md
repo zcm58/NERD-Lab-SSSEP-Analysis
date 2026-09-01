@@ -149,13 +149,16 @@ active epochs is reported as failed.
 
 ## Outputs and migration
 
-- Every batch creates a fresh `run_YYYYMMDD_HHMMSS_<unique>` folder. Older
-  reports, errors, and plots cannot leak into a rerun. The GUI keeps the chosen
-  parent folder as its default; View Output opens the completed run.
+- Every batch creates a fresh `YYYY-MM-DD @ HHhMM` folder. A same-minute
+  collision adds ` (2)`, ` (3)`, and so on. Older reports, errors, and plots
+  cannot leak into a rerun. The GUI keeps the chosen parent folder as its
+  default; View Output opens the completed run.
 - `participant_fft_amplitudes.csv` consolidates all participants, cues, the
   baseline, retained EEG electrodes, and the full nonnegative spectrum
   (0–128 Hz with default settings). The baseline is stored once per participant
-  rather than repeated in every cue table.
+  rather than repeated in every cue table. The reusable table also records its
+  export-schema version, FPVS reference commit, montage, actual sampling rate,
+  analysis-window duration, and plot-frequency range.
 - `group_fft_amplitudes.csv` contains equal-participant group means and the
   contributing participant count for each electrode. Both exports are CSV
   files that can be opened in Excel; the program does not create workbooks.
@@ -167,6 +170,14 @@ active epochs is reported as failed.
   `group_cue_###_fft_amplitude.png` per usable cue. If the selected electrode
   is unavailable, only the affected plot is skipped; spectra and participant
   counts remain available.
+- The **Plot Saved FFT** tab reloads `participant_fft_amplitudes.csv` after the
+  parity-checked FFT is complete. Electrode/ROI curves and raw-amplitude scalp
+  maps are downstream displays: they do not alter preprocessing or FFT values.
+  Later ROI group curves average electrodes within participant first. A scalp
+  map uses the nearest saved FFT bin, reports that actual bin, and does not fill
+  missing electrodes with zero. ROI source data retain participant-specific
+  electrode membership; scalp source data retain per-electrode participant
+  counts and mark labels omitted for missing montage coordinates.
 - New summary fields use explicit `*_amplitude_uv` names. Amplitude ratios use
   `20 * log10(ratio)`. Missing active/baseline measurements remain unavailable.
 - Old power and Welch outputs are retired. Do not combine them with the new

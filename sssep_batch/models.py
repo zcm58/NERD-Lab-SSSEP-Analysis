@@ -11,7 +11,18 @@ from math import isfinite
 
 import numpy as np
 
-from sssep_batch.config import DOWNSAMPLE_RATE, FMAX, FMIN, HIGHCUT, LOWCUT
+from sssep_batch.config import (
+    DOWNSAMPLE_RATE,
+    FMAX,
+    FMIN,
+    FPVS_REFERENCE_COMMIT,
+    HIGHCUT,
+    LOWCUT,
+    MONTAGE_NAME,
+)
+
+
+FFT_EXPORT_SCHEMA_VERSION = 1
 
 
 def _target_frequency_bounds() -> tuple[float, float]:
@@ -178,7 +189,14 @@ class ParticipantSpectrum:
     usable_epochs: int
     channel_names: tuple[str, ...]
     analysis_channels: tuple[str, ...]
+    sampling_rate_hz: float
+    analysis_window_sec: float
     spectrum: Spectrum
+    fpvs_reference_commit: str = FPVS_REFERENCE_COMMIT
+    montage_name: str = MONTAGE_NAME
+    plot_fmin_hz: float = FMIN
+    plot_fmax_hz: float = FMAX
+    fft_schema_version: int = FFT_EXPORT_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         if not isinstance(self.participant_id, str) or not self.participant_id.strip():
@@ -246,15 +264,70 @@ class ParticipantSpectrum:
             )
         if not np.isfinite(freqs).all() or not np.isfinite(amplitude_uv).all():
             raise ValueError("spectrum frequencies and amplitudes must all be finite.")
+        if np.any(freqs < 0):
+            raise ValueError("spectrum frequencies must be nonnegative.")
+        if np.any(amplitude_uv < 0):
+            raise ValueError("spectrum FFT amplitudes must be nonnegative.")
         if np.any(np.diff(freqs) <= 0):
             raise ValueError("spectrum frequencies must be strictly increasing.")
         if not isinstance(self.spectrum.method, str) or not self.spectrum.method.strip():
             raise ValueError("spectrum method must be a non-empty string.")
+
+        if len(freqs) < 2:
+            raise ValueError("spectrum needs at least two frequency bins.")
+        sampling_rate_hz = self.sampling_rate_hz
+        analysis_window_sec = self.analysis_window_sec
+        for value, name in (
+            (sampling_rate_hz, "sampling_rate_hz"),
+            (analysis_window_sec, "analysis_window_sec"),
+        ):
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not isfinite(float(value))
+                or value <= 0
+            ):
+                raise ValueError(f"{name} must be a finite number above zero.")
+        if (
+            not isinstance(self.fpvs_reference_commit, str)
+            or not self.fpvs_reference_commit.strip()
+        ):
+            raise ValueError("fpvs_reference_commit must be a non-empty string.")
+        if not isinstance(self.montage_name, str) or not self.montage_name.strip():
+            raise ValueError("montage_name must be a non-empty string.")
+        if (
+            not isinstance(self.plot_fmin_hz, (int, float))
+            or isinstance(self.plot_fmin_hz, bool)
+            or not isfinite(float(self.plot_fmin_hz))
+            or self.plot_fmin_hz < 0
+        ):
+            raise ValueError("plot_fmin_hz must be a finite nonnegative number.")
+        if (
+            not isinstance(self.plot_fmax_hz, (int, float))
+            or isinstance(self.plot_fmax_hz, bool)
+            or not isfinite(float(self.plot_fmax_hz))
+            or self.plot_fmax_hz <= self.plot_fmin_hz
+        ):
+            raise ValueError("plot_fmax_hz must be finite and greater than plot_fmin_hz.")
+        if (
+            not isinstance(self.fft_schema_version, int)
+            or isinstance(self.fft_schema_version, bool)
+            or self.fft_schema_version < 1
+        ):
+            raise ValueError("fft_schema_version must be a positive integer.")
 
         object.__setattr__(self, "participant_id", self.participant_id.strip())
         object.__setattr__(self, "file_name", self.file_name.strip())
         object.__setattr__(self, "trigger_label", self.trigger_label.strip())
         object.__setattr__(self, "channel_names", channel_names)
         object.__setattr__(self, "analysis_channels", analysis_channels)
+        object.__setattr__(
+            self, "fpvs_reference_commit", self.fpvs_reference_commit.strip()
+        )
+        object.__setattr__(self, "montage_name", self.montage_name.strip())
+        object.__setattr__(self, "sampling_rate_hz", float(sampling_rate_hz))
+        object.__setattr__(self, "analysis_window_sec", float(analysis_window_sec))
+        object.__setattr__(self, "plot_fmin_hz", float(self.plot_fmin_hz))
+        object.__setattr__(self, "plot_fmax_hz", float(self.plot_fmax_hz))
         if self.target_hz is not None:
             object.__setattr__(self, "target_hz", float(self.target_hz))

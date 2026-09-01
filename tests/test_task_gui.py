@@ -20,7 +20,7 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
             import traceback
 
             from PySide6.QtCore import QTimer
-            from PySide6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication, QLabel
             import sssep_batch.gui as gui
 
             def fake_task(settings, progress_callback=None, abort_requested=None):
@@ -72,8 +72,11 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                               if w.windowTitle() == "SSSEP Task and Analysis")
                 window_ref.append(window)
                 assert [window.tabs.tabText(index) for index in range(window.tabs.count())] == [
-                    "Run Participant Task", "Analyze Recordings"
+                    "Run Participant Task", "Analyze Recordings", "Plot Saved FFT"
                 ]
+                assert "TENS Unit Stimulation Frequency (Hz)" in {
+                    label.text() for label in window.findChildren(QLabel)
+                }
                 assert window.plot_channel_combo.count() == 64
                 assert window.plot_channel_combo.currentText() == gui.PLOT_CHANNEL
                 assert not hasattr(window, "serial_port_edit")
@@ -106,6 +109,7 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                     assert window.task_thread.isRunning()
                     assert not window.start_task_button.isEnabled()
                     assert not window.tabs.isTabEnabled(1)
+                    assert not window.tabs.isTabEnabled(2)
                     assert_trigger_codes_locked(window)
                     assert not window.close(), "Active participant task accepted close"
                     settings = settings_seen[0]
@@ -125,6 +129,7 @@ def test_task_tab_reuses_one_background_thread_and_builds_settings(tmp_path):
                         return
                     assert window.start_task_button.isEnabled()
                     assert window.tabs.isTabEnabled(1)
+                    assert window.tabs.isTabEnabled(2)
                     assert_trigger_codes_locked(window)
                     assert "Task complete: 4 epoch(s)." in window.task_status_label.text()
                     assert window.task_worker is original_worker

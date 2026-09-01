@@ -5,6 +5,7 @@ verify batch orchestration behavior without loading real EEG data.
 """
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -80,6 +81,26 @@ def test_create_run_output_folder_is_unique_under_concurrent_calls(tmp_path):
 
     assert len(set(folders)) == 8
     assert all(folder.is_dir() and folder.parent == tmp_path for folder in folders)
+
+
+def test_create_run_output_folder_uses_readable_date_and_24_hour_time(
+    monkeypatch,
+    tmp_path,
+):
+    """Run folders should be readable while remaining safe on Windows."""
+
+    class FixedDatetime:
+        @staticmethod
+        def now():
+            return datetime(2026, 9, 1, 10, 23)
+
+    monkeypatch.setattr(batch, "datetime", FixedDatetime)
+
+    first = batch.create_run_output_folder(tmp_path)
+    second = batch.create_run_output_folder(tmp_path)
+
+    assert first.name == "2026-09-01 @ 10h23"
+    assert second.name == "2026-09-01 @ 10h23 (2)"
 
 
 def test_runtime_preflight_does_not_require_development_packages(monkeypatch):
@@ -216,6 +237,8 @@ def test_run_batch_reports_progress_and_writes_summary(monkeypatch, tmp_path):
                             usable_epochs=2,
                             channel_names=("C4",),
                             analysis_channels=("C4",),
+                            sampling_rate_hz=40.0,
+                            analysis_window_sec=0.1,
                             spectrum=spectrum,
                         ),
                         ParticipantSpectrum(
@@ -228,6 +251,8 @@ def test_run_batch_reports_progress_and_writes_summary(monkeypatch, tmp_path):
                             usable_epochs=2,
                             channel_names=("C4",),
                             analysis_channels=("C4",),
+                            sampling_rate_hz=40.0,
+                            analysis_window_sec=0.1,
                             spectrum=spectrum,
                         ),
                     ),
@@ -342,6 +367,8 @@ def _participant_record(
         usable_epochs=2,
         channel_names=("Cz",),
         analysis_channels=("Cz",),
+        sampling_rate_hz=40.0,
+        analysis_window_sec=0.1,
         spectrum=Spectrum(
             freqs=np.array([0.0, 10.0, 20.0]),
             amplitude_uv=np.full((1, 3), amplitude),

@@ -2,16 +2,17 @@
 
 [Home](README.md) · [Student user guide](docs/user-guide.md) · [Task behavior](docs/task-protocol.md) · [Processing method](docs/fpvs-parity.md)
 
-Run `main.py` for both participant tasks and recording analysis. Keep this
-entrypoint thin. The PySide6 launcher selects a workflow; PsychoPy is used only
-by the fullscreen participant task. `sssep_bdf_batch_processor.py` remains a
-compatibility wrapper.
+Run `main.py` for participant tasks, recording analysis, and saved-result
+plotting. Keep this entrypoint thin. The PySide6 launcher selects a workflow;
+PsychoPy is used only by the fullscreen participant task.
+`sssep_bdf_batch_processor.py` remains a compatibility wrapper.
 
 ## Find the right file
 
 | If you want to change… | Start here |
 | --- | --- |
-| The two-tab launcher, task fields, folder choices, or progress messages | [gui.py](sssep_batch/gui.py) |
+| Main launcher, participant-task fields, BDF fields, or progress messages | [gui.py](sssep_batch/gui.py) |
+| Saved-results tab, its controls, or its background workers | [saved_plots_gui.py](sssep_batch/saved_plots_gui.py) |
 | Analysis defaults and advanced processing settings | [config.py](sssep_batch/config.py) |
 | Task settings and event records | [experiment/models.py](sssep_batch/experiment/models.py) |
 | Balanced alternating cue order | [experiment/schedule.py](sssep_batch/experiment/schedule.py) |
@@ -26,9 +27,11 @@ compatibility wrapper.
 | Recorded trigger detection or trial windows | [events/](sssep_batch/events/) |
 | FFT calculation | [analysis/spectra.py](sssep_batch/analysis/spectra.py) |
 | Consolidated participant tables and equal-participant group averages | [analysis/grouping.py](sssep_batch/analysis/grouping.py) |
+| Reloading saved FFT CSVs, later ROI averaging, and scalp-map values | [analysis/saved_fft.py](sssep_batch/analysis/saved_fft.py) |
+| Writing later FFT plots and their exact source-data CSVs | [analysis/saved_outputs.py](sssep_batch/analysis/saved_outputs.py) |
 | Event codes and durations passed into analysis | [analysis/protocol.py](sssep_batch/analysis/protocol.py) |
 | Existing summary values | [analysis/metrics.py](sssep_batch/analysis/metrics.py) |
-| Participant and group single-electrode graphs | [analysis/plotting.py](sssep_batch/analysis/plotting.py) |
+| Participant/group electrode or ROI graphs and scalp maps | [analysis/plotting.py](sssep_batch/analysis/plotting.py) |
 | Analysis summary CSVs, reports, or error files | [outputs.py](sssep_batch/outputs.py) |
 
 [models.py](sssep_batch/models.py) contains analysis data containers.
@@ -57,14 +60,22 @@ files finish, the batch averages participant amplitude spectra with equal
 participant weight. It writes consolidated participant and group FFT CSVs plus
 one selected-electrode PNG per cue at each level.
 
-`pipeline.py` coordinates analysis stages; low-level work belongs in the
-relevant module. Legacy ROI mean fields remain for output compatibility. New
-ROI comparisons, hemisphere comparisons, scalp topographies, and statistics
-are intentionally left to external analysis.
+Saved-result plotting is separate:
+
+`saved participant FFT CSV → strict reload → participant/electrode/event selection → later ROI mean or scalp-bin values → PNG plus plotted-value CSV`
+
+Later ROI means average electrodes within participant before the equal-weight
+group mean. Their source exports retain every participant curve and its actual
+electrode membership. Scalp maps use finite electrodes with coordinates in the
+saved `standard_1005` montage; missing or unmapped electrodes are not replaced
+with zero. Hemisphere comparisons and statistics remain external.
 
 ## Keep these behaviors
 
-- Keep one launcher with separate task and analysis tabs.
+- Keep one launcher with separate participant-task, BDF-processing, and saved
+  FFT plotting tabs.
+- Keep saved-result plotting separate from BDF processing so one FFT calculation
+  can support many later plots.
 - Keep PsychoPy and live serial output inside `experiment/`, separate from BDF
   analysis.
 - Keep `COM3` fixed and absent from the GUI. Open and check it before participant
@@ -84,6 +95,12 @@ are intentionally left to external analysis.
 - Keep full per-electrode data in `participant_fft_amplitudes.csv` and
   `group_fft_amplitudes.csv`. The launcher's electrode selection changes PNGs
   only (`PLOT_CHANNEL` supplies its default).
+- Keep the FFT export schema version, FPVS reference commit, montage, actual
+  sampling rate, analysis-window duration, and saved plot range with every
+  reusable spectrum.
+- Validate the complete saved participant table before plotting. Use its
+  participant identities for later ROI/group calculations rather than pooling
+  rows or relying on the already-averaged group CSV.
 - Create one participant PNG and one group PNG per usable cue. If the selected
   electrode is unavailable, skip only the affected plot and report the actual
   participant count in group outputs.

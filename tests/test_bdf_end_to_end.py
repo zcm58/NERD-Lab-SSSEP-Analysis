@@ -16,6 +16,11 @@ from PIL import Image
 import pytest
 
 from sssep_batch import batch, config, pipeline
+from sssep_batch.analysis.saved_fft import (
+    average_saved_roi,
+    load_saved_fft_dataset,
+    saved_scalp_values,
+)
 from sssep_batch.loading import load_bdf
 from sssep_batch.models import AnalysisProtocol, AnalysisTrigger
 
@@ -246,6 +251,9 @@ def test_real_batch_workers_write_consolidated_group_outputs_and_keep_reruns_sep
     )
 
     participant_frame = pd.read_csv(participant_csv, float_precision="round_trip")
+    assert participant_frame.processing_method.unique().tolist() == [
+        config.PROCESSING_METHOD
+    ]
     assert len(participant_frame) == 2 * (1 + len(known["active_counts"])) * 961
     assert participant_frame.groupby(
         ["participant_id", "event_type", "trigger_code"]
@@ -279,6 +287,9 @@ def test_real_batch_workers_write_consolidated_group_outputs_and_keep_reruns_sep
     ] == pytest.approx(known["target_amplitude_uv"], rel=0.05)
 
     group_frame = pd.read_csv(group_csv, float_precision="round_trip")
+    assert group_frame.processing_method.unique().tolist() == [
+        config.PROCESSING_METHOD
+    ]
     assert len(group_frame) == (1 + len(known["active_counts"])) * 961
     assert group_frame.groupby(["event_type", "trigger_code"]).ngroups == (
         1 + len(known["active_counts"])
@@ -292,6 +303,26 @@ def test_real_batch_workers_write_consolidated_group_outputs_and_keep_reruns_sep
         group_11[f"{known['probe_channel']}_mean_amplitude_uv"],
         participant_11[f"{known['probe_channel']}_amplitude_uv"],
     )
+
+    saved_dataset = load_saved_fft_dataset(first_run)
+    saved_roi = average_saved_roi(
+        saved_dataset,
+        event_type="cue",
+        trigger_code=11,
+        channels=(known["probe_channel"],),
+    )
+    np.testing.assert_allclose(
+        saved_roi.amplitude_uv,
+        group_11[f"{known['probe_channel']}_mean_amplitude_uv"],
+    )
+    saved_scalp = saved_scalp_values(
+        saved_dataset,
+        event_type="cue",
+        trigger_code=11,
+        frequency_hz=10.0,
+    )
+    assert saved_scalp.actual_frequency_hz == 10.0
+    assert saved_scalp.participant_counts == (2,) * len(saved_scalp.channel_names)
 
     group_plots = sorted(group_plots_folder.glob("group_cue_*_fft_amplitude.png"))
     assert len(group_plots) == len(known["active_counts"])
@@ -319,7 +350,7 @@ def test_real_batch_workers_write_consolidated_group_outputs_and_keep_reruns_sep
     assert Path(first["summary_csv"]).read_bytes() == first_summary
     assert participant_csv.read_bytes() == first_participant_csv
     assert group_csv.read_bytes() == first_group_csv
-    assert len(list(output_root.glob("run_*"))) == 2
+    assert len(list(output_root.glob("????-??-?? @ ??h??*"))) == 2
     _check_processing_summary(second["results"][0], known)
     assert Path(second["participant_fft_csv"]).exists()
     assert Path(second["group_fft_csv"]).exists()

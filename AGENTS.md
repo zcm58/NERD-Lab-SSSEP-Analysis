@@ -7,7 +7,7 @@ to be run from PyCharm. The current user-facing workflow is:
 
 1. Right-click `main.py`
 2. Click `Run 'main'`
-3. Choose **Run Participant Task** or **Analyze Recordings**
+3. Choose the participant task, recording analysis, or saved FFT plotting tab
 
 Do not redesign this around command-line flags unless the user explicitly asks
 for that. Task settings and the plotted electrode belong in the GUI;
@@ -15,9 +15,8 @@ for that. Task settings and the plotted electrode belong in the GUI;
 
 ## Product Scope
 
-Maintain one simple SSSEP/TENS application with two connected parts: an FPVS
-Studio-style fullscreen cue/BioSemi trigger runner, and the existing offline
-BDF analysis with per-electrode FFT plots.
+Maintain one simple SSSEP/TENS application with a fullscreen cue/BioSemi trigger
+runner, offline BDF processing, and plotting from saved FFT results.
 
 - Condition 1: stimulate both hands; cue attention to the left or right hand;
   test stimulation-frequency amplitude over the contralateral hemisphere.
@@ -26,10 +25,10 @@ BDF analysis with per-electrode FFT plots.
 
 TENS units are controlled externally. This package owns task presentation,
 cue-onset BioSemi triggers, BDF processing, consolidated participant/group
-per-electrode FFT CSVs, and participant/group plots for one user-selected
-electrode. New ROI averaging, hemisphere comparisons, topographies, and other
-statistical analysis stay outside this package; the existing ROI mean
-compatibility fields remain in exported CSVs/summaries.
+per-electrode FFT CSVs, participant/group electrode or ROI plots, and raw FFT
+amplitude scalp maps. Hemisphere comparisons and statistical analysis stay
+outside this package; existing ROI mean compatibility fields remain in exported
+CSVs/summaries.
 
 The participant runtime alternates its two balanced cues from a randomized
 starting cue, uses fixed codes `11`/`12` for both hands and `21`/`22` for hand
@@ -111,6 +110,10 @@ pipeline. Preserve this current design unless a further change is authorized:
   in the root-run `participant_fft_amplitudes.csv` and
   `group_fft_amplitudes.csv`. These are consolidated CSVs, not Excel workbooks.
   The old power/Welch schema is intentionally retired.
+- Treat `participant_fft_amplitudes.csv` as the canonical saved plotting source.
+  Later ROIs average electrodes within participant before equal-participant
+  group averaging. Scalp maps use finite available electrodes at the nearest
+  saved FFT bin and report the actual bin and per-electrode participant counts.
 - Keep file-level parallelism in `batch.py`. Parallelism is across files, not
   inside a single file.
 - Keep native thread limits at `1` per worker to avoid oversubscription during
@@ -118,9 +121,10 @@ pipeline. Preserve this current design unless a further change is authorized:
 - Create one participant and one group selected-electrode plot per usable cue.
 - Keep each batch in a newly created, unique run subfolder. Preserve previous
   runs and the GUI's parent-root saved setting.
-- Retain GUI workers until completion and block window close while a batch or
-  participant task is active. Keep batch work off the UI thread and reuse one
-  persistent presentation thread for PsychoPy on Windows.
+- Retain GUI workers until completion and block window close while a batch,
+  participant task, saved-data load, or saved plot is active. Keep long work off
+  the UI thread and reuse one persistent presentation thread for PsychoPy on
+  Windows.
 
 ## Before Making Structural Changes
 
