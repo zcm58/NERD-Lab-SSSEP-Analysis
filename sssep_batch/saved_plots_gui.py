@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QThread, QUrl, Signal
+from PySide6.QtCore import QSize, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
-    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListView,
     QListWidget,
     QMessageBox,
     QPushButton,
@@ -32,6 +32,7 @@ from sssep_batch.analysis.saved_outputs import (
     create_saved_scalp_outputs,
 )
 from sssep_batch.config import PLOT_CHANNEL, STIMULATION_FREQUENCY_HZ
+from sssep_batch.gui_style import SectionCard, build_page, hint_label, make_form
 
 
 class SavedFftLoadWorker(QThread):
@@ -121,7 +122,15 @@ class SavedPlotsPanel(QWidget):
         self.channel_list.setSelectionMode(
             QAbstractItemView.SelectionMode.MultiSelection
         )
+        self.channel_list.setFlow(QListView.Flow.LeftToRight)
+        self.channel_list.setWrapping(True)
+        self.channel_list.setResizeMode(QListView.ResizeMode.Adjust)
+        self.channel_list.setMovement(QListView.Movement.Static)
+        self.channel_list.setGridSize(QSize(58, 34))
         self.channel_list.setMinimumHeight(150)
+        self.channel_list.setToolTip(
+            "Electrodes to plot or average (click to select or clear)"
+        )
         self.frequency_spin = QDoubleSpinBox()
         self.frequency_spin.setDecimals(4)
         self.frequency_spin.setSingleStep(0.1)
@@ -141,42 +150,74 @@ class SavedPlotsPanel(QWidget):
         self._set_working(False)
 
     def _build_layout(self) -> None:
-        """Assemble the saved-result controls."""
+        """Group saved-result choices and plotting actions into section cards."""
+
+        body, footer = build_page(self)
+        source_card = SectionCard(
+            "Saved results",
+            "Load an earlier run to make new plots without processing BDF files again.",
+        )
 
         results_row = QHBoxLayout()
         results_row.addWidget(self.results_edit)
         results_row.addWidget(self.results_browse_button)
         results_row.addWidget(self.results_load_button)
+        source_form = make_form()
+        source_form.addRow("Processed results folder", results_row)
+        source_card.body.addLayout(source_form)
+        body.addWidget(source_card)
 
-        form = QFormLayout()
-        form.addRow("Processed results folder", results_row)
-        form.addRow("Plot level", self.level_combo)
-        form.addRow("Participant", self.participant_combo)
-        form.addRow("Cue / event", self.event_combo)
-        form.addRow("Electrode / ROI name", self.roi_name_edit)
-        form.addRow("TENS Unit Stimulation Frequency (Hz)", self.frequency_spin)
+        selection_card = SectionCard("Data selection")
+        selection_row = QHBoxLayout()
+        selection_row.setSpacing(12)
+        for label, control, stretch in (
+            ("Plot level", self.level_combo, 2),
+            ("Participant", self.participant_combo, 1),
+            ("Cue / event", self.event_combo, 2),
+        ):
+            field = QVBoxLayout()
+            field.setSpacing(6)
+            field.addWidget(QLabel(label))
+            field.addWidget(control)
+            selection_row.addLayout(field, stretch)
+        selection_card.body.addLayout(selection_row)
+        body.addWidget(selection_card)
 
-        button_row = QHBoxLayout()
-        button_row.addWidget(self.create_roi_button)
-        button_row.addWidget(self.create_scalp_button)
-        button_row.addWidget(self.view_button)
-
-        layout = QVBoxLayout()
-        layout.addWidget(
-            QLabel(
-                "Reuse participant_fft_amplitudes.csv without processing the BDF "
-                "files again. Select one electrode, or select several to average "
-                "as an ROI. Scalp maps always use all available electrodes."
-            )
+        roi_card = SectionCard(
+            "Electrode / ROI spectrum",
+            "Select one electrode, or select several to average as an ROI.",
         )
-        layout.addLayout(form)
-        layout.addWidget(
-            QLabel("Electrodes to plot or average (click to select or clear):")
+        roi_form = make_form()
+        roi_form.addRow("Electrode / ROI name", self.roi_name_edit)
+        roi_card.body.addLayout(roi_form)
+        roi_card.body.addWidget(self.channel_list)
+        self.create_roi_button.setProperty("uiRole", "primary")
+
+        scalp_card = SectionCard(
+            "Scalp map",
+            "Map FFT amplitude at the nearest saved frequency bin.",
         )
-        layout.addWidget(self.channel_list)
-        layout.addLayout(button_row)
-        layout.addWidget(self.status_label)
-        self.setLayout(layout)
+        scalp_form = make_form()
+        scalp_form.addRow("TENS Unit Stimulation Frequency (Hz)", self.frequency_spin)
+        scalp_card.body.addLayout(scalp_form)
+        scalp_card.body.addWidget(
+            hint_label("Scalp maps always use all available electrodes.")
+        )
+        scalp_card.body.addStretch(1)
+
+        plot_row = QHBoxLayout()
+        plot_row.setSpacing(14)
+        plot_row.addWidget(roi_card, 3)
+        plot_row.addWidget(scalp_card, 2)
+        body.addLayout(plot_row)
+        body.addStretch(1)
+
+        self.status_label.setWordWrap(True)
+        self.status_label.setProperty("uiRole", "muted")
+        footer.addWidget(self.status_label, 1)
+        footer.addWidget(self.create_roi_button)
+        footer.addWidget(self.create_scalp_button)
+        footer.addWidget(self.view_button)
 
     def _connect_signals(self) -> None:
         """Connect panel actions."""

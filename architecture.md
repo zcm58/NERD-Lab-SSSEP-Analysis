@@ -13,6 +13,7 @@ PySide6 also presents the fullscreen participant task.
 | --- | --- |
 | Python environment or pinned libraries | [install.ps1](install.ps1) and [requirements.txt](requirements.txt) |
 | Main launcher, participant-task fields, BDF fields, or progress messages | [gui.py](sssep_batch/gui.py) |
+| Launcher colors, section cards, forms, or scrollable pages | [gui_style.py](sssep_batch/gui_style.py) |
 | Saved-results tab, its controls, or its background workers | [saved_plots_gui.py](sssep_batch/saved_plots_gui.py) |
 | Analysis defaults and advanced processing settings | [config.py](sssep_batch/config.py) |
 | Task settings and event records | [experiment/models.py](sssep_batch/experiment/models.py) |
@@ -82,6 +83,11 @@ with zero. Hemisphere comparisons and statistics remain external.
 
 - Keep one launcher with separate participant-task, BDF-processing, and saved
   FFT plotting tabs.
+- Keep launcher styling in `gui_style.py`: FPVS Studio's light/dark colors,
+  section cards, and action hierarchy, adapted to the three SSSEP tabs. Theme
+  selection follows the system palette at launch. Scroll settings on smaller
+  windows while keeping actions and status visible. Do not style the fullscreen
+  participant task or change processing to match launcher appearance.
 - Keep saved-result plotting separate from BDF processing so one FFT calculation
   can support many later plots.
 - Keep PySide6 presentation and live serial output inside `experiment/`,

@@ -17,6 +17,9 @@ The package is organized around these boundaries:
   Per-file stage order only.
 - `saved_plots_gui.py`
   Saved-result tab and its background load/plot workers.
+- `gui_style.py`
+  Launcher-only FPVS Studio styling, section cards, forms, and scrolling.
+  Keep the three tabs and fixed action/status footers; leave task frames alone.
 - `loading.py`
   FPVS-compatible BioSemi channel-subset loading from external input.
 - `analysis/`

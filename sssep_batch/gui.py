@@ -93,7 +93,7 @@ def _require_pyside6():
             QComboBox,
             QDoubleSpinBox,
             QFileDialog,
-            QFormLayout,
+            QGridLayout,
             QHBoxLayout,
             QLabel,
             QLineEdit,
@@ -117,7 +117,7 @@ def _require_pyside6():
         "QDesktopServices": QDesktopServices,
         "QDoubleSpinBox": QDoubleSpinBox,
         "QFileDialog": QFileDialog,
-        "QFormLayout": QFormLayout,
+        "QGridLayout": QGridLayout,
         "QHBoxLayout": QHBoxLayout,
         "QLabel": QLabel,
         "QLineEdit": QLineEdit,
@@ -136,6 +136,13 @@ def _require_pyside6():
 def launch_gui() -> int:
     """Open the launcher window and return the Qt application exit code."""
     qt = _require_pyside6()
+    from sssep_batch.gui_style import (
+        SectionCard,
+        apply_launcher_style,
+        build_page,
+        hint_label,
+        make_form,
+    )
     from sssep_batch.saved_plots_gui import SavedPlotsPanel
 
     QApplication = qt["QApplication"]
@@ -144,7 +151,7 @@ def launch_gui() -> int:
     QDesktopServices = qt["QDesktopServices"]
     QDoubleSpinBox = qt["QDoubleSpinBox"]
     QFileDialog = qt["QFileDialog"]
-    QFormLayout = qt["QFormLayout"]
+    QGridLayout = qt["QGridLayout"]
     QHBoxLayout = qt["QHBoxLayout"]
     QLabel = qt["QLabel"]
     QLineEdit = qt["QLineEdit"]
@@ -301,6 +308,7 @@ def launch_gui() -> int:
 
             self._load_initial_folders()
             self._build_layout()
+            apply_launcher_style(self)
             self._connect_signals()
 
         @staticmethod
@@ -329,44 +337,68 @@ def launch_gui() -> int:
             self.saved_plots_tab.set_results_folder(output_default)
 
         def _build_layout(self) -> None:
-            """Assemble the task and analysis tabs."""
+            """Group the three workflows using the FPVS Studio visual hierarchy."""
+            session_card = SectionCard(
+                "Session settings", "Equal cue counts in a fresh random order."
+            )
+            session_form = make_form()
+            session_form.addRow("Condition", self.condition_combo)
+            session_form.addRow("Duration of each epoch", self.epoch_duration_spin)
+            session_form.addRow("Break between epochs", self.break_duration_spin)
+            session_form.addRow("Total epochs (even)", self.total_epochs_spin)
+            session_card.body.addLayout(session_form)
+
+            text_card = SectionCard(
+                "Participant text", "The words shown on the fullscreen display."
+            )
+            text_form = make_form()
+            text_form.addRow("Left hand text", self.left_hand_prompt_edit)
+            text_form.addRow("Right hand text", self.right_hand_prompt_edit)
+            text_form.addRow("Right ankle text", self.right_ankle_prompt_edit)
+            text_form.addRow("Break text", self.break_prompt_edit)
+            text_card.body.addLayout(text_form)
+
+            trigger_card = SectionCard(
+                "BioSemi trigger codes", "Fixed for this study; editing is disabled."
+            )
+            trigger_form = make_form()
+            for label, spin in (
+                ("Both hands: left hand", self.both_hands_left_code_spin),
+                ("Both hands: right hand", self.both_hands_right_code_spin),
+                ("Hand/ankle: right hand", self.hand_ankle_hand_code_spin),
+                ("Hand/ankle: right ankle", self.hand_ankle_ankle_code_spin),
+            ):
+                trigger_form.addRow(label, spin)
+            trigger_card.body.addLayout(trigger_form)
+
+            run_card = SectionCard(
+                "Task log and test mode", "TENS stimulation is controlled externally."
+            )
             task_log_row = QHBoxLayout()
             task_log_row.addWidget(self.task_log_edit)
             task_log_row.addWidget(self.task_log_browse_button)
+            run_card.body.addWidget(QLabel("Task log folder"))
+            run_card.body.addLayout(task_log_row)
+            run_card.body.addWidget(self.test_mode_checkbox)
+            run_card.body.addWidget(hint_label(
+                "Keep the CSV log with the participant's recording. Test mode "
+                "runs the screens without sending BioSemi triggers."
+            ))
 
-            task_form = QFormLayout()
-            task_form.addRow("Condition", self.condition_combo)
-            task_form.addRow("Duration of each epoch", self.epoch_duration_spin)
-            task_form.addRow("Break between epochs", self.break_duration_spin)
-            task_form.addRow("Total epochs (even)", self.total_epochs_spin)
-            task_form.addRow("Left hand text", self.left_hand_prompt_edit)
-            task_form.addRow("Right hand text", self.right_hand_prompt_edit)
-            task_form.addRow("Right ankle text", self.right_ankle_prompt_edit)
-            task_form.addRow("Break text", self.break_prompt_edit)
-            task_form.addRow(self.test_mode_checkbox)
-            task_form.addRow(
-                "Both hands: left hand trigger",
-                self.both_hands_left_code_spin,
-            )
-            task_form.addRow(
-                "Both hands: right hand trigger",
-                self.both_hands_right_code_spin,
-            )
-            task_form.addRow(
-                "Hand/ankle: right hand trigger",
-                self.hand_ankle_hand_code_spin,
-            )
-            task_form.addRow(
-                "Hand/ankle: right ankle trigger",
-                self.hand_ankle_ankle_code_spin,
-            )
-            task_form.addRow("Task log folder", task_log_row)
-
-            task_layout = QVBoxLayout()
-            task_layout.addLayout(task_form)
-            task_layout.addWidget(self.start_task_button)
-            task_layout.addWidget(self.task_status_label)
-            self.task_tab.setLayout(task_layout)
+            task_body, task_footer = build_page(self.task_tab)
+            task_grid = QGridLayout()
+            task_grid.setSpacing(12)
+            task_grid.setColumnStretch(0, 1)
+            task_grid.setColumnStretch(1, 1)
+            task_grid.addWidget(session_card, 0, 0)
+            task_grid.addWidget(text_card, 0, 1)
+            task_grid.addWidget(trigger_card, 1, 0)
+            task_grid.addWidget(run_card, 1, 1)
+            task_body.addLayout(task_grid)
+            self.task_status_label.setWordWrap(True)
+            self.start_task_button.setProperty("uiRole", "primary")
+            task_footer.addWidget(self.task_status_label, 1)
+            task_footer.addWidget(self.start_task_button)
 
             input_row = QHBoxLayout()
             input_row.addWidget(self.input_edit)
@@ -376,36 +408,50 @@ def launch_gui() -> int:
             output_row.addWidget(self.output_edit)
             output_row.addWidget(self.output_browse_button)
 
-            form = QFormLayout()
-            form.addRow("Input folder", input_row)
-            form.addRow("Output folder", output_row)
-            form.addRow("Electrode to plot", self.plot_channel_combo)
-            form.addRow(
+            files_card = SectionCard(
+                "Recording folders", "Use one BDF file per participant."
+            )
+            files_form = make_form()
+            files_form.addRow("Input folder", input_row)
+            files_form.addRow("Output folder", output_row)
+            files_card.body.addLayout(files_form)
+            files_card.body.addWidget(self.save_checkbox)
+
+            fft_card = SectionCard(
+                "FFT output", "Full electrode data are saved for later plotting."
+            )
+            fft_form = make_form()
+            fft_form.addRow("Electrode to plot", self.plot_channel_combo)
+            fft_form.addRow(
                 "TENS Unit Stimulation Frequency (Hz)",
                 self.stimulation_frequency_edit,
             )
+            fft_card.body.addLayout(fft_form)
 
-            button_row = QHBoxLayout()
-            button_row.addWidget(self.process_button)
-            button_row.addWidget(self.view_output_button)
-
-            analysis_layout = QVBoxLayout()
-            analysis_layout.addWidget(
-                QLabel(
-                    "Use one BDF per participant for the condition selected on the "
-                    "Participant Task tab. Same-cue epochs are averaged before FFT."
-                )
-            )
-            analysis_layout.addLayout(form)
-            analysis_layout.addWidget(self.save_checkbox)
-            analysis_layout.addLayout(button_row)
-            analysis_layout.addWidget(self.status_label)
-            self.analysis_tab.setLayout(analysis_layout)
+            analysis_body, analysis_footer = build_page(self.analysis_tab)
+            analysis_body.addWidget(hint_label(
+                "Match the condition, epoch duration, and epoch count on Run "
+                "Participant Task to your recordings. Same-cue epochs are "
+                "averaged before FFT."
+            ))
+            analysis_body.addWidget(files_card)
+            analysis_body.addWidget(fft_card)
+            self.status_label.setWordWrap(True)
+            self.process_button.setProperty("uiRole", "primary")
+            analysis_footer.addWidget(self.status_label, 1)
+            analysis_footer.addWidget(self.view_output_button)
+            analysis_footer.addWidget(self.process_button)
 
             self.tabs.addTab(self.task_tab, "Run Participant Task")
             self.tabs.addTab(self.analysis_tab, "Analyze Recordings")
             self.tabs.addTab(self.saved_plots_tab, "Plot Saved FFT")
             layout = QVBoxLayout()
+            layout.setContentsMargins(24, 18, 24, 18)
+            layout.setSpacing(12)
+            title = QLabel("SSSEP Task and Analysis")
+            title.setProperty("uiRole", "title")
+            layout.addWidget(title)
+            layout.addWidget(hint_label("NERD Lab  |  Participant tasks and EEG analysis"))
             layout.addWidget(self.tabs)
             self.setLayout(layout)
 
@@ -825,7 +871,7 @@ def launch_gui() -> int:
     window = LauncherWindow()
     app.aboutToQuit.connect(window._shutdown_application)
     app._sssep_launcher_window = window
-    window.resize(820, 680)
+    window.resize(1080, 800)
     window.show()
 
     if owns_app:

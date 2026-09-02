@@ -15,12 +15,14 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
             r'''
             from pathlib import Path
             from types import SimpleNamespace
+            import os
             import sys
             import threading
             import traceback
 
-            from PySide6.QtCore import QObject, QTimer, Signal
-            from PySide6.QtWidgets import QApplication, QLabel
+            from PySide6.QtCore import QObject, QPoint, QRect, QTimer, Signal
+            from PySide6.QtGui import QFont, QFontDatabase
+            from PySide6.QtWidgets import QApplication, QLabel, QScrollArea
             import sssep_batch.gui as gui
 
             class FakeTaskRunner(QObject):
@@ -118,9 +120,19 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 assert window.right_ankle_prompt_edit.text() == "Think of your right ankle"
                 assert window.break_prompt_edit.text() == "Now let's take a short break."
                 assert "fresh random order" in window.total_epochs_spin.toolTip()
-                for widget in (*prompt_controls(window), window.start_task_button):
+                scroll = window.task_tab.findChild(QScrollArea, "pageScrollArea")
+                window.resize(820, 680)
+                QApplication.processEvents()
+                for widget in prompt_controls(window):
                     assert widget.isVisible()
-                    assert window.task_tab.rect().contains(widget.geometry())
+                    scroll.ensureWidgetVisible(widget)
+                    QApplication.processEvents()
+                    position = widget.mapTo(scroll.viewport(), QPoint(0, 0))
+                    assert scroll.viewport().rect().contains(QRect(position, widget.size()))
+                assert scroll.widget().width() == scroll.viewport().width()
+                button = window.start_task_button
+                position = button.mapTo(window.task_tab, QPoint(0, 0))
+                assert window.task_tab.rect().contains(QRect(position, button.size()))
                 assert not window.test_mode_checkbox.isChecked()
                 assert window.task_runner is None
                 assert_trigger_codes_locked(window)
@@ -259,6 +271,12 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
 
                 def __new__(cls, argv):
                     app = QApplication(argv)
+                    if sys.platform == "win32":
+                        # Offscreen Qt does not discover Windows system fonts.
+                        fonts = Path(os.environ["WINDIR"]) / "Fonts"
+                        for name in ("segoeui.ttf", "segoeuib.ttf"):
+                            assert QFontDatabase.addApplicationFont(str(fonts / name)) >= 0
+                        app.setFont(QFont("Segoe UI", 10))
                     QTimer.singleShot(0, start_probe)
                     QTimer.singleShot(15000, lambda: app.exit(2))
                     return app

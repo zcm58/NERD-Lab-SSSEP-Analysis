@@ -3,6 +3,8 @@
 [Home](../README.md) · [Installation](installation.md) · [Help](troubleshooting.md)
 
 Open the project in PyCharm, right-click `main.py`, and choose **Run**.
+The three tabs group related settings into panels. Scroll within a tab on a
+smaller screen; actions and status stay at the bottom.
 
 ## Run a participant task
 
