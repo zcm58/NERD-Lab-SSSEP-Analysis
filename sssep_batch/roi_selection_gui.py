@@ -300,7 +300,6 @@ class RoiSelectionDialog(QDialog):
         row.addWidget(details, 1)
         scroll.setWidget(content)
         layout.addWidget(scroll, 1)
-        layout.addWidget(hint_label("Front is at the top; left is the participant's left. Grey electrodes are unavailable. Save Custom ROI keeps your definition for future sessions; Use ROI returns this selection to Settings."))
         footer = QHBoxLayout()
         footer.addWidget(self.clear_button)
         footer.addStretch(1)

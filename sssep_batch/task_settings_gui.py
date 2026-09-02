@@ -164,10 +164,6 @@ class TaskSettingsDialog(QDialog):
         self.choose_roi_button.clicked.connect(self._choose_roi)
         roi_card.body.addWidget(self.roi_summary_label)
         roi_card.body.addWidget(self.choose_roi_button)
-        roi_card.body.addWidget(hint_label(
-            "Use ROI returns your selection here. Save these settings to apply it. "
-            "Save Custom ROI in the selector stores a reusable definition separately."
-        ))
         self._update_roi_summary()
 
         tabs = QTabWidget()
