@@ -5,6 +5,7 @@ from dataclasses import replace
 from math import isfinite
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -30,6 +32,7 @@ from sssep_batch.gui_style import (
     hint_label,
     make_form,
 )
+from sssep_batch.roi_selection_gui import RoiSelectionDialog
 
 
 class TaskSettingsDialog(QDialog):
@@ -38,8 +41,12 @@ class TaskSettingsDialog(QDialog):
     def __init__(
         self, settings: TaskSettings, *, channels: tuple[str, ...],
         plot_channel: str, stimulation_hz: float | None, remember_folders: bool,
+        roi_name: str, roi_channels: tuple[str, ...],
+        roi_available_channels: tuple[str, ...],
         parent: QWidget,
-        on_save: Callable[[TaskSettings, str, float | None, bool], None] | None = None,
+        on_save: Callable[
+            [TaskSettings, str, float | None, bool, str, tuple[str, ...]], None
+        ] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("SSSEP Settings")
@@ -47,6 +54,9 @@ class TaskSettingsDialog(QDialog):
         self.plot_channel = plot_channel
         self.stimulation_hz = stimulation_hz
         self.remember_folders = remember_folders
+        self.roi_name = roi_name
+        self.roi_channels = roi_channels
+        self._roi_available_channels = roi_available_channels
         self._on_save = on_save
 
         self.epoch_duration_spin = self._duration_spin(settings.epoch_duration_sec)
@@ -131,7 +141,7 @@ class TaskSettingsDialog(QDialog):
         self.save_folders_checkbox.setChecked(remember_folders)
         analysis_card = SectionCard("Recording analysis")
         analysis_form = make_form()
-        analysis_form.addRow("Electrode to plot", self.plot_channel_combo)
+        analysis_form.addRow("Electrode for processing plots", self.plot_channel_combo)
         analysis_form.addRow(
             "TENS Unit Stimulation Frequency (Hz)", self.stimulation_frequency_edit
         )
@@ -139,8 +149,26 @@ class TaskSettingsDialog(QDialog):
         analysis_card.body.addWidget(self.save_folders_checkbox)
         analysis_card.body.addWidget(hint_label(
             "Analysis uses both conditions and the session duration and epoch count. "
-            "Match these settings to the recordings before processing."
+            "Match these settings to the recordings before processing. "
+            "For saved plots, a blank frequency uses each condition's saved value."
         ))
+
+        roi_card = SectionCard(
+            "Regions of Interest", "Select one electrode or a group for saved FFT plots."
+        )
+        self.roi_summary_label = QLabel()
+        self.roi_summary_label.setWordWrap(True)
+        self.roi_summary_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.roi_summary_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.choose_roi_button = QPushButton("Choose Electrodes / Define ROI...")
+        self.choose_roi_button.clicked.connect(self._choose_roi)
+        roi_card.body.addWidget(self.roi_summary_label)
+        roi_card.body.addWidget(self.choose_roi_button)
+        roi_card.body.addWidget(hint_label(
+            "Use ROI returns your selection here. Save these settings to apply it. "
+            "Save Custom ROI in the selector stores a reusable definition separately."
+        ))
+        self._update_roi_summary()
 
         tabs = QTabWidget()
         session_body = None
@@ -148,6 +176,7 @@ class TaskSettingsDialog(QDialog):
             ("Session", (session_card, trigger_card)),
             ("Participant text", (text_card,)),
             ("Analysis", (analysis_card,)),
+            ("Regions of Interest", (roi_card,)),
         ):
             page = QWidget()
             body, footer = build_page(page)
@@ -199,6 +228,27 @@ class TaskSettingsDialog(QDialog):
         if folder:
             self.task_log_edit.setText(folder)
 
+    def _choose_roi(self) -> None:
+        dialog = RoiSelectionDialog(
+            available_channels=self._roi_available_channels,
+            selected_channels=self.roi_channels,
+            roi_name=self.roi_name,
+            parent=self,
+        )
+        try:
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.roi_name = dialog.roi_name
+                self.roi_channels = dialog.selected_channels
+                self._update_roi_summary()
+        finally:
+            dialog.deleteLater()
+
+    def _update_roi_summary(self) -> None:
+        self.roi_summary_label.setText(
+            f"{self.roi_name}\n{len(self.roi_channels)} electrode(s): "
+            + ", ".join(self.roi_channels)
+        )
+
     def _save(self) -> None:
         try:
             frequency_text = self.stimulation_frequency_edit.text().strip()
@@ -226,7 +276,10 @@ class TaskSettingsDialog(QDialog):
             plot_channel = self.plot_channel_combo.currentText()
             remember_folders = self.save_folders_checkbox.isChecked()
             if self._on_save is not None:
-                self._on_save(settings, plot_channel, frequency, remember_folders)
+                self._on_save(
+                    settings, plot_channel, frequency, remember_folders,
+                    self.roi_name, self.roi_channels,
+                )
         except (TypeError, ValueError) as exc:
             QMessageBox.warning(self, "Settings Need Attention", str(exc))
             return

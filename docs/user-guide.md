@@ -97,35 +97,41 @@ scalp map. The BDF files are not processed again.
 1. Choose **View > Generate FFT Plots**. Results load automatically. If a parent
    results folder is selected, its most recently updated run is loaded. Use
    **Browse** to choose a different run; **Reload Results** refreshes it if needed.
-2. Choose **Group average** or one participant, then choose the trigger code.
-3. Check **TENS Unit Stimulation Frequency (Hz)**. It starts at the recorded
-   frequency when available, otherwise 26 Hz. FFT plots mark this frequency with
-   a dashed vertical line labeled **TENS Unit Stimulation Frequency**.
-4. For an FFT plot, click **Choose Electrodes / Define ROI...**. In the larger
-   dialog, click one or more electrodes, or start with an example ROI. Give
-   your selection a name. **Save Custom ROI** keeps it for future sessions;
-   choose it later under **Saved custom ROIs**. Click **Use ROI**, then
-   **Create Electrode / ROI FFT Plot**.
-5. For a scalp map, enter the **TENS Unit Stimulation Frequency (Hz)** and click
-   **Create Scalp Map**.
+2. In **File > Settings > Regions of Interest**, click **Choose Electrodes /
+   Define ROI...**. Select one or more electrodes, name the ROI, and click
+   **Use ROI**. **Save Custom ROI** also adds a reusable definition to the list.
+3. In Settings' **Analysis** tab, check **TENS Unit Stimulation Frequency (Hz)**
+   (default 26 Hz). Click **Save** to apply and remember both settings.
+4. Choose **Group average** or one participant. Select a trigger code for one
+   plot, or **All conditions** for every available attention trigger code.
+5. Click **Create FFT Plot** or **Create Scalp Map**. With All conditions
+   selected, these become **Create All FFT Plots** and **Create All Scalp Maps**.
 
 The selection map shows the nose at the top and the participant's left on the
-left. Greyed-out electrodes are unavailable in the loaded results. The four
-example ROIs come from the FPVS website; choose ROIs for your SSSEP analysis
-plan. A saved ROI may contain a single electrode or several. Missing electrodes
-are listed when you load an ROI from another dataset; its saved definition stays
-unchanged. **Cancel** keeps the previous plot selection, but does not undo an
-explicit **Save Custom ROI**. Replacing a saved definition asks for confirmation.
-Saved ROIs stay with this installation in `.sssep_rois.json`, not in individual
-results folders.
+left. You can define ROIs before loading results. The four example ROIs come
+from the FPVS website; choose ROIs for your SSSEP analysis plan. Plotting reports
+missing electrodes without changing the saved definition. **Cancel** in Settings
+keeps the previous selection and frequency, but does not undo an explicit **Save
+Custom ROI** in the selector. Replacing a saved definition asks for confirmation.
+Reusable definitions stay in `.sssep_rois.json`; the active ROI and frequency
+stay in `.sssep_gui_settings.json` with the other app settings.
+
+FFT plots mark the Settings frequency with a dashed line labeled **TENS Unit
+Stimulation Frequency**. If that setting is blank, each condition uses its
+recorded frequency when available. Without either frequency, FFT plots have no
+marker; scalp maps require a frequency in Settings. Changing this setting does
+not recalculate or modify saved FFT values.
 
 The saved-results view requires the versioned `participant_fft_amplitudes.csv`
 created by this workflow. If an older run reports missing provenance columns,
 process its original BDF files once with the current version before plotting.
 Older folders whose names begin with `run_` can still be loaded.
 
-Each action saves a PNG directly in `<selected run>/saved_fft_plots`. Click
-**View New Plot** to open that folder. Repeated filenames get ` (2)`, ` (3)`,
+Each condition saves a separate PNG directly in `<selected run>/saved_fft_plots`.
+All conditions normally creates four plots, for trigger codes 11, 12, 21, and 22;
+it excludes baselines and conditions missing from the selected participant.
+If one plot fails, the others continue and a message identifies the failures.
+Click **View New Plot** to open that folder. Repeated filenames get ` (2)`, ` (3)`,
 and so on; earlier plots are preserved. No extra CSV/Excel files or per-plot
 subfolders are created. Keep the original participant and group FFT CSVs for
 future plotting. Older plot folders and exports remain untouched.

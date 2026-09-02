@@ -25,6 +25,8 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
             from PySide6.QtGui import QFont, QFontDatabase
             from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QScrollArea, QSpinBox
             import sssep_batch.task_settings_gui as settings_gui
+            import sssep_batch.roi_selection_gui as roi_gui
+            from sssep_batch.roi_settings import load_custom_rois
             import sssep_batch.gui as gui
 
             class FakeTaskRunner(QObject):
@@ -86,6 +88,27 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert all(spin.minimum() == spin.maximum() for spin in trigger_spins)
                 assert all(not spin.isEnabled() for spin in trigger_spins)
 
+            def edit_nested_roi(dialog, name, labels, *, save_custom=False, use=True):
+                @checked
+                def edit_selection():
+                    selector = QApplication.activeModalWidget()
+                    assert isinstance(selector, roi_gui.RoiSelectionDialog)
+                    assert selector.parent() is dialog
+                    assert len(selector.map_widget.electrode_buttons) == 64
+                    assert all(button.isEnabled() for button in selector.map_widget.electrode_buttons.values())
+                    selector.clear_button.click()
+                    for label in labels:
+                        selector.map_widget.electrode_buttons[label].click()
+                    selector.name_edit.setText(name)
+                    if save_custom:
+                        selector.save_button.click()
+                    if use:
+                        selector.use_button.click()
+                    else:
+                        selector.reject()
+                QTimer.singleShot(0, edit_selection)
+                dialog.choose_roi_button.click()
+
             @checked
             def cancel_settings():
                 dialog = QApplication.activeModalWidget()
@@ -97,7 +120,20 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert dialog.break_duration_spin.value() == 10.0
                 assert dialog.stimulation_frequency_edit.text() == "26"
                 assert not dialog.test_mode_checkbox.isChecked()
+                assert [dialog.tabs.tabText(index) for index in range(dialog.tabs.count())] == [
+                    "Session", "Participant text", "Analysis", "Regions of Interest"
+                ]
                 assert_trigger_codes_locked(dialog)
+                assert window_ref[0].saved_plots_page.dataset is None
+                edit_nested_roi(dialog, "Reusable central", ("C3", "C4"), save_custom=True)
+                assert dialog.roi_name == "Reusable central"
+                assert dialog.roi_channels == ("C3", "C4")
+                assert "C3, C4" in dialog.roi_summary_label.text()
+                assert window_ref[0].roi_channels == (gui.PLOT_CHANNEL,)
+                assert window_ref[0].saved_plots_page.selected_channels == (gui.PLOT_CHANNEL,)
+                assert load_custom_rois(roi_gui.ROI_SETTINGS_PATH) == {
+                    "Reusable central": ("C3", "C4"),
+                }
                 dialog.epoch_duration_spin.setValue(30.0)
                 dialog.epochs_per_condition_spin.setValue(20)
                 dialog.left_hand_prompt_edit.setText("Unsaved prompt")
@@ -111,6 +147,12 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 }
                 assert dialog.plot_channel_combo.count() == 64
                 assert dialog.plot_channel_combo.currentText() == gui.PLOT_CHANNEL
+                assert dialog.roi_channels == (gui.PLOT_CHANNEL,)
+                edit_nested_roi(dialog, "Discard nested", ("Fp1",), use=False)
+                assert dialog.roi_channels == (gui.PLOT_CHANNEL,)
+                edit_nested_roi(dialog, "Central hands", ("C3", "Cz", "C4"))
+                expected = tuple(label for label in gui.BIOSEMI64_CHANNELS if label in {"C3", "Cz", "C4"})
+                assert dialog.roi_channels == expected
                 assert dialog.epochs_per_condition_spin.singleStep() == 2
                 assert dialog.left_hand_prompt_edit.text() == "Think of your left hand"
                 assert dialog.right_hand_prompt_edit.text() == "Think of your right hand"
@@ -135,6 +177,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert dialog.isVisible()
                 assert messages[-1][0] == "Settings Need Attention"
                 assert window_ref[0].session_settings.epochs_per_condition == 10
+                assert window_ref[0].roi_channels == (gui.PLOT_CHANNEL,)
                 messages.clear()
                 dialog.break_prompt_edit.setText("Rest for a moment.")
                 dialog.stimulation_frequency_edit.setText("nan")
@@ -152,6 +195,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert dialog.isVisible()
                 assert window_ref[0].session_settings.epochs_per_condition == 10
                 assert not gui.SETTINGS_PATH.exists()
+                assert window_ref[0].saved_plots_page.selected_channels == (gui.PLOT_CHANNEL,)
                 assert messages[-1][0] == "Could Not Save Settings"
                 messages.clear()
                 gui.save_launcher_settings = save_to_disk
@@ -200,11 +244,20 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 window.settings_action.trigger()
                 assert window.session_settings is original
                 assert not gui.SETTINGS_PATH.exists()
+                assert window.roi_channels == (gui.PLOT_CHANNEL,)
+                assert load_custom_rois(roi_gui.ROI_SETTINGS_PATH) == {
+                    "Reusable central": ("C3", "C4"),
+                }, "Explicit library Save must survive outer Cancel"
                 QTimer.singleShot(0, save_settings)
                 window.settings_action.trigger()
                 assert window.session_settings is not original
                 assert window.session_settings.epochs_per_condition == 4
                 assert window.plot_channel == "C4"
+                assert window.roi_name == "Central hands"
+                assert set(window.roi_channels) == {"C3", "Cz", "C4"}
+                assert window.saved_plots_page.selected_channels == window.roi_channels
+                assert window.saved_plots_page.roi_name == window.roi_name
+                assert window.saved_plots_page.stimulation_hz == 12.5
                 assert gui.SETTINGS_PATH.exists()
                 assert window.session_settings.total_epochs == 8
                 assert "C4" in window.analysis_settings_label.text()
@@ -373,6 +426,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 settings_gui.QMessageBox = MessageBox
                 gui.QtTaskRunner = FakeTaskRunner
                 gui.SETTINGS_PATH = log_folder.parent / "gui-settings.json"
+                roi_gui.ROI_SETTINGS_PATH = log_folder.parent / "rois.json"
                 qt = gui._require_pyside6()
                 qt.update(QApplication=AppFactory, QMessageBox=MessageBox)
                 gui._require_pyside6 = lambda: qt
@@ -385,6 +439,10 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert reopened.session_settings == settings_seen[-1]
                 assert reopened.plot_channel == "C4"
                 assert reopened.stimulation_hz == 12.5
+                assert reopened.roi_name == "Central hands"
+                assert set(reopened.roi_channels) == {"C3", "Cz", "C4"}
+                assert reopened.saved_plots_page.selected_channels == reopened.roi_channels
+                assert reopened.saved_plots_page.stimulation_hz == 12.5
                 assert reopened.pages.currentIndex() == 0
                 def cancel_reopened():
                     dialog = QApplication.activeModalWidget()
@@ -399,7 +457,59 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 reopened._start_task()
                 assert reopened.task_runner is None
                 assert len(runners) == 3
+                selected = reopened.roi_channels
+                reopened.roi_channels = ("Previously selected",)
+                reopened.saved_plots_page.dataset = SimpleNamespace(channel_names=("Loaded extra",))
+                @checked
+                def inspect_available_channels():
+                    dialog = QApplication.activeModalWidget()
+                    assert set(gui.BIOSEMI64_CHANNELS).issubset(dialog._roi_available_channels)
+                    assert "Loaded extra" in dialog._roi_available_channels
+                    assert "Previously selected" in dialog._roi_available_channels
+                    assert dialog.plot_channel_combo.count() == 64
+                    @checked
+                    def inspect_nested_extras():
+                        selector = QApplication.activeModalWidget()
+                        assert selector._selected == {"Previously selected"}
+                        assert {
+                            selector.other_list.item(index).text()
+                            for index in range(selector.other_list.count())
+                        } == {"Loaded extra", "Previously selected"}
+                        selector.reject()
+                    QTimer.singleShot(0, inspect_nested_extras)
+                    dialog.choose_roi_button.click()
+                    dialog.reject()
+                QTimer.singleShot(0, inspect_available_channels)
+                reopened.settings_action.trigger()
+                assert gui.SETTINGS_PATH.read_bytes() == before_reopen
+                reopened.roi_channels = selected
+                reopened.saved_plots_page.dataset = None
                 assert reopened.close()
+
+                gui.SETTINGS_PATH.write_text('{broken', encoding="utf-8")
+                assert gui.launch_gui() == 0
+                invalid = QApplication.instance()._sssep_launcher_window
+                QApplication.processEvents()
+                assert invalid._settings_need_review
+                assert invalid.saved_plots_page.settings_need_review
+                invalid.saved_plots_page._warn = lambda title, message: messages.append((title, message))
+                invalid.saved_plots_page._start_plot("roi")
+                assert messages[-1][0] == "Settings Need Attention"
+                assert "File > Settings" in messages[-1][1]
+                assert invalid.saved_plots_page.plot_worker is None
+                assert gui.SETTINGS_PATH.read_text(encoding="utf-8") == '{broken'
+                @checked
+                def save_reviewed_settings():
+                    dialog = QApplication.activeModalWidget()
+                    dialog.task_log_edit.setText(str(log_folder))
+                    dialog.save_folders_checkbox.setChecked(False)
+                    dialog._save()
+                QTimer.singleShot(0, save_reviewed_settings)
+                invalid.settings_action.trigger()
+                assert not invalid._settings_need_review
+                assert not invalid.saved_plots_page.settings_need_review
+                assert invalid.close()
+                assert not errors, errors
                 print("TASK_GUI_OK")
             '''
         ),

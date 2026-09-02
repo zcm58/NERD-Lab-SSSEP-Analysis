@@ -242,7 +242,8 @@ def launch_gui() -> int:
                 message = (
                     f"Saved settings could not be loaded:\n{exc}\n\n"
                     "Review File > Settings and click Save before running a task "
-                    "or processing recordings. The existing settings file has not changed."
+                    "or processing recordings or creating plots. "
+                    "The existing settings file has not changed."
                 )
                 QTimer.singleShot(0, lambda: QMessageBox.warning(
                     self, "Saved Settings Need Attention", message
@@ -250,9 +251,16 @@ def launch_gui() -> int:
             self.session_settings = saved.task
             self.plot_channel = saved.plot_channel
             self.stimulation_hz = saved.stimulation_hz
+            self.roi_name = saved.roi_name
+            self.roi_channels = saved.roi_channels
             self.remember_folders = saved.remember_folders
             self.input_edit.setText(saved.input_folder if saved.remember_folders else INPUT_FOLDER)
             self.output_edit.setText(saved.output_root if saved.remember_folders else OUTPUT_ROOT)
+            self.saved_plots_page.settings_need_review = self._settings_need_review
+            self.saved_plots_page.set_plot_settings(
+                roi_name=self.roi_name, channels=self.roi_channels,
+                stimulation_hz=self.stimulation_hz,
+            )
             self.saved_plots_page.set_results_folder(self.output_edit.text())
 
         def _build_layout(self) -> None:
@@ -366,11 +374,20 @@ def launch_gui() -> int:
             """Apply a validated draft only after the operator chooses Save."""
             if self.worker is not None or self.task_running or self.saved_plots_page.is_busy():
                 return
+            dataset = self.saved_plots_page.dataset
+            available = tuple(dict.fromkeys((
+                *BIOSEMI64_CHANNELS,
+                *(dataset.channel_names if dataset is not None else ()),
+                *self.roi_channels,
+            )))
             dialog = TaskSettingsDialog(
                 self.session_settings,
                 channels=BIOSEMI64_CHANNELS,
                 plot_channel=self.plot_channel,
                 stimulation_hz=self.stimulation_hz,
+                roi_name=self.roi_name,
+                roi_channels=self.roi_channels,
+                roi_available_channels=available,
                 remember_folders=self.remember_folders,
                 parent=self,
                 on_save=self._save_settings_draft,
@@ -379,17 +396,27 @@ def launch_gui() -> int:
                 self.session_settings = dialog.settings
                 self.plot_channel = dialog.plot_channel
                 self.stimulation_hz = dialog.stimulation_hz
+                self.roi_name = dialog.roi_name
+                self.roi_channels = dialog.roi_channels
                 self.remember_folders = dialog.remember_folders
                 self._settings_need_review = False
+                self.saved_plots_page.settings_need_review = False
+                self.saved_plots_page.set_plot_settings(
+                    roi_name=self.roi_name, channels=self.roi_channels,
+                    stimulation_hz=self.stimulation_hz,
+                )
                 self._refresh_settings_summary()
             dialog.deleteLater()
 
-        def _save_settings_draft(self, task, plot_channel, stimulation_hz, remember_folders) -> None:
+        def _save_settings_draft(
+            self, task, plot_channel, stimulation_hz, remember_folders, roi_name, roi_channels,
+        ) -> None:
             """Persist the validated draft before the Settings dialog accepts it."""
             save_launcher_settings(
                 LauncherSettings(
                     task=task, plot_channel=plot_channel, stimulation_hz=stimulation_hz,
                     remember_folders=remember_folders,
+                    roi_name=roi_name, roi_channels=roi_channels,
                     input_folder=self.input_edit.text().strip() if remember_folders else "",
                     output_root=self.output_edit.text().strip() if remember_folders else "",
                 ),

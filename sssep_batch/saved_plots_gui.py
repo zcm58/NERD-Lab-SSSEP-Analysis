@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+from math import isfinite
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
-    QDialog,
-    QDoubleSpinBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -32,7 +31,6 @@ from sssep_batch.analysis.saved_outputs import (
 )
 from sssep_batch.config import PLOT_CHANNEL, STIMULATION_FREQUENCY_HZ
 from sssep_batch.gui_style import SectionCard, build_page, hint_label, make_form
-from sssep_batch.roi_selection_gui import RoiSelectionDialog
 
 
 def _saved_results_source(selected_path: str) -> Path:
@@ -81,7 +79,9 @@ class SavedFftLoadWorker(QThread):
 
 
 class SavedPlotWorker(QThread):
-    """Create one post-processing plot from an already-loaded FFT table."""
+    """Create selected-condition plots sequentially from one loaded FFT table."""
+
+    progress = Signal(str)
 
     def __init__(
         self,
@@ -96,29 +96,61 @@ class SavedPlotWorker(QThread):
         self.error: Exception | None = None
 
     def run(self) -> None:
-        """Create the requested ROI spectrum or scalp map off the UI thread."""
+        """Keep successful plots and report failures without stopping the batch."""
 
         try:
-            common = {
-                "dataset": self.dataset,
-                "event_type": str(self.request["event_type"]),
-                "trigger_code": int(self.request["trigger_code"]),
-                "participant_id": self.request.get("participant_id"),
-            }
-            if self.request["kind"] == "roi":
-                self.result = create_saved_roi_outputs(
-                    **common,
-                    channels=tuple(self.request["channels"]),
-                    roi_name=str(self.request["roi_name"]),
-                    stimulation_hz=float(self.request["stimulation_hz"]),
-                )
-            elif self.request["kind"] == "scalp":
-                self.result = create_saved_scalp_outputs(
-                    **common,
-                    frequency_hz=float(self.request["frequency_hz"]),
-                )
-            else:
-                raise ValueError(f"Unknown saved plot kind: {self.request['kind']!r}")
+            events = tuple(self.request["events"])
+            outputs, failures = [], []
+            available = {name.casefold(): name for name in self.dataset.channel_names}
+            requested = tuple(self.request.get("channels", ()))
+            channels = tuple(dict.fromkeys(
+                name if name in self.dataset.channel_names else available[name.casefold()]
+                for name in requested if name.casefold() in available
+            ))
+            missing = [name for name in requested if name.casefold() not in available]
+            for index, (event_type, trigger_code) in enumerate(events, 1):
+                event = next(item for item in self.dataset.events if (
+                    item.event_type, item.trigger_code
+                ) == (event_type, trigger_code))
+                self.progress.emit(f"Creating plot {index}/{len(events)}: {event.display_name}...")
+                try:
+                    frequency = self.request.get("stimulation_hz")
+                    if frequency is None:
+                        frequency = event.target_hz
+                    if frequency is not None:
+                        lower, upper = saved_scalp_frequency_bounds(self.dataset)
+                        if not isfinite(frequency) or not lower <= frequency <= upper:
+                            raise ValueError(
+                                f"TENS Unit Stimulation Frequency must be between {lower:g} "
+                                f"and {upper:g} Hz for these results. Change it in File > Settings."
+                            )
+                    common = dict(
+                        dataset=self.dataset, event_type=event_type, trigger_code=trigger_code,
+                        participant_id=self.request.get("participant_id"),
+                    )
+                    if self.request["kind"] == "roi":
+                        if not channels:
+                            raise ValueError("No selected ROI electrodes are in these results. Review Regions of Interest in File > Settings.")
+                        output = create_saved_roi_outputs(
+                            **common, channels=channels, roi_name=str(self.request["roi_name"]),
+                            stimulation_hz=frequency,
+                        )
+                    elif self.request["kind"] == "scalp":
+                        if frequency is None:
+                            raise ValueError("Set TENS Unit Stimulation Frequency in File > Settings before creating a scalp map.")
+                        output = create_saved_scalp_outputs(**common, frequency_hz=frequency)
+                    else:
+                        raise ValueError(f"Unknown saved plot kind: {self.request['kind']!r}")
+                    outputs.append(dict(
+                        output, event_type=event_type, trigger_code=trigger_code,
+                        trigger_label=event.trigger_label,
+                    ))
+                except Exception as exc:
+                    failures.append(f"{event.display_name}: {str(exc) or type(exc).__name__}")
+            self.result = dict(
+                kind=self.request["kind"], outputs=outputs, failures=failures,
+                requested_count=len(events), missing_channels=missing,
+            )
         except Exception as exc:
             self.error = exc
 
@@ -135,6 +167,7 @@ class SavedPlotsPanel(QWidget):
         self.dataset: SavedFftDataset | None = None
         self.plot_output_folder = ""
         self._updating_results_path = False
+        self.settings_need_review = False
 
         self.results_edit = QLineEdit(initial_folder)
         self.results_browse_button = QPushButton("Browse...")
@@ -144,20 +177,12 @@ class SavedPlotsPanel(QWidget):
         self.level_combo.addItem("Individual participant", "participant")
         self.participant_combo = QComboBox()
         self.event_combo = QComboBox()
-        self.selected_channels: tuple[str, ...] = ()
-        self.roi_name = ""
-        self.roi_summary_label = QLabel("Load saved results to choose electrodes.")
-        self.roi_summary_label.setWordWrap(True)
-        self.roi_summary_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.choose_roi_button = QPushButton("Choose Electrodes / Define ROI...")
-        self.frequency_spin = QDoubleSpinBox()
-        self.frequency_spin.setDecimals(4)
-        self.frequency_spin.setSingleStep(0.1)
-        self.frequency_spin.setSuffix(" Hz")
-        self.frequency_spin.setRange(0.0, 10000.0)
-        if STIMULATION_FREQUENCY_HZ is not None:
-            self.frequency_spin.setValue(STIMULATION_FREQUENCY_HZ)
-        self.create_roi_button = QPushButton("Create Electrode / ROI FFT Plot")
+        self.selected_channels: tuple[str, ...] = (PLOT_CHANNEL,)
+        self.roi_name = PLOT_CHANNEL
+        self.stimulation_hz = STIMULATION_FREQUENCY_HZ
+        self.plot_settings_label = hint_label("")
+        self.plot_settings_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.create_roi_button = QPushButton("Create FFT Plot")
         self.create_scalp_button = QPushButton("Create Scalp Map")
         self.view_button = QPushButton("View New Plot")
         self.status_label = QLabel(
@@ -166,6 +191,7 @@ class SavedPlotsPanel(QWidget):
 
         self._build_layout()
         self._connect_signals()
+        self._update_plot_settings_summary()
         self._set_working(False)
 
     def _build_layout(self) -> None:
@@ -200,37 +226,13 @@ class SavedPlotsPanel(QWidget):
             field.addWidget(control)
             selection_row.addLayout(field, stretch)
         selection_card.body.addLayout(selection_row)
+        selection_card.body.addWidget(self.plot_settings_label)
+        selection_card.body.addWidget(hint_label(
+            "Change Regions of Interest and stimulation frequency in File > Settings. "
+            "All conditions creates a separate PNG for each available attention trigger code."
+        ))
         body.addWidget(selection_card)
-
-        roi_card = SectionCard(
-            "FFT electrode selection",
-            "Choose one electrode or define a region to average on the scalp diagram.",
-        )
-        roi_card.body.addWidget(self.roi_summary_label)
-        roi_card.body.addWidget(self.choose_roi_button)
-        roi_card.body.addStretch(1)
         self.create_roi_button.setProperty("uiRole", "primary")
-
-        scalp_card = SectionCard(
-            "Stimulation frequency",
-            "Set the FFT marker and scalp-map frequency.",
-        )
-        scalp_form = make_form()
-        scalp_form.addRow("TENS Unit Stimulation Frequency (Hz)", self.frequency_spin)
-        scalp_card.body.addLayout(scalp_form)
-        scalp_card.body.addWidget(
-            hint_label(
-                "Starts at the frequency saved for this trigger code when available. "
-                "Scalp maps use the nearest saved bin and all available electrodes."
-            )
-        )
-        scalp_card.body.addStretch(1)
-
-        plot_row = QHBoxLayout()
-        plot_row.setSpacing(14)
-        plot_row.addWidget(roi_card, 3)
-        plot_row.addWidget(scalp_card, 2)
-        body.addLayout(plot_row)
         body.addStretch(1)
 
         self.status_label.setWordWrap(True)
@@ -250,7 +252,6 @@ class SavedPlotsPanel(QWidget):
         self.level_combo.currentIndexChanged.connect(self._level_changed)
         self.participant_combo.currentIndexChanged.connect(self._participant_changed)
         self.event_combo.currentIndexChanged.connect(self._event_changed)
-        self.choose_roi_button.clicked.connect(self._choose_roi)
         self.create_roi_button.clicked.connect(lambda: self._start_plot("roi"))
         self.create_scalp_button.clicked.connect(lambda: self._start_plot("scalp"))
         self.view_button.clicked.connect(self._view_plot)
@@ -259,6 +260,15 @@ class SavedPlotsPanel(QWidget):
         """Point the panel at a newly completed or user-selected run folder."""
 
         self.results_edit.setText(str(folder))
+
+    def set_plot_settings(
+        self, *, roi_name: str, channels: tuple[str, ...], stimulation_hz: float | None,
+    ) -> None:
+        """Receive the committed File > Settings selection, independent of data loads."""
+        self.roi_name = roi_name
+        self.selected_channels = tuple(channels)
+        self.stimulation_hz = stimulation_hz
+        self._update_plot_settings_summary()
 
     def ensure_results_loaded(self) -> None:
         """Load on view activation or completed path entry, reusing valid loaded data."""
@@ -284,9 +294,6 @@ class SavedPlotsPanel(QWidget):
         self.plot_output_folder = ""
         self.participant_combo.clear()
         self.event_combo.clear()
-        self.selected_channels = ()
-        self.roi_name = ""
-        self._update_roi_summary()
 
     def is_busy(self) -> bool:
         """Return whether saved FFT loading or plotting is still active."""
@@ -354,14 +361,6 @@ class SavedPlotsPanel(QWidget):
         for participant_id in dataset.participant_ids:
             self.participant_combo.addItem(participant_id, participant_id)
         self._populate_events()
-        default_channel = (
-            PLOT_CHANNEL if PLOT_CHANNEL in dataset.channel_names else dataset.channel_names[0]
-        )
-        self.selected_channels = (default_channel,)
-        self.roi_name = default_channel
-        self._update_roi_summary()
-        lower_hz, upper_hz = saved_scalp_frequency_bounds(dataset)
-        self.frequency_spin.setRange(lower_hz, upper_hz)
         self._event_changed()
         self.status_label.setText(
             f"Loaded {len(dataset.participant_ids)} participant(s), "
@@ -432,73 +431,46 @@ class SavedPlotsPanel(QWidget):
         previous = self.event_combo.currentData()
         self.event_combo.blockSignals(True)
         self.event_combo.clear()
+        if any(event_type == "cue" for event_type, _code in available):
+            self.event_combo.addItem("All conditions", "all")
         for event in self.dataset.events:
             key = (event.event_type, event.trigger_code)
             if key in available:
                 self.event_combo.addItem(event.display_name, key)
-        previous_index = self.event_combo.findData(previous)
+        previous_index = next((
+            index for index in range(self.event_combo.count())
+            if self.event_combo.itemData(index) == previous
+        ), -1)
         if previous_index >= 0:
             self.event_combo.setCurrentIndex(previous_index)
+        elif self.event_combo.count() > 1 and self.event_combo.itemData(0) == "all":
+            self.event_combo.setCurrentIndex(1)
         self.event_combo.blockSignals(False)
         self._event_changed()
 
     def _event_changed(self) -> None:
-        """Use the selected event's saved TENS frequency when available."""
+        """Make each action's single-condition or all-condition scope explicit."""
+        all_conditions = self.event_combo.currentData() == "all"
+        self.create_roi_button.setText("Create All FFT Plots" if all_conditions else "Create FFT Plot")
+        self.create_scalp_button.setText("Create All Scalp Maps" if all_conditions else "Create Scalp Map")
 
-        if self.dataset is None:
-            return
-        selected = self.event_combo.currentData()
-        if not isinstance(selected, tuple) or len(selected) != 2:
-            return
-        event_type, trigger_code = selected
-        event = next(
-            (
-                item
-                for item in self.dataset.events
-                if item.event_type == event_type
-                and item.trigger_code == int(trigger_code)
-            ),
-            None,
-        )
-        if event is not None and event.target_hz is not None:
-            self.frequency_spin.setValue(event.target_hz)
-        elif STIMULATION_FREQUENCY_HZ is not None:
-            self.frequency_spin.setValue(STIMULATION_FREQUENCY_HZ)
-
-    def _choose_roi(self) -> None:
-        """Edit a separate selection draft; Cancel preserves the active ROI."""
-
-        if self.dataset is None or self.is_busy():
-            return
-        dialog = RoiSelectionDialog(
-            available_channels=self.dataset.channel_names,
-            selected_channels=self.selected_channels,
-            roi_name=self.roi_name,
-            parent=self,
-        )
-        try:
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                self.selected_channels = dialog.selected_channels
-                self.roi_name = dialog.roi_name
-                self._update_roi_summary()
-        finally:
-            dialog.deleteLater()
-
-    def _update_roi_summary(self) -> None:
-        """Keep the plot page compact while showing exactly what will be averaged."""
-
-        if not self.selected_channels:
-            self.roi_summary_label.setText("Load saved results to choose electrodes.")
-            return
-        self.roi_summary_label.setText(
-            f"{self.roi_name}\n{len(self.selected_channels)} electrode(s): "
-            + ", ".join(self.selected_channels)
+    def _update_plot_settings_summary(self) -> None:
+        frequency = "Saved per-condition frequency" if self.stimulation_hz is None else f"{self.stimulation_hz:g} Hz"
+        self.plot_settings_label.setText(
+            f"Regions of Interest: {self.roi_name} ({', '.join(self.selected_channels)})\n"
+            f"TENS Unit Stimulation Frequency: {frequency}"
         )
 
     def _start_plot(self, kind: str) -> None:
         """Validate the saved-data selection and launch one plot worker."""
 
         if self.is_busy():
+            return
+        if self.settings_need_review:
+            self._warn(
+                "Settings Need Attention",
+                "Review File > Settings and click Save before creating plots.",
+            )
             return
         if self.dataset is None:
             self._warn(
@@ -507,7 +479,9 @@ class SavedPlotsPanel(QWidget):
             )
             return
         selected_event = self.event_combo.currentData()
-        if not isinstance(selected_event, tuple) or len(selected_event) != 2:
+        if selected_event != "all" and (
+            not isinstance(selected_event, tuple) or len(selected_event) != 2
+        ):
             self._warn("Saved Results Need Attention", "Choose a trigger code before plotting.")
             return
 
@@ -517,11 +491,20 @@ class SavedPlotsPanel(QWidget):
             if not participant_id:
                 self._warn("Saved Results Need Attention", "Choose a participant before plotting.")
                 return
+        events = (
+            tuple(self.event_combo.itemData(index) for index in range(self.event_combo.count())
+                  if isinstance(self.event_combo.itemData(index), tuple)
+                  and self.event_combo.itemData(index)[0] == "cue")
+            if selected_event == "all" else (selected_event,)
+        )
+        if not events:
+            self._warn("Saved Results Need Attention", "No attention conditions are available for this selection.")
+            return
         request: dict[str, object] = {
             "kind": kind,
-            "event_type": selected_event[0],
-            "trigger_code": selected_event[1],
+            "events": events,
             "participant_id": participant_id,
+            "stimulation_hz": self.stimulation_hz,
         }
         if kind == "roi":
             channels = self.selected_channels
@@ -537,11 +520,9 @@ class SavedPlotsPanel(QWidget):
                 return
             request.update(
                 channels=channels, roi_name=roi_name,
-                stimulation_hz=self.frequency_spin.value(),
             )
             working_message = "Creating the saved electrode / ROI FFT plot..."
         elif kind == "scalp":
-            request["frequency_hz"] = self.frequency_spin.value()
             working_message = "Creating the saved FFT scalp map..."
         else:
             raise ValueError(f"Unknown saved plot kind: {kind!r}")
@@ -550,44 +531,39 @@ class SavedPlotsPanel(QWidget):
         self._set_working(True)
         self.status_label.setText(working_message)
         self.plot_worker = SavedPlotWorker(self.dataset, request, self)
+        self.plot_worker.progress.connect(self.status_label.setText)
         self.plot_worker.finished.connect(self._plot_worker_finished)
         self.plot_worker.finished.connect(self.plot_worker.deleteLater)
         self.plot_worker.start()
 
-    def _plot_finished(self, result: dict[str, object]) -> None:
-        """Show the generated plot location."""
-
-        self.plot_output_folder = str(result["output_folder"])
-        if result.get("kind") == "scalp":
-            requested = float(result["requested_frequency_hz"])
-            actual = float(result["actual_frequency_hz"])
-            count_min = int(result["participant_count_min"])
-            count_max = int(result["participant_count_max"])
-            count_text = (
-                f"N={count_min}"
-                if count_min == count_max
-                else f"electrode N={count_min}–{count_max}"
-            )
-            omitted = list(result.get("omitted_channels", []) or [])
-            omitted_text = (
-                f" Electrodes without montage coordinates were omitted: "
-                f"{', '.join(omitted)}."
-                if omitted
-                else ""
-            )
-            self.status_label.setText(
-                f"Scalp map created at the nearest FFT bin: requested "
-                f"{requested:g} Hz, plotted {actual:g} Hz ({count_text}). "
-                "PNG saved in saved_fft_plots."
-                f"{omitted_text}"
-            )
-        else:
-            participant_count = int(result["participant_count"])
-            channels = ", ".join(result["used_channels"])
-            self.status_label.setText(
-                f"FFT plot created from {participant_count} participant(s) using "
-                f"{channels}. PNG saved in saved_fft_plots."
-            )
+    def _plot_finished(self, result: dict[str, object]) -> str | None:
+        """Report every result; return failures to show after releasing the worker."""
+        outputs = result["outputs"]
+        failures = result["failures"]
+        self.plot_output_folder = str(outputs[0]["output_folder"]) if outputs else ""
+        kind = "scalp map(s)" if result["kind"] == "scalp" else "FFT plot(s)"
+        summary = f"Created {len(outputs)} of {result['requested_count']} {kind}."
+        if outputs:
+            summary += " PNGs saved in saved_fft_plots."
+        if failures:
+            summary += f" {len(failures)} failed."
+        details = []
+        for output in outputs:
+            label = f"Trigger code {output['trigger_code']}" if output["event_type"] == "cue" else "Baseline"
+            if result["kind"] == "scalp":
+                details.append(
+                    f"{label}: requested {output['requested_frequency_hz']:g} Hz, "
+                    f"plotted {output['actual_frequency_hz']:g} Hz; "
+                    f"electrode N={output['participant_count_min']}–{output['participant_count_max']}."
+                )
+                if output.get("omitted_channels"):
+                    details.append(f"{label}: omitted electrodes without coordinates: {', '.join(output['omitted_channels'])}.")
+            else:
+                details.append(f"{label}: N={output['participant_count']}, using {', '.join(output['used_channels'])}.")
+        if result.get("missing_channels"):
+            details.append("ROI electrodes not in these results: " + ", ".join(result["missing_channels"]))
+        self.status_label.setText("\n".join([summary, *details]))
+        return "\n\n".join([summary, *failures]) if failures else None
 
     def _plot_failed(self, exc: Exception) -> None:
         """Show a post-processing plot failure without hiding its cause."""
@@ -603,9 +579,10 @@ class SavedPlotsPanel(QWidget):
         if worker is None:
             return
         error = worker.error
+        warning = None
         try:
             if error is None and worker.result is not None:
-                self._plot_finished(worker.result)
+                warning = self._plot_finished(worker.result)
             elif error is None:
                 error = RuntimeError("The saved FFT plot worker returned no result.")
         except Exception as exc:
@@ -615,6 +592,8 @@ class SavedPlotsPanel(QWidget):
             self._set_working(False)
         if error is not None:
             self._plot_failed(error)
+        elif warning:
+            QMessageBox.warning(self, "Some Plots Could Not Be Created", warning)
 
     def _set_working(self, working: bool) -> None:
         """Enable saved-result controls only when data are loaded and idle."""
@@ -632,8 +611,6 @@ class SavedPlotsPanel(QWidget):
         for widget in (
             self.level_combo,
             self.event_combo,
-            self.choose_roi_button,
-            self.frequency_spin,
             self.create_roi_button,
             self.create_scalp_button,
         ):

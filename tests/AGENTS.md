@@ -42,7 +42,8 @@ Keep the default test suite lightweight:
   in isolated SSSEP subprocesses. Do not modify the user's actual settings file.
 - `test_saved_plot_gui.py`
   Saved-result loading and post-processing worker lifecycle in an isolated GUI
-  subprocess, plus modal selection acceptance/cancellation.
+  subprocess, including all-condition batches, partial failures, participant
+  event filtering, and persistent Settings-driven ROI/frequency choices.
 - `test_roi_selection_gui.py`
   Interactive BioSemi map, preset membership, custom electrode selection,
   missing-channel display, saved ROI reuse, and dialog validation in an isolated

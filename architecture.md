@@ -13,7 +13,7 @@ PySide6 also presents the fullscreen participant task.
 | --- | --- |
 | Python environment or pinned libraries | [install.ps1](install.ps1) and [requirements.txt](requirements.txt) |
 | Main launcher, File/View menus, BDF fields, or progress messages | [gui.py](sssep_batch/gui.py) |
-| File > Settings dialog, session fields, or participant text | [task_settings_gui.py](sssep_batch/task_settings_gui.py) |
+| File > Settings dialog, session fields, ROI selection, or participant text | [task_settings_gui.py](sssep_batch/task_settings_gui.py) |
 | Persistent preferences, validation, or legacy folder settings | [launcher_settings.py](sssep_batch/launcher_settings.py) |
 | Launcher colors, section cards, forms, or scrollable pages | [gui_style.py](sssep_batch/gui_style.py) |
 | Saved-results view, its controls, or its background workers | [saved_plots_gui.py](sssep_batch/saved_plots_gui.py) |
@@ -115,9 +115,11 @@ Hemisphere comparisons and statistics remain external.
   unchanged loaded data and keep Reload Results as an explicit refresh. Source
   changes invalidate old selections; load failures must not leave stale data usable.
 - Keep electrode/ROI editing in the modal scalp-map selector. Apply only on
-  Use ROI; Cancel leaves the plot selection unchanged. Keep one map with four
-  common example ROIs and no view tabs. Disable unavailable
-  electrodes and retain access to non-BioSemi labels from saved results. The
+  Use ROI to return a draft to File > Settings > Regions of Interest; outer
+  Save applies and persists the active ROI and frequency. Cancel preserves the
+  previous settings. Keep one map with four common example ROIs and no view
+  tabs. Allow definition before results are loaded, retaining access to loaded
+  non-BioSemi labels and saved selections. The
   BioSemi diagram is a selection aid, not a replacement for the processing or
   scalp-map `standard_1005` montage. Presets are FPVS examples, not validated
   SSSEP regions. Save Custom ROI explicitly persists one or more electrodes in
@@ -126,10 +128,22 @@ Hemisphere comparisons and statistics remain external.
   files without overwriting them. Cancel does not undo an explicit save. Loading
   a saved ROI with missing electrodes must show omissions without changing its
   stored definition. Tests must inject temporary ROI storage paths.
+- Generate FFT Plots contains only Saved results and Data selection cards;
+  its ROI/frequency summary is read-only. File > Settings is their editor.
+  Source changes do not reset these preferences. All conditions creates separate
+  PNGs for available attention trigger codes at the selected group/participant
+  level, excluding baselines. One retained worker renders sequentially, reports
+  progress, and keeps successful plots when another fails. Show the complete
+  failure report only after releasing the worker. Settings and window close
+  remain blocked for the whole batch. Report missing configured ROI electrodes
+  while using the available subset; never rewrite the saved ROI definition.
 - The default TENS frequency is 26 Hz. Preserve saved operator preferences and
   recorded target frequencies. FFT PNGs show the selected target with a dashed
   vertical line labeled TENS Unit Stimulation Frequency. A saved-plot frequency
-  override changes only the marker, never the canonical FFT data or metadata.
+  Settings frequency changes only plot markers/scalp-bin selection, never the
+  canonical FFT data or metadata. A blank setting uses each event's recorded
+  frequency; without either, an FFT omits the marker and a scalp map fails with
+  a request to set the frequency. Reject unsupported frequencies without clamping.
 - Keep PySide6 presentation and live serial output inside `experiment/`,
   separate from BDF analysis.
 - Keep `COM3` fixed and absent from the GUI. Open and check it before participant

@@ -19,6 +19,7 @@ _TASK_FIELDS = (
 )
 _LAUNCHER_FIELDS = (
     "plot_channel", "stimulation_hz", "remember_folders", "input_folder", "output_root",
+    "roi_name", "roi_channels",
 )
 
 
@@ -32,12 +33,28 @@ class LauncherSettings:
     remember_folders: bool = True
     input_folder: str = ""
     output_root: str = ""
+    roi_name: str | None = None
+    roi_channels: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.task, TaskSettings):
             raise TypeError("task must be a TaskSettings value.")
         if not isinstance(self.plot_channel, str) or not self.plot_channel.strip():
             raise ValueError("plot_channel must be a nonblank string.")
+        if self.roi_name is None and self.roi_channels is None:
+            object.__setattr__(self, "roi_name", self.plot_channel)
+            object.__setattr__(self, "roi_channels", (self.plot_channel,))
+        if not isinstance(self.roi_name, str) or not self.roi_name.strip():
+            raise ValueError("roi_name must be a nonblank string.")
+        if not isinstance(self.roi_channels, tuple) or not self.roi_channels or any(
+            not isinstance(label, str) or not label.strip() for label in self.roi_channels
+        ):
+            raise ValueError("roi_channels must contain at least one electrode name.")
+        labels = tuple(label.strip() for label in self.roi_channels)
+        if len(labels) != len(set(labels)):
+            raise ValueError("roi_channels cannot contain duplicate electrode names.")
+        object.__setattr__(self, "roi_name", self.roi_name.strip())
+        object.__setattr__(self, "roi_channels", labels)
         if not isinstance(self.remember_folders, bool):
             raise ValueError("remember_folders must be True or False.")
         for name in ("input_folder", "output_root"):
@@ -91,10 +108,20 @@ def load_launcher_settings(
         if folder is not None and not isinstance(folder, str):
             raise ValueError("Saved task setting 'output_folder' must be a string or None.")
         task_values["output_folder"] = Path(folder) if folder else None
+    launcher_values = {name: payload[name] for name in _LAUNCHER_FIELDS if name in payload}
+    if {"roi_name", "roi_channels"} & payload.keys():
+        if not isinstance(payload.get("roi_name"), str) or not isinstance(
+            payload.get("roi_channels"), list
+        ):
+            raise ValueError("Saved ROI settings need a name and an electrode list.")
+        launcher_values["roi_channels"] = tuple(payload["roi_channels"])
+    elif "plot_channel" in payload:
+        # Older settings files stored only the electrode used for processing plots.
+        launcher_values.update(roi_name=payload["plot_channel"], roi_channels=(payload["plot_channel"],))
     settings = replace(
         defaults,
         task=replace(defaults.task, **task_values),
-        **{name: payload[name] for name in _LAUNCHER_FIELDS if name in payload},
+        **launcher_values,
     )
     if settings.plot_channel not in channels:
         raise ValueError(f"Unknown plot electrode in saved GUI settings: {settings.plot_channel}")

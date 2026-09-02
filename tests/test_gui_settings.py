@@ -66,6 +66,8 @@ def test_missing_settings_preserve_launcher_defaults(tmp_path):
     )
     assert loaded == original
     assert loaded.stimulation_hz == 26.0
+    assert loaded.roi_name == "Cz"
+    assert loaded.roi_channels == ("Cz",)
 
 
 @pytest.mark.parametrize("frequency", [None, 12.5])
@@ -95,6 +97,8 @@ def test_launcher_preferences_round_trip_all_editable_fields(tmp_path):
             test_mode=True,
         ),
         plot_channel="C4",
+        roi_name="Hand ROI",
+        roi_channels=("C3", "c3", "C4", "External electrode"),
         stimulation_hz=80.0,  # Analysis range validation happens when processing.
         remember_folders=False,
         input_folder=str(tmp_path / "recordings"),
@@ -111,6 +115,31 @@ def test_launcher_preferences_round_trip_all_editable_fields(tmp_path):
     assert loaded.task.serial_port == "COM3"
     assert loaded.task.trigger_codes == CueTriggerCodes(11, 12, 21, 22)
     assert loaded.task.random_seed is None
+    assert saved["roi_channels"] == ["C3", "c3", "C4", "External electrode"]
+
+
+def test_legacy_plot_electrode_becomes_active_single_electrode_roi(tmp_path):
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text('{"plot_channel": "C4", "stimulation_hz": 12.5}', encoding="utf-8")
+
+    loaded = load_launcher_settings(defaults(), channels=CHANNELS, settings_path=settings_path)
+
+    assert loaded.roi_name == "C4"
+    assert loaded.roi_channels == ("C4",)
+    assert loaded.stimulation_hz == 12.5
+
+
+def test_active_roi_trims_names_and_preserves_order_without_dataset_validation(tmp_path):
+    selected = replace(
+        defaults(), roi_name=" Custom ", roi_channels=(" X2 ", "x2", "Cz"),
+    )
+    assert selected.roi_name == "Custom"
+    assert selected.roi_channels == ("X2", "x2", "Cz")
+    settings_path = tmp_path / "settings.json"
+    save_launcher_settings(selected, settings_path)
+    assert load_launcher_settings(
+        defaults(), channels=CHANNELS, settings_path=settings_path,
+    ) == selected
 
 
 def test_legacy_folder_file_seeds_task_log_folder(tmp_path):
@@ -149,6 +178,7 @@ def test_recording_folder_update_preserves_session_preferences(tmp_path):
         original,
         task=replace(original.task, epochs_per_condition=24, left_hand_prompt="Left!"),
         plot_channel="C3", stimulation_hz=10.0,
+        roi_name="Central", roi_channels=("C3", "Cz", "C4"),
     )
     settings_path = tmp_path / "settings.json"
     save_launcher_settings(selected, settings_path)
@@ -171,6 +201,14 @@ def test_recording_folder_update_preserves_session_preferences(tmp_path):
     {"stimulation_hz": True}, {"stimulation_hz": "10"}, {"stimulation_hz": 0},
     {"stimulation_hz": float("inf")}, {"remember_folders": 1},
     {"input_folder": []}, {"output_root": None}, {"unrecognized": "value"},
+    {"roi_name": "Central"}, {"roi_channels": ["Cz"]},
+    {"roi_name": None, "roi_channels": None},
+    {"roi_name": " ", "roi_channels": ["Cz"]},
+    {"roi_name": "Central", "roi_channels": []},
+    {"roi_name": "Central", "roi_channels": "Cz"},
+    {"roi_name": "Central", "roi_channels": ["Cz", None]},
+    {"roi_name": "Central", "roi_channels": ["Cz", ""]},
+    {"roi_name": "Central", "roi_channels": ["Cz", " Cz "]},
 ])
 def test_invalid_saved_values_are_reported(tmp_path, payload):
     settings_path = tmp_path / "settings.json"
@@ -223,7 +261,9 @@ def test_failed_atomic_replace_preserves_existing_preferences(tmp_path, monkeypa
         if folders_only:
             settings_module.save_folder_defaults("new input", "new output", settings_path)
         else:
-            save_launcher_settings(replace(defaults(), plot_channel="C4"), settings_path)
+            save_launcher_settings(replace(
+                defaults(), plot_channel="C4", roi_name="Central", roi_channels=("C3", "C4"),
+            ), settings_path)
 
     assert settings_path.read_bytes() == before
     assert list(tmp_path.iterdir()) == [settings_path]
