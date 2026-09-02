@@ -58,7 +58,7 @@ def test_saved_fft_view_loads_results_and_runs_plot_off_ui_thread(tmp_path):
             import traceback
 
             from PySide6.QtCore import QTimer
-            from PySide6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication, QDialog
             import sssep_batch.gui as gui
             import sssep_batch.saved_plots_gui as saved_gui
 
@@ -118,7 +118,10 @@ def test_saved_fft_view_loads_results_and_runs_plot_off_ui_thread(tmp_path):
                 assert panel.dataset is not None
                 assert panel.participant_combo.count() == 1
                 assert panel.event_combo.count() == 1
-                assert panel.channel_list.count() == 2
+                assert panel.dataset.channel_names == ("C3", "C4")
+                assert panel.selected_channels == ("C3",)
+                assert panel.roi_name == "C3"
+                assert panel.choose_roi_button.isEnabled()
                 assert panel.frequency_spin.value() == 10.0
                 assert panel.create_roi_button.isEnabled()
                 assert Path(panel.results_edit.text()) == run_folder
@@ -133,7 +136,9 @@ def test_saved_fft_view_loads_results_and_runs_plot_off_ui_thread(tmp_path):
                 assert panel.dataset is None
                 assert panel.participant_combo.count() == 0
                 assert panel.event_combo.count() == 0
-                assert panel.channel_list.count() == 0
+                assert panel.selected_channels == ()
+                assert panel.roi_name == ""
+                assert not panel.choose_roi_button.isEnabled()
                 assert not panel.create_roi_button.isEnabled()
                 assert not panel.view_button.isEnabled()
                 assert "Finish entering the path" in panel.status_label.text()
@@ -151,10 +156,40 @@ def test_saved_fft_view_loads_results_and_runs_plot_off_ui_thread(tmp_path):
                     QTimer.singleShot(10, wait_for_reload)
                     return
                 assert panel.dataset is not None
-                for index in range(panel.channel_list.count()):
-                    panel.channel_list.item(index).setSelected(True)
-                panel.roi_name_edit.setText("Central ROI")
+                class DraftDialog:
+                    response = QDialog.DialogCode.Rejected
+                    calls = 0
+                    released = 0
+
+                    def __init__(self, **kwargs):
+                        type(self).calls += 1
+                        assert kwargs["available_channels"] == ("C3", "C4")
+                        assert kwargs["selected_channels"] == ("C3",)
+                        assert kwargs["roi_name"] == "C3"
+                        assert kwargs["parent"] is panel
+                        self.selected_channels = ("C3", "C4")
+                        self.roi_name = "Central ROI"
+
+                    def exec(self):
+                        return self.response
+
+                    def deleteLater(self):
+                        type(self).released += 1
+
+                saved_gui.RoiSelectionDialog = DraftDialog
+                panel.choose_roi_button.click()
+                assert panel.selected_channels == ("C3",)
+                assert panel.roi_name == "C3"
+                DraftDialog.response = QDialog.DialogCode.Accepted
+                panel.choose_roi_button.click()
+                assert DraftDialog.calls == DraftDialog.released == 2
+                assert panel.selected_channels == ("C3", "C4")
+                assert panel.roi_name == "Central ROI"
+                assert "2 electrode(s): C3, C4" in panel.roi_summary_label.text()
                 panel._start_plot("roi")
+                assert not panel.choose_roi_button.isEnabled()
+                panel._choose_roi()
+                assert DraftDialog.calls == 2
                 QTimer.singleShot(10, wait_for_plot_start)
 
             @checked
@@ -183,6 +218,7 @@ def test_saved_fft_view_loads_results_and_runs_plot_off_ui_thread(tmp_path):
                     return
                 assert all(action.isEnabled() for action in window.view_actions)
                 assert window.settings_action.isEnabled()
+                assert panel.choose_roi_button.isEnabled()
                 assert panel.view_button.isEnabled()
                 assert "using C3, C4" in panel.status_label.text()
                 panel._view_plot()
@@ -410,7 +446,9 @@ def test_auto_load_failures_retry_and_worker_guards(tmp_path):
         panel.results_edit.setText(str(missing))
         assert panel.dataset is None
         assert not panel.create_roi_button.isEnabled()
-        assert panel.channel_list.count() == 0
+        assert panel.selected_channels == ()
+        assert panel.roi_name == ""
+        assert not panel.choose_roi_button.isEnabled()
         panel.results_edit.editingFinished.emit()
         wait_until(lambda: panel.load_worker is None)
         assert panel.dataset is None

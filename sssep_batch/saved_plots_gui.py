@@ -4,18 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSize, QThread, QUrl, Signal
+from PySide6.QtCore import QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QComboBox,
+    QDialog,
     QDoubleSpinBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListView,
-    QListWidget,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
@@ -34,6 +32,7 @@ from sssep_batch.analysis.saved_outputs import (
 )
 from sssep_batch.config import PLOT_CHANNEL, STIMULATION_FREQUENCY_HZ
 from sssep_batch.gui_style import SectionCard, build_page, hint_label, make_form
+from sssep_batch.roi_selection_gui import RoiSelectionDialog
 
 
 def _saved_results_source(selected_path: str) -> Path:
@@ -145,21 +144,12 @@ class SavedPlotsPanel(QWidget):
         self.level_combo.addItem("Individual participant", "participant")
         self.participant_combo = QComboBox()
         self.event_combo = QComboBox()
-        self.roi_name_edit = QLineEdit()
-        self.roi_name_edit.setPlaceholderText("Example: Central ROI")
-        self.channel_list = QListWidget()
-        self.channel_list.setSelectionMode(
-            QAbstractItemView.SelectionMode.MultiSelection
-        )
-        self.channel_list.setFlow(QListView.Flow.LeftToRight)
-        self.channel_list.setWrapping(True)
-        self.channel_list.setResizeMode(QListView.ResizeMode.Adjust)
-        self.channel_list.setMovement(QListView.Movement.Static)
-        self.channel_list.setGridSize(QSize(58, 34))
-        self.channel_list.setMinimumHeight(150)
-        self.channel_list.setToolTip(
-            "Electrodes to plot or average (click to select or clear)"
-        )
+        self.selected_channels: tuple[str, ...] = ()
+        self.roi_name = ""
+        self.roi_summary_label = QLabel("Load saved results to choose electrodes.")
+        self.roi_summary_label.setWordWrap(True)
+        self.roi_summary_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.choose_roi_button = QPushButton("Choose Electrodes / Define ROI...")
         self.frequency_spin = QDoubleSpinBox()
         self.frequency_spin.setDecimals(4)
         self.frequency_spin.setSingleStep(0.1)
@@ -213,13 +203,12 @@ class SavedPlotsPanel(QWidget):
         body.addWidget(selection_card)
 
         roi_card = SectionCard(
-            "Electrode / ROI spectrum",
-            "Select one electrode, or select several to average as an ROI.",
+            "FFT electrode selection",
+            "Choose one electrode or define a region to average on the scalp diagram.",
         )
-        roi_form = make_form()
-        roi_form.addRow("Electrode / ROI name", self.roi_name_edit)
-        roi_card.body.addLayout(roi_form)
-        roi_card.body.addWidget(self.channel_list)
+        roi_card.body.addWidget(self.roi_summary_label)
+        roi_card.body.addWidget(self.choose_roi_button)
+        roi_card.body.addStretch(1)
         self.create_roi_button.setProperty("uiRole", "primary")
 
         scalp_card = SectionCard(
@@ -261,7 +250,7 @@ class SavedPlotsPanel(QWidget):
         self.level_combo.currentIndexChanged.connect(self._level_changed)
         self.participant_combo.currentIndexChanged.connect(self._participant_changed)
         self.event_combo.currentIndexChanged.connect(self._event_changed)
-        self.channel_list.itemSelectionChanged.connect(self._channels_changed)
+        self.choose_roi_button.clicked.connect(self._choose_roi)
         self.create_roi_button.clicked.connect(lambda: self._start_plot("roi"))
         self.create_scalp_button.clicked.connect(lambda: self._start_plot("scalp"))
         self.view_button.clicked.connect(self._view_plot)
@@ -295,8 +284,9 @@ class SavedPlotsPanel(QWidget):
         self.plot_output_folder = ""
         self.participant_combo.clear()
         self.event_combo.clear()
-        self.channel_list.clear()
-        self.roi_name_edit.clear()
+        self.selected_channels = ()
+        self.roi_name = ""
+        self._update_roi_summary()
 
     def is_busy(self) -> bool:
         """Return whether saved FFT loading or plotting is still active."""
@@ -364,17 +354,12 @@ class SavedPlotsPanel(QWidget):
         for participant_id in dataset.participant_ids:
             self.participant_combo.addItem(participant_id, participant_id)
         self._populate_events()
-        self.channel_list.clear()
-        self.channel_list.addItems(dataset.channel_names)
         default_channel = (
             PLOT_CHANNEL if PLOT_CHANNEL in dataset.channel_names else dataset.channel_names[0]
         )
-        for index in range(self.channel_list.count()):
-            item = self.channel_list.item(index)
-            if item.text() == default_channel:
-                item.setSelected(True)
-                break
-        self.roi_name_edit.setText(default_channel)
+        self.selected_channels = (default_channel,)
+        self.roi_name = default_channel
+        self._update_roi_summary()
         lower_hz, upper_hz = saved_scalp_frequency_bounds(dataset)
         self.frequency_spin.setRange(lower_hz, upper_hz)
         self._event_changed()
@@ -480,18 +465,35 @@ class SavedPlotsPanel(QWidget):
         elif STIMULATION_FREQUENCY_HZ is not None:
             self.frequency_spin.setValue(STIMULATION_FREQUENCY_HZ)
 
-    def _channels_changed(self) -> None:
-        """Keep the default name aligned with a single selected electrode."""
+    def _choose_roi(self) -> None:
+        """Edit a separate selection draft; Cancel preserves the active ROI."""
 
-        selected = [item.text() for item in self.channel_list.selectedItems()]
-        if len(selected) == 1:
-            self.roi_name_edit.setText(selected[0])
-        elif (
-            len(selected) > 1
-            and self.dataset is not None
-            and self.roi_name_edit.text().strip() in self.dataset.channel_names
-        ):
-            self.roi_name_edit.clear()
+        if self.dataset is None or self.is_busy():
+            return
+        dialog = RoiSelectionDialog(
+            available_channels=self.dataset.channel_names,
+            selected_channels=self.selected_channels,
+            roi_name=self.roi_name,
+            parent=self,
+        )
+        try:
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.selected_channels = dialog.selected_channels
+                self.roi_name = dialog.roi_name
+                self._update_roi_summary()
+        finally:
+            dialog.deleteLater()
+
+    def _update_roi_summary(self) -> None:
+        """Keep the plot page compact while showing exactly what will be averaged."""
+
+        if not self.selected_channels:
+            self.roi_summary_label.setText("Load saved results to choose electrodes.")
+            return
+        self.roi_summary_label.setText(
+            f"{self.roi_name}\n{len(self.selected_channels)} electrode(s): "
+            + ", ".join(self.selected_channels)
+        )
 
     def _start_plot(self, kind: str) -> None:
         """Validate the saved-data selection and launch one plot worker."""
@@ -522,11 +524,11 @@ class SavedPlotsPanel(QWidget):
             "participant_id": participant_id,
         }
         if kind == "roi":
-            channels = [item.text() for item in self.channel_list.selectedItems()]
+            channels = self.selected_channels
             if not channels:
                 self._warn("ROI Needs Attention", "Select at least one electrode for the FFT plot.")
                 return
-            roi_name = self.roi_name_edit.text().strip()
+            roi_name = self.roi_name.strip()
             if not roi_name:
                 self._warn(
                     "ROI Needs Attention",
@@ -630,8 +632,7 @@ class SavedPlotsPanel(QWidget):
         for widget in (
             self.level_combo,
             self.event_combo,
-            self.roi_name_edit,
-            self.channel_list,
+            self.choose_roi_button,
             self.frequency_spin,
             self.create_roi_button,
             self.create_scalp_button,

@@ -17,6 +17,13 @@ The package is organized around these boundaries:
   Per-file stage order only.
 - `saved_plots_gui.py`
   Saved-result view and its background load/plot workers.
+- `roi_selection_gui.py`
+  Modal BioSemi64 diagram and named electrode/ROI selection. Use ROI applies
+  the draft; Cancel preserves the prior selection. Presets and schematic
+  coordinates come from the personal website, not the preprocessing montage.
+- `roi_settings.py`
+  Persistent custom ROIs in ignored `.sssep_rois.json`. Explicit saves are atomic
+  and separate from the dialog's Use/Cancel actions and experiment preferences.
 - `gui_style.py`
   Launcher-only FPVS Studio styling, section cards, forms, and scrolling.
   Keep View-menu workflow navigation and action/status footers; leave task frames alone.

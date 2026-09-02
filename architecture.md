@@ -17,6 +17,8 @@ PySide6 also presents the fullscreen participant task.
 | Persistent preferences, validation, or legacy folder settings | [launcher_settings.py](sssep_batch/launcher_settings.py) |
 | Launcher colors, section cards, forms, or scrollable pages | [gui_style.py](sssep_batch/gui_style.py) |
 | Saved-results view, its controls, or its background workers | [saved_plots_gui.py](sssep_batch/saved_plots_gui.py) |
+| Interactive electrode map, ROI presets, or modal selection | [roi_selection_gui.py](sssep_batch/roi_selection_gui.py) |
+| Persistent custom ROI definitions | [roi_settings.py](sssep_batch/roi_settings.py) |
 | Analysis defaults and advanced processing settings | [config.py](sssep_batch/config.py) |
 | Task settings and event records | [experiment/models.py](sssep_batch/experiment/models.py) |
 | Balanced randomized cue order | [experiment/schedule.py](sssep_batch/experiment/schedule.py) |
@@ -112,6 +114,18 @@ Hemisphere comparisons and statistics remain external.
   immediate run. Browse or finished path edits also load automatically. Reuse
   unchanged loaded data and keep Reload Results as an explicit refresh. Source
   changes invalidate old selections; load failures must not leave stale data usable.
+- Keep electrode/ROI editing in the modal scalp-map selector. Apply only on
+  Use ROI; Cancel leaves the plot selection unchanged. Keep one map with four
+  common example ROIs and no view tabs. Disable unavailable
+  electrodes and retain access to non-BioSemi labels from saved results. The
+  BioSemi diagram is a selection aid, not a replacement for the processing or
+  scalp-map `standard_1005` montage. Presets are FPVS examples, not validated
+  SSSEP regions. Save Custom ROI explicitly persists one or more electrodes in
+  ignored `.sssep_rois.json`, separate from experiment settings and analysis
+  results. Use atomic writes, confirm replaced definitions, and report malformed
+  files without overwriting them. Cancel does not undo an explicit save. Loading
+  a saved ROI with missing electrodes must show omissions without changing its
+  stored definition. Tests must inject temporary ROI storage paths.
 - The default TENS frequency is 26 Hz. Preserve saved operator preferences and
   recorded target frequencies. FFT PNGs show the selected target with a dashed
   vertical line labeled TENS Unit Stimulation Frequency. A saved-plot frequency

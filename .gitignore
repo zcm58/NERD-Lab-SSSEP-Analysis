@@ -24,6 +24,7 @@ output/
 plots/
 *.png
 .sssep_gui_settings.json
+.sssep_rois.json
 
 # Local EEG/data files
 *.bdf

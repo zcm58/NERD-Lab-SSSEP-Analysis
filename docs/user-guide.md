@@ -101,10 +101,23 @@ scalp map. The BDF files are not processed again.
 3. Check **TENS Unit Stimulation Frequency (Hz)**. It starts at the recorded
    frequency when available, otherwise 26 Hz. FFT plots mark this frequency with
    a dashed vertical line labeled **TENS Unit Stimulation Frequency**.
-4. For an FFT plot, select one electrode or click several electrodes to average
-   as an ROI. Enter a short name and click **Create Electrode / ROI FFT Plot**.
+4. For an FFT plot, click **Choose Electrodes / Define ROI...**. In the larger
+   dialog, click one or more electrodes, or start with an example ROI. Give
+   your selection a name. **Save Custom ROI** keeps it for future sessions;
+   choose it later under **Saved custom ROIs**. Click **Use ROI**, then
+   **Create Electrode / ROI FFT Plot**.
 5. For a scalp map, enter the **TENS Unit Stimulation Frequency (Hz)** and click
    **Create Scalp Map**.
+
+The selection map shows the nose at the top and the participant's left on the
+left. Greyed-out electrodes are unavailable in the loaded results. The four
+example ROIs come from the FPVS website; choose ROIs for your SSSEP analysis
+plan. A saved ROI may contain a single electrode or several. Missing electrodes
+are listed when you load an ROI from another dataset; its saved definition stays
+unchanged. **Cancel** keeps the previous plot selection, but does not undo an
+explicit **Save Custom ROI**. Replacing a saved definition asks for confirmation.
+Saved ROIs stay with this installation in `.sssep_rois.json`, not in individual
+results folders.
 
 The saved-results view requires the versioned `participant_fft_amplitudes.csv`
 created by this workflow. If an older run reports missing provenance columns,
