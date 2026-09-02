@@ -14,8 +14,9 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -33,6 +34,7 @@ from sssep_batch.gui_style import (
     make_form,
 )
 from sssep_batch.roi_selection_gui import RoiSelectionDialog
+from sssep_batch.launcher_settings import validate_plot_rois
 
 
 class TaskSettingsDialog(QDialog):
@@ -41,11 +43,11 @@ class TaskSettingsDialog(QDialog):
     def __init__(
         self, settings: TaskSettings, *, channels: tuple[str, ...],
         plot_channel: str, stimulation_hz: float | None, remember_folders: bool,
-        roi_name: str, roi_channels: tuple[str, ...],
+        plot_rois: dict[str, tuple[str, ...]],
         roi_available_channels: tuple[str, ...],
         parent: QWidget,
         on_save: Callable[
-            [TaskSettings, str, float | None, bool, str, tuple[str, ...]], None
+            [TaskSettings, str, float | None, bool, dict[str, tuple[str, ...]]], None
         ] | None = None,
     ) -> None:
         super().__init__(parent)
@@ -54,8 +56,7 @@ class TaskSettingsDialog(QDialog):
         self.plot_channel = plot_channel
         self.stimulation_hz = stimulation_hz
         self.remember_folders = remember_folders
-        self.roi_name = roi_name
-        self.roi_channels = roi_channels
+        self.plot_rois = validate_plot_rois(plot_rois)
         self._roi_available_channels = roi_available_channels
         self._on_save = on_save
 
@@ -154,17 +155,25 @@ class TaskSettingsDialog(QDialog):
         ))
 
         roi_card = SectionCard(
-            "Regions of Interest", "Select one electrode or a group for saved FFT plots."
+            "Regions of Interest", "Each entry creates a separate FFT plot for each selected condition."
         )
-        self.roi_summary_label = QLabel()
-        self.roi_summary_label.setWordWrap(True)
-        self.roi_summary_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.roi_summary_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.choose_roi_button = QPushButton("Choose Electrodes / Define ROI...")
-        self.choose_roi_button.clicked.connect(self._choose_roi)
-        roi_card.body.addWidget(self.roi_summary_label)
-        roi_card.body.addWidget(self.choose_roi_button)
-        self._update_roi_summary()
+        self.roi_list = QListWidget()
+        self.roi_list.setMinimumHeight(220)
+        self.roi_list.setAccessibleName("ROIs to plot separately")
+        self.roi_list.currentRowChanged.connect(self._update_roi_actions)
+        self.roi_list.itemDoubleClicked.connect(lambda _item: self._edit_roi())
+        self.add_roi_button = QPushButton("Add ROI...")
+        self.add_roi_button.clicked.connect(lambda: self._edit_roi(add=True))
+        self.edit_roi_button = QPushButton("Edit ROI...")
+        self.edit_roi_button.clicked.connect(lambda: self._edit_roi())
+        self.remove_roi_button = QPushButton("Remove")
+        self.remove_roi_button.clicked.connect(self._remove_roi)
+        roi_actions = QHBoxLayout()
+        for button in (self.add_roi_button, self.edit_roi_button, self.remove_roi_button):
+            roi_actions.addWidget(button)
+        roi_card.body.addWidget(self.roi_list)
+        roi_card.body.addLayout(roi_actions)
+        self._refresh_roi_list()
 
         tabs = QTabWidget()
         session_body = None
@@ -224,26 +233,68 @@ class TaskSettingsDialog(QDialog):
         if folder:
             self.task_log_edit.setText(folder)
 
-    def _choose_roi(self) -> None:
+    def _edit_roi(self, *, add: bool = False) -> None:
+        item = self.roi_list.currentItem()
+        old_name = None if add or item is None else item.data(Qt.ItemDataRole.UserRole)
+        if not add and old_name is None:
+            return
         dialog = RoiSelectionDialog(
             available_channels=self._roi_available_channels,
-            selected_channels=self.roi_channels,
-            roi_name=self.roi_name,
+            selected_channels=() if add else self.plot_rois[old_name],
+            roi_name="" if add else old_name,
             parent=self,
         )
         try:
             if dialog.exec() == QDialog.DialogCode.Accepted:
-                self.roi_name = dialog.roi_name
-                self.roi_channels = dialog.selected_channels
-                self._update_roi_summary()
+                name, channels = next(iter(validate_plot_rois({
+                    dialog.roi_name: dialog.selected_channels,
+                }).items()))
+                if any(
+                    key != old_name and key.casefold() == name.casefold()
+                    for key in self.plot_rois
+                ):
+                    QMessageBox.warning(
+                        self, "ROI Name Already Used",
+                        f"An ROI named {name!r} is already in the list. "
+                        "Edit that entry or choose a different name.",
+                    )
+                    return
+                if old_name is None:
+                    self.plot_rois[name] = channels
+                else:
+                    self.plot_rois = {
+                        name if key == old_name else key:
+                        channels if key == old_name else value
+                        for key, value in self.plot_rois.items()
+                    }
+                self._refresh_roi_list(name)
+        except ValueError as exc:
+            QMessageBox.warning(self, "ROI Needs Attention", str(exc))
         finally:
             dialog.deleteLater()
 
-    def _update_roi_summary(self) -> None:
-        self.roi_summary_label.setText(
-            f"{self.roi_name}\n{len(self.roi_channels)} electrode(s): "
-            + ", ".join(self.roi_channels)
-        )
+    def _refresh_roi_list(self, selected_name: str | None = None) -> None:
+        self.roi_list.clear()
+        for name, channels in self.plot_rois.items():
+            item = QListWidgetItem(f"{name}\n{', '.join(channels)}")
+            item.setData(Qt.ItemDataRole.UserRole, name)
+            self.roi_list.addItem(item)
+            if name == selected_name:
+                self.roi_list.setCurrentItem(item)
+        if self.roi_list.currentRow() < 0 and self.roi_list.count():
+            self.roi_list.setCurrentRow(0)
+        self._update_roi_actions()
+
+    def _update_roi_actions(self) -> None:
+        selected = self.roi_list.currentItem() is not None
+        self.edit_roi_button.setEnabled(selected)
+        self.remove_roi_button.setEnabled(selected)
+
+    def _remove_roi(self) -> None:
+        item = self.roi_list.currentItem()
+        if item is not None:
+            del self.plot_rois[item.data(Qt.ItemDataRole.UserRole)]
+            self._refresh_roi_list()
 
     def _save(self) -> None:
         try:
@@ -274,7 +325,7 @@ class TaskSettingsDialog(QDialog):
             if self._on_save is not None:
                 self._on_save(
                     settings, plot_channel, frequency, remember_folders,
-                    self.roi_name, self.roi_channels,
+                    validate_plot_rois(self.plot_rois),
                 )
         except (TypeError, ValueError) as exc:
             QMessageBox.warning(self, "Settings Need Attention", str(exc))

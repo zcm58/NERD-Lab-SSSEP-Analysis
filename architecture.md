@@ -113,11 +113,17 @@ Hemisphere comparisons and statistics remain external.
   source in a worker; a parent results folder selects its most recently updated
   immediate run. Browse or finished path edits also load automatically. Reuse
   unchanged loaded data and keep Reload Results as an explicit refresh. Source
-  changes invalidate old selections; load failures must not leave stale data usable.
+  changes invalidate loaded data and event selections; load failures must not
+  leave stale data usable. Keep the configured ROI list and frequency.
 - Keep electrode/ROI editing in the modal scalp-map selector. Apply only on
   Use ROI to return a draft to File > Settings > Regions of Interest; outer
-  Save applies and persists the active ROI and frequency. Cancel preserves the
-  previous settings. Keep one map with four common example ROIs and no view
+  Save applies and persists the named `plot_rois` collection and frequency.
+  Settings supports Add/Edit/Remove for separate singleton or multi-electrode
+  entries; every listed ROI is plotted independently. Cancel preserves the
+  previous collection. Migrate legacy active-ROI or plot-electrode settings to
+  one entry on read; write only the collection schema. Empty collections allow
+  scalp-only use and require adding an ROI before FFT plotting.
+  Keep one map with four common example ROIs and no view
   tabs. Allow definition before results are loaded, retaining access to loaded
   non-BioSemi labels and saved selections. The
   BioSemi diagram is a selection aid, not a replacement for the processing or
@@ -131,12 +137,15 @@ Hemisphere comparisons and statistics remain external.
 - Generate FFT Plots contains only Saved results and Data selection cards;
   its ROI/frequency summary is read-only. File > Settings is their editor.
   Source changes do not reset these preferences. All conditions creates separate
-  PNGs for available attention trigger codes at the selected group/participant
-  level, excluding baselines. One retained worker renders sequentially, reports
+  FFT PNGs for each named ROI and available attention trigger code at the selected
+  group/participant level, excluding baselines. Scalp maps run once per event,
+  independent of the ROI list. One retained worker renders sequentially, reports
   progress, and keeps successful plots when another fails. Show the complete
-  failure report only after releasing the worker. Settings and window close
-  remain blocked for the whole batch. Report missing configured ROI electrodes
-  while using the available subset; never rewrite the saved ROI definition.
+  failure report only after releasing the worker. Keep the footer summary short
+  and all per-plot details in the scrollable results box. Settings and window
+  close remain blocked for the whole batch. Report missing configured electrodes
+  separately for each ROI while using its available subset; never combine ROI
+  entries or rewrite saved definitions.
 - The default TENS frequency is 26 Hz. Preserve saved operator preferences and
   recorded target frequencies. FFT PNGs show the selected target with a dashed
   vertical line labeled TENS Unit Stimulation Frequency. A saved-plot frequency

@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 ROI_SETTINGS_PATH = REPO_ROOT / ".sssep_rois.json"
 
 
-def _validate_roi(name: str, channels: Iterable[str]) -> tuple[str, tuple[str, ...]]:
+def validate_roi(name: str, channels: Iterable[str]) -> tuple[str, tuple[str, ...]]:
     if not isinstance(name, str) or not name.strip():
         raise ValueError("Each ROI needs a nonblank name.")
     if isinstance(channels, (str, bytes)):
@@ -55,7 +55,7 @@ def load_custom_rois(path: str | Path = ROI_SETTINGS_PATH) -> dict[str, tuple[st
     for name, channels in payload.items():
         if not isinstance(channels, list):
             raise ValueError(f"Saved ROI {name!r} must contain an electrode list.")
-        name, labels = _validate_roi(name, channels)
+        name, labels = validate_roi(name, channels)
         if name.casefold() in names:
             raise ValueError(f"Duplicate saved ROI name: {name}")
         names.add(name.casefold())
@@ -67,7 +67,7 @@ def save_custom_roi(
     name: str, channels: Iterable[str], path: str | Path = ROI_SETTINGS_PATH,
 ) -> dict[str, tuple[str, ...]]:
     """Merge one definition with the latest file; callers confirm overwrites."""
-    name, labels = _validate_roi(name, channels)
+    name, labels = validate_roi(name, channels)
     path = Path(path)
     current = load_custom_rois(path)
     rois = {

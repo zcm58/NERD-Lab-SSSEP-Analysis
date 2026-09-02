@@ -66,8 +66,7 @@ def test_missing_settings_preserve_launcher_defaults(tmp_path):
     )
     assert loaded == original
     assert loaded.stimulation_hz == 26.0
-    assert loaded.roi_name == "Cz"
-    assert loaded.roi_channels == ("Cz",)
+    assert loaded.plot_rois == {"Cz": ("Cz",)}
 
 
 @pytest.mark.parametrize("frequency", [None, 12.5])
@@ -97,8 +96,7 @@ def test_launcher_preferences_round_trip_all_editable_fields(tmp_path):
             test_mode=True,
         ),
         plot_channel="C4",
-        roi_name="Hand ROI",
-        roi_channels=("C3", "c3", "C4", "External electrode"),
+        plot_rois={"Hand ROI": ("C3", "C4", "External electrode"), "Midline": ("Cz",)},
         stimulation_hz=80.0,  # Analysis range validation happens when processing.
         remember_folders=False,
         input_folder=str(tmp_path / "recordings"),
@@ -115,7 +113,10 @@ def test_launcher_preferences_round_trip_all_editable_fields(tmp_path):
     assert loaded.task.serial_port == "COM3"
     assert loaded.task.trigger_codes == CueTriggerCodes(11, 12, 21, 22)
     assert loaded.task.random_seed is None
-    assert saved["roi_channels"] == ["C3", "c3", "C4", "External electrode"]
+    assert saved["plot_rois"] == {
+        "Hand ROI": ["C3", "C4", "External electrode"], "Midline": ["Cz"],
+    }
+    assert not {"roi_name", "roi_channels"} & saved.keys()
 
 
 def test_legacy_plot_electrode_becomes_active_single_electrode_roi(tmp_path):
@@ -124,22 +125,58 @@ def test_legacy_plot_electrode_becomes_active_single_electrode_roi(tmp_path):
 
     loaded = load_launcher_settings(defaults(), channels=CHANNELS, settings_path=settings_path)
 
-    assert loaded.roi_name == "C4"
-    assert loaded.roi_channels == ("C4",)
+    assert loaded.plot_rois == {"C4": ("C4",)}
     assert loaded.stimulation_hz == 12.5
 
 
-def test_active_roi_trims_names_and_preserves_order_without_dataset_validation(tmp_path):
+def test_plot_rois_trim_names_and_preserve_order_without_dataset_validation(tmp_path):
     selected = replace(
-        defaults(), roi_name=" Custom ", roi_channels=(" X2 ", "x2", "Cz"),
+        defaults(), plot_rois={" Custom ": (" X2 ", "Cz"), "Single": ("C3",)},
     )
-    assert selected.roi_name == "Custom"
-    assert selected.roi_channels == ("X2", "x2", "Cz")
+    assert list(selected.plot_rois) == ["Custom", "Single"]
+    assert selected.plot_rois == {"Custom": ("X2", "Cz"), "Single": ("C3",)}
     settings_path = tmp_path / "settings.json"
     save_launcher_settings(selected, settings_path)
     assert load_launcher_settings(
         defaults(), channels=CHANNELS, settings_path=settings_path,
     ) == selected
+
+
+def test_legacy_active_roi_migrates_and_saves_only_collection(tmp_path):
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text(json.dumps({
+        "plot_channel": "C4", "roi_name": "Central", "roi_channels": ["C3", "Cz"],
+    }), encoding="utf-8")
+
+    loaded = load_launcher_settings(defaults(), channels=CHANNELS, settings_path=settings_path)
+    assert loaded.plot_rois == {"Central": ("C3", "Cz")}
+    save_launcher_settings(loaded, settings_path)
+    saved = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert saved["plot_rois"] == {"Central": ["C3", "Cz"]}
+    assert not {"roi_name", "roi_channels"} & saved.keys()
+
+
+def test_empty_plot_collection_round_trips_for_scalp_only_use(tmp_path):
+    settings_path = tmp_path / "settings.json"
+    selected = replace(defaults(), plot_rois={})
+    save_launcher_settings(selected, settings_path)
+    assert load_launcher_settings(
+        defaults(), channels=CHANNELS, settings_path=settings_path,
+    ).plot_rois == {}
+
+
+def test_plot_collection_is_copied_from_caller():
+    rois = {"Single": ("C3",)}
+    selected = replace(defaults(), plot_rois=rois)
+    rois["Other"] = ("C4",)
+    assert selected.plot_rois == {"Single": ("C3",)}
+
+
+def test_duplicate_json_roi_names_are_rejected(tmp_path):
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text('{"plot_rois": {"ROI": ["C3"], "ROI": ["C4"]}}', encoding="utf-8")
+    with pytest.raises(ValueError, match="Duplicate saved GUI setting"):
+        load_launcher_settings(defaults(), channels=CHANNELS, settings_path=settings_path)
 
 
 def test_legacy_folder_file_seeds_task_log_folder(tmp_path):
@@ -178,7 +215,7 @@ def test_recording_folder_update_preserves_session_preferences(tmp_path):
         original,
         task=replace(original.task, epochs_per_condition=24, left_hand_prompt="Left!"),
         plot_channel="C3", stimulation_hz=10.0,
-        roi_name="Central", roi_channels=("C3", "Cz", "C4"),
+        plot_rois={"Central": ("C3", "Cz", "C4"), "Single": ("Cz",)},
     )
     settings_path = tmp_path / "settings.json"
     save_launcher_settings(selected, settings_path)
@@ -209,6 +246,12 @@ def test_recording_folder_update_preserves_session_preferences(tmp_path):
     {"roi_name": "Central", "roi_channels": ["Cz", None]},
     {"roi_name": "Central", "roi_channels": ["Cz", ""]},
     {"roi_name": "Central", "roi_channels": ["Cz", " Cz "]},
+    {"plot_rois": None}, {"plot_rois": []}, {"plot_rois": "Cz"},
+    {"plot_rois": {"": ["Cz"]}}, {"plot_rois": {"Central": []}},
+    {"plot_rois": {"Central": "Cz"}}, {"plot_rois": {"Central": [None]}},
+    {"plot_rois": {"Central": [""]}}, {"plot_rois": {"Central": ["Cz", "cz"]}},
+    {"plot_rois": {"Central": ["Cz"], "CENTRAL": ["C4"]}},
+    {"plot_rois": {}, "roi_name": "Central", "roi_channels": ["Cz"]},
 ])
 def test_invalid_saved_values_are_reported(tmp_path, payload):
     settings_path = tmp_path / "settings.json"
@@ -262,7 +305,7 @@ def test_failed_atomic_replace_preserves_existing_preferences(tmp_path, monkeypa
             settings_module.save_folder_defaults("new input", "new output", settings_path)
         else:
             save_launcher_settings(replace(
-                defaults(), plot_channel="C4", roi_name="Central", roi_channels=("C3", "C4"),
+                defaults(), plot_channel="C4", plot_rois={"Central": ("C3", "C4")},
             ), settings_path)
 
     assert settings_path.read_bytes() == before

@@ -97,23 +97,28 @@ scalp map. The BDF files are not processed again.
 1. Choose **View > Generate FFT Plots**. Results load automatically. If a parent
    results folder is selected, its most recently updated run is loaded. Use
    **Browse** to choose a different run; **Reload Results** refreshes it if needed.
-2. In **File > Settings > Regions of Interest**, click **Choose Electrodes /
-   Define ROI...**. Select one or more electrodes, name the ROI, and click
-   **Use ROI**. **Save Custom ROI** also adds a reusable definition to the list.
+2. In **File > Settings > Regions of Interest**, click **Add ROI**. Select one
+   or more electrodes, name the ROI, and click **Use ROI**. Repeat for each
+   separate electrode or region. **Edit ROI** and **Remove** change the selected
+   list entry. Every entry in this list gets its own FFT plot.
 3. In Settings' **Analysis** tab, check **TENS Unit Stimulation Frequency (Hz)**
-   (default 26 Hz). Click **Save** to apply and remember both settings.
+   (default 26 Hz). Click **Save** to apply and remember the ROI list and settings.
 4. Choose **Group average** or one participant. Select a trigger code for one
    plot, or **All conditions** for every available attention trigger code.
-5. Click **Create FFT Plot** or **Create Scalp Map**. With All conditions
+5. Click **Create FFT Plot(s)** or **Create Scalp Map**. With All conditions
    selected, these become **Create All FFT Plots** and **Create All Scalp Maps**.
 
 The selection map shows the nose at the top and the participant's left on the
-left. You can define ROIs before loading results. The four example ROIs come
+left. You can define ROIs before loading results. For separate C3 and C4 plots,
+add two entries containing one electrode each; selecting both electrodes in one
+entry creates one averaged ROI. The four example ROIs come
 from the FPVS website; choose ROIs for your SSSEP analysis plan. Plotting reports
 missing electrodes without changing the saved definition. **Cancel** in Settings
-keeps the previous selection and frequency, but does not undo an explicit **Save
-Custom ROI** in the selector. Replacing a saved definition asks for confirmation.
-Reusable definitions stay in `.sssep_rois.json`; the active ROI and frequency
+keeps the previous ROI list and frequency, but does not undo an explicit **Save
+Custom ROI** in the selector. That button stores a reusable definition; use
+**Add ROI** to include it in this plotting list. Replacing a saved definition
+asks for confirmation. Removing a plotting entry does not delete its reusable
+definition. Reusable definitions stay in `.sssep_rois.json`; the plotting list and frequency
 stay in `.sssep_gui_settings.json` with the other app settings.
 
 FFT plots mark the Settings frequency with a dashed line labeled **TENS Unit
@@ -127,10 +132,14 @@ created by this workflow. If an older run reports missing provenance columns,
 process its original BDF files once with the current version before plotting.
 Older folders whose names begin with `run_` can still be loaded.
 
-Each condition saves a separate PNG directly in `<selected run>/saved_fft_plots`.
-All conditions normally creates four plots, for trigger codes 11, 12, 21, and 22;
-it excludes baselines and conditions missing from the selected participant.
-If one plot fails, the others continue and a message identifies the failures.
+Each ROI and condition saves a separate FFT PNG directly in
+`<selected run>/saved_fft_plots`. With **All conditions**, three ROIs normally
+create 12 FFT plots: one per ROI for trigger codes 11, 12, 21, and 22. Scalp maps
+use the whole scalp and still create only one map per trigger code, regardless
+of the ROI list. All conditions excludes baselines and conditions missing from
+the selected participant.
+If one plot fails, the others continue. The results box identifies each ROI,
+trigger code, contributing participants, missing electrodes, and any failures.
 Click **View New Plot** to open that folder. Repeated filenames get ` (2)`, ` (3)`,
 and so on; earlier plots are preserved. No extra CSV/Excel files or per-plot
 subfolders are created. Keep the original participant and group FFT CSVs for
@@ -139,11 +148,11 @@ If one selected ROI electrode is missing for a participant, the remaining
 selected electrodes are averaged; that participant is omitted only when none
 remain. The group curve gives each contributing participant equal weight.
 
-Scalp maps use the nearest saved FFT bin and show the actual bin in the status
-message. Missing participant/electrode values are omitted, so the participant
+Scalp maps use the nearest saved FFT bin and show the actual bin in the results
+box. Missing participant/electrode values are omitted, so the participant
 count can differ by electrode; the original `group_fft_amplitudes.csv` retains
-these counts. Labels with no montage coordinates are listed in the status
-message and left off the map; their values remain in the original FFT CSVs. No
+these counts. Labels with no montage coordinates are listed in the results
+box and left off the map; their values remain in the original FFT CSVs. No
 missing value is replaced with zero.
 
 Hemisphere comparisons and statistics remain outside this package.

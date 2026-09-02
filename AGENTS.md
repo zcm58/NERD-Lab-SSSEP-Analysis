@@ -150,11 +150,13 @@ authorized:
 - Opening Generate FFT Plots auto-loads the selected source in its worker.
   A parent results folder selects its most recently updated immediate run;
   invalidate stale loaded data/event selections on path changes and report load
-  failures. Preserve the ROI and frequency selected in File > Settings.
+  failures. Preserve the ROI list and frequency selected in File > Settings.
 - Keep the saved plotting page to Saved results and Data selection. The
-  Regions of Interest editor belongs in Settings. All conditions creates one
-  PNG per available attention trigger code for the selected participant or
-  group; continue after individual failures and report each result.
+  Regions of Interest editor belongs in Settings and supports separate named
+  entries containing one or more electrodes. All conditions creates one FFT
+  PNG per ROI and available attention trigger code for the selected participant
+  or group. Scalp maps run once per trigger code, independent of ROI count.
+  Continue after individual failures and report each result in the results box.
 - Keep each batch in a newly created, unique run subfolder. Preserve previous
   runs and the GUI's parent-root saved setting.
 - Retain GUI workers until completion and block window close while a batch,

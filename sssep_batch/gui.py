@@ -251,14 +251,13 @@ def launch_gui() -> int:
             self.session_settings = saved.task
             self.plot_channel = saved.plot_channel
             self.stimulation_hz = saved.stimulation_hz
-            self.roi_name = saved.roi_name
-            self.roi_channels = saved.roi_channels
+            self.plot_rois = dict(saved.plot_rois)
             self.remember_folders = saved.remember_folders
             self.input_edit.setText(saved.input_folder if saved.remember_folders else INPUT_FOLDER)
             self.output_edit.setText(saved.output_root if saved.remember_folders else OUTPUT_ROOT)
             self.saved_plots_page.settings_need_review = self._settings_need_review
             self.saved_plots_page.set_plot_settings(
-                roi_name=self.roi_name, channels=self.roi_channels,
+                plot_rois=self.plot_rois,
                 stimulation_hz=self.stimulation_hz,
             )
             self.saved_plots_page.set_results_folder(self.output_edit.text())
@@ -378,15 +377,14 @@ def launch_gui() -> int:
             available = tuple(dict.fromkeys((
                 *BIOSEMI64_CHANNELS,
                 *(dataset.channel_names if dataset is not None else ()),
-                *self.roi_channels,
+                *(channel for channels in self.plot_rois.values() for channel in channels),
             )))
             dialog = TaskSettingsDialog(
                 self.session_settings,
                 channels=BIOSEMI64_CHANNELS,
                 plot_channel=self.plot_channel,
                 stimulation_hz=self.stimulation_hz,
-                roi_name=self.roi_name,
-                roi_channels=self.roi_channels,
+                plot_rois=self.plot_rois,
                 roi_available_channels=available,
                 remember_folders=self.remember_folders,
                 parent=self,
@@ -396,27 +394,26 @@ def launch_gui() -> int:
                 self.session_settings = dialog.settings
                 self.plot_channel = dialog.plot_channel
                 self.stimulation_hz = dialog.stimulation_hz
-                self.roi_name = dialog.roi_name
-                self.roi_channels = dialog.roi_channels
+                self.plot_rois = dict(dialog.plot_rois)
                 self.remember_folders = dialog.remember_folders
                 self._settings_need_review = False
                 self.saved_plots_page.settings_need_review = False
                 self.saved_plots_page.set_plot_settings(
-                    roi_name=self.roi_name, channels=self.roi_channels,
+                    plot_rois=self.plot_rois,
                     stimulation_hz=self.stimulation_hz,
                 )
                 self._refresh_settings_summary()
             dialog.deleteLater()
 
         def _save_settings_draft(
-            self, task, plot_channel, stimulation_hz, remember_folders, roi_name, roi_channels,
+            self, task, plot_channel, stimulation_hz, remember_folders, plot_rois,
         ) -> None:
             """Persist the validated draft before the Settings dialog accepts it."""
             save_launcher_settings(
                 LauncherSettings(
                     task=task, plot_channel=plot_channel, stimulation_hz=stimulation_hz,
                     remember_folders=remember_folders,
-                    roi_name=roi_name, roi_channels=roi_channels,
+                    plot_rois=plot_rois,
                     input_folder=self.input_edit.text().strip() if remember_folders else "",
                     output_root=self.output_edit.text().strip() if remember_folders else "",
                 ),

@@ -17,7 +17,8 @@ The package is organized around these boundaries:
   Per-file stage order only.
 - `saved_plots_gui.py`
   Saved-result/data selectors and background load/plot workers. All conditions
-  renders separate PNGs sequentially, retaining successes and reporting failures.
+  renders separate FFT PNGs per ROI/event and one scalp map per event, retaining
+  successes and reporting failures in the scrollable results box.
 - `roi_selection_gui.py`
   Modal BioSemi64 diagram and named electrode/ROI selection. Use ROI applies
   the draft; Cancel preserves the prior selection. Presets and schematic
@@ -31,10 +32,13 @@ The package is organized around these boundaries:
 - `task_settings_gui.py`
   Modal File > Settings editor. Save validates and persists a draft before applying
   it; Cancel preserves prior settings. Regions of Interest opens the large ROI
-  selector; its draft affects plots only after outer Save. The home starts both conditions.
+  selector for each Add/Edit entry in a named ROI list; its draft affects plots
+  only after outer Save. Remove changes the plotting list, not the saved custom
+  library. The home starts both conditions.
 - `launcher_settings.py`
   Validated persistent preferences in ignored `.sssep_gui_settings.json`. Atomic
-  writes, legacy folder migration, and hardware settings excluded from storage.
+  writes, legacy folder/single-ROI migration to `plot_rois`, and hardware settings
+  excluded from storage.
 - `loading.py`
   FPVS-compatible BioSemi channel-subset loading from external input.
 - `analysis/`

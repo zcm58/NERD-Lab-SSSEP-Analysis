@@ -27,8 +27,9 @@ launcher opens the task home. Use **View** to switch workflows:
 - **Process Data** processes saved `.bdf` files and creates FFT results.
 - **Generate FFT Plots** reopens an earlier FFT CSV to make participant/group
   electrode or ROI plots and scalp maps without processing the BDF files again.
-  Choose one condition or create all condition plots in one click. Define ROIs
-  through **File > Settings > Regions of Interest**.
+  Define separate electrodes or ROIs through **File > Settings > Regions of
+  Interest**. Choose one condition or plot all conditions for every listed ROI
+  in one click.
 
 Edit session settings, participant text, and analysis options under **File >
 Settings**. Click **Save** to keep changes after closing the app. The default

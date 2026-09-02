@@ -88,7 +88,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert all(spin.minimum() == spin.maximum() for spin in trigger_spins)
                 assert all(not spin.isEnabled() for spin in trigger_spins)
 
-            def edit_nested_roi(dialog, name, labels, *, save_custom=False, use=True):
+            def edit_nested_roi(dialog, name, labels, *, save_custom=False, use=True, add=False):
                 @checked
                 def edit_selection():
                     selector = QApplication.activeModalWidget()
@@ -107,7 +107,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                     else:
                         selector.reject()
                 QTimer.singleShot(0, edit_selection)
-                dialog.choose_roi_button.click()
+                (dialog.add_roi_button if add else dialog.edit_roi_button).click()
 
             @checked
             def cancel_settings():
@@ -126,11 +126,10 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert_trigger_codes_locked(dialog)
                 assert window_ref[0].saved_plots_page.dataset is None
                 edit_nested_roi(dialog, "Reusable central", ("C3", "C4"), save_custom=True)
-                assert dialog.roi_name == "Reusable central"
-                assert dialog.roi_channels == ("C3", "C4")
-                assert "C3, C4" in dialog.roi_summary_label.text()
-                assert window_ref[0].roi_channels == (gui.PLOT_CHANNEL,)
-                assert window_ref[0].saved_plots_page.selected_channels == (gui.PLOT_CHANNEL,)
+                assert dialog.plot_rois == {"Reusable central": ("C3", "C4")}
+                assert "C3, C4" in dialog.roi_list.item(0).text()
+                assert window_ref[0].plot_rois == {gui.PLOT_CHANNEL: (gui.PLOT_CHANNEL,)}
+                assert window_ref[0].saved_plots_page.plot_rois == window_ref[0].plot_rois
                 assert load_custom_rois(roi_gui.ROI_SETTINGS_PATH) == {
                     "Reusable central": ("C3", "C4"),
                 }
@@ -147,12 +146,30 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 }
                 assert dialog.plot_channel_combo.count() == 64
                 assert dialog.plot_channel_combo.currentText() == gui.PLOT_CHANNEL
-                assert dialog.roi_channels == (gui.PLOT_CHANNEL,)
+                assert dialog.plot_rois == {gui.PLOT_CHANNEL: (gui.PLOT_CHANNEL,)}
                 edit_nested_roi(dialog, "Discard nested", ("Fp1",), use=False)
-                assert dialog.roi_channels == (gui.PLOT_CHANNEL,)
+                assert dialog.plot_rois == {gui.PLOT_CHANNEL: (gui.PLOT_CHANNEL,)}
                 edit_nested_roi(dialog, "Central hands", ("C3", "Cz", "C4"))
                 expected = tuple(label for label in gui.BIOSEMI64_CHANNELS if label in {"C3", "Cz", "C4"})
-                assert dialog.roi_channels == expected
+                assert dialog.plot_rois == {"Central hands": expected}
+                edit_nested_roi(dialog, "Left electrode", ("C3",), add=True)
+                assert list(dialog.plot_rois) == ["Central hands", "Left electrode"]
+                assert dialog.plot_rois["Left electrode"] == ("C3",)
+                edit_nested_roi(dialog, "Right electrode", ("C4",), add=True)
+                assert dialog.roi_list.count() == 3
+                edit_nested_roi(dialog, "central HANDS", ("C4",), add=True)
+                assert messages[-1][0] == "ROI Name Already Used"
+                assert dialog.roi_list.count() == 3
+                assert dialog.plot_rois["Central hands"] == expected
+                messages.clear()
+                edit_nested_roi(dialog, "LEFT ELECTRODE", ("C4",))
+                assert messages[-1][0] == "ROI Name Already Used"
+                assert "Right electrode" in dialog.plot_rois
+                messages.clear()
+                dialog.remove_roi_button.click()
+                assert list(dialog.plot_rois) == ["Central hands", "Left electrode"]
+                edit_nested_roi(dialog, "Discard new ROI", ("Fp2",), add=True, use=False)
+                assert dialog.roi_list.count() == 2
                 assert dialog.epochs_per_condition_spin.singleStep() == 2
                 assert dialog.left_hand_prompt_edit.text() == "Think of your left hand"
                 assert dialog.right_hand_prompt_edit.text() == "Think of your right hand"
@@ -177,7 +194,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert dialog.isVisible()
                 assert messages[-1][0] == "Settings Need Attention"
                 assert window_ref[0].session_settings.epochs_per_condition == 10
-                assert window_ref[0].roi_channels == (gui.PLOT_CHANNEL,)
+                assert window_ref[0].plot_rois == {gui.PLOT_CHANNEL: (gui.PLOT_CHANNEL,)}
                 messages.clear()
                 dialog.break_prompt_edit.setText("Rest for a moment.")
                 dialog.stimulation_frequency_edit.setText("nan")
@@ -195,7 +212,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert dialog.isVisible()
                 assert window_ref[0].session_settings.epochs_per_condition == 10
                 assert not gui.SETTINGS_PATH.exists()
-                assert window_ref[0].saved_plots_page.selected_channels == (gui.PLOT_CHANNEL,)
+                assert window_ref[0].saved_plots_page.plot_rois == {gui.PLOT_CHANNEL: (gui.PLOT_CHANNEL,)}
                 assert messages[-1][0] == "Could Not Save Settings"
                 messages.clear()
                 gui.save_launcher_settings = save_to_disk
@@ -244,7 +261,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 window.settings_action.trigger()
                 assert window.session_settings is original
                 assert not gui.SETTINGS_PATH.exists()
-                assert window.roi_channels == (gui.PLOT_CHANNEL,)
+                assert window.plot_rois == {gui.PLOT_CHANNEL: (gui.PLOT_CHANNEL,)}
                 assert load_custom_rois(roi_gui.ROI_SETTINGS_PATH) == {
                     "Reusable central": ("C3", "C4"),
                 }, "Explicit library Save must survive outer Cancel"
@@ -253,10 +270,11 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert window.session_settings is not original
                 assert window.session_settings.epochs_per_condition == 4
                 assert window.plot_channel == "C4"
-                assert window.roi_name == "Central hands"
-                assert set(window.roi_channels) == {"C3", "Cz", "C4"}
-                assert window.saved_plots_page.selected_channels == window.roi_channels
-                assert window.saved_plots_page.roi_name == window.roi_name
+                assert list(window.plot_rois) == ["Central hands", "Left electrode"]
+                assert set(window.plot_rois["Central hands"]) == {"C3", "Cz", "C4"}
+                assert window.plot_rois["Left electrode"] == ("C3",)
+                assert window.saved_plots_page.plot_rois == window.plot_rois
+                assert window.saved_plots_page.plot_rois is not window.plot_rois
                 assert window.saved_plots_page.stimulation_hz == 12.5
                 assert gui.SETTINGS_PATH.exists()
                 assert window.session_settings.total_epochs == 8
@@ -439,15 +457,22 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert reopened.session_settings == settings_seen[-1]
                 assert reopened.plot_channel == "C4"
                 assert reopened.stimulation_hz == 12.5
-                assert reopened.roi_name == "Central hands"
-                assert set(reopened.roi_channels) == {"C3", "Cz", "C4"}
-                assert reopened.saved_plots_page.selected_channels == reopened.roi_channels
+                assert list(reopened.plot_rois) == ["Central hands", "Left electrode"]
+                assert set(reopened.plot_rois["Central hands"]) == {"C3", "Cz", "C4"}
+                assert reopened.plot_rois["Left electrode"] == ("C3",)
+                assert reopened.saved_plots_page.plot_rois == reopened.plot_rois
                 assert reopened.saved_plots_page.stimulation_hz == 12.5
                 assert reopened.pages.currentIndex() == 0
                 def cancel_reopened():
                     dialog = QApplication.activeModalWidget()
                     dialog.epochs_per_condition_spin.setValue(40)
                     dialog.break_prompt_edit.setText("Discard this")
+                    while dialog.roi_list.count():
+                        dialog.remove_roi_button.click()
+                    assert dialog.plot_rois == {}
+                    assert not dialog.edit_roi_button.isEnabled()
+                    assert not dialog.remove_roi_button.isEnabled()
+                    assert len(reopened.plot_rois) == 2
                     dialog.reject()
                 QTimer.singleShot(0, cancel_reopened)
                 reopened.settings_action.trigger()
@@ -457,8 +482,8 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 reopened._start_task()
                 assert reopened.task_runner is None
                 assert len(runners) == 3
-                selected = reopened.roi_channels
-                reopened.roi_channels = ("Previously selected",)
+                selected = reopened.plot_rois
+                reopened.plot_rois = {"Old extra": ("Previously selected",), "Another": ("Second extra",)}
                 reopened.saved_plots_page.dataset = SimpleNamespace(channel_names=("Loaded extra",))
                 @checked
                 def inspect_available_channels():
@@ -466,6 +491,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                     assert set(gui.BIOSEMI64_CHANNELS).issubset(dialog._roi_available_channels)
                     assert "Loaded extra" in dialog._roi_available_channels
                     assert "Previously selected" in dialog._roi_available_channels
+                    assert "Second extra" in dialog._roi_available_channels
                     assert dialog.plot_channel_combo.count() == 64
                     @checked
                     def inspect_nested_extras():
@@ -474,15 +500,15 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                         assert {
                             selector.other_list.item(index).text()
                             for index in range(selector.other_list.count())
-                        } == {"Loaded extra", "Previously selected"}
+                        } == {"Loaded extra", "Previously selected", "Second extra"}
                         selector.reject()
                     QTimer.singleShot(0, inspect_nested_extras)
-                    dialog.choose_roi_button.click()
+                    dialog.edit_roi_button.click()
                     dialog.reject()
                 QTimer.singleShot(0, inspect_available_channels)
                 reopened.settings_action.trigger()
                 assert gui.SETTINGS_PATH.read_bytes() == before_reopen
-                reopened.roi_channels = selected
+                reopened.plot_rois = selected
                 reopened.saved_plots_page.dataset = None
                 assert reopened.close()
 

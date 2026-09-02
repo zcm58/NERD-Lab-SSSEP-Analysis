@@ -116,7 +116,7 @@ def test_saved_fft_view_loads_results_and_runs_plot_off_ui_thread(tmp_path):
                 window = QApplication.instance()._sssep_launcher_window
                 panel = window.saved_plots_page
                 panel.set_plot_settings(
-                    roi_name="Central ROI", channels=("C3", "C4"), stimulation_hz=31.0,
+                    plot_rois={"Central ROI": ("C3", "C4")}, stimulation_hz=31.0,
                 )
                 assert window.view_actions[2].text() == "Generate FFT Plots"
                 assert Path(panel.results_edit.text()) == run_folder.parent
@@ -142,8 +142,7 @@ def test_saved_fft_view_loads_results_and_runs_plot_off_ui_thread(tmp_path):
                 assert panel.event_combo.currentData() == ("cue", 11)
                 assert panel.event_combo.findData("all") >= 0
                 assert panel.dataset.channel_names == ("C3", "C4")
-                assert panel.selected_channels == ("C3", "C4")
-                assert panel.roi_name == "Central ROI"
+                assert panel.plot_rois == {"Central ROI": ("C3", "C4")}
                 assert not hasattr(panel, "choose_roi_button")
                 assert not hasattr(panel, "frequency_spin")
                 assert panel.stimulation_hz == 31.0
@@ -160,8 +159,7 @@ def test_saved_fft_view_loads_results_and_runs_plot_off_ui_thread(tmp_path):
                 assert panel.dataset is None
                 assert panel.participant_combo.count() == 0
                 assert panel.event_combo.count() == 0
-                assert panel.selected_channels == ("C3", "C4")
-                assert panel.roi_name == "Central ROI"
+                assert panel.plot_rois == {"Central ROI": ("C3", "C4")}
                 assert panel.stimulation_hz == 31.0
                 assert not panel.create_roi_button.isEnabled()
                 assert not panel.view_button.isEnabled()
@@ -180,11 +178,10 @@ def test_saved_fft_view_loads_results_and_runs_plot_off_ui_thread(tmp_path):
                     QTimer.singleShot(10, wait_for_reload)
                     return
                 assert panel.dataset is not None
-                assert panel.selected_channels == ("C3", "C4")
-                assert panel.roi_name == "Central ROI"
+                assert panel.plot_rois == {"Central ROI": ("C3", "C4")}
                 assert panel.stimulation_hz == 31.0
                 assert "Central ROI" in panel.plot_settings_label.text()
-                assert "C3, C4" in panel.plot_settings_label.text()
+                assert "Regions of Interest (1)" in panel.plot_settings_label.text()
                 panel._start_plot("roi")
                 pending = panel.plot_worker
                 panel._start_plot("scalp")
@@ -219,7 +216,7 @@ def test_saved_fft_view_loads_results_and_runs_plot_off_ui_thread(tmp_path):
                 assert window.settings_action.isEnabled()
                 assert panel.create_roi_button.isEnabled()
                 assert panel.view_button.isEnabled()
-                assert "using C3, C4" in panel.status_label.text()
+                assert "using C3, C4" in panel.plot_details.toPlainText()
                 panel._view_plot()
                 assert opened == [str(run_folder / "saved_fft_plots")]
                 assert not messages
@@ -413,7 +410,8 @@ def test_auto_load_failures_retry_and_worker_guards(tmp_path):
         window = app._sssep_launcher_window
         panel = window.saved_plots_page
         panel.set_plot_settings(
-            roi_name="Persistent ROI", channels=("C3", "C4"), stimulation_hz=41.0,
+            plot_rois={"Persistent ROI": ("C3", "C4"), "Left central": ("C3",)},
+            stimulation_hz=41.0,
         )
         window.view_actions[2].trigger()
         assert not messages
@@ -448,8 +446,7 @@ def test_auto_load_failures_retry_and_worker_guards(tmp_path):
         panel.results_edit.setText(str(missing))
         assert panel.dataset is None
         assert not panel.create_roi_button.isEnabled()
-        assert panel.selected_channels == ("C3", "C4")
-        assert panel.roi_name == "Persistent ROI"
+        assert panel.plot_rois == {"Persistent ROI": ("C3", "C4"), "Left central": ("C3",)}
         assert panel.stimulation_hz == 41.0
         panel.results_edit.editingFinished.emit()
         wait_until(lambda: panel.load_worker is None)
@@ -470,7 +467,8 @@ def test_auto_load_failures_retry_and_worker_guards(tmp_path):
         assert panel.stimulation_hz == 41.0
         assert panel.dataset.events[0].target_hz is None
         panel.set_plot_settings(
-            roi_name="Persistent ROI", channels=("C3", "C4"), stimulation_hz=None,
+            plot_rois={"Persistent ROI": ("C3", "C4"), "Left central": ("C3",)},
+            stimulation_hz=None,
         )
         panel._populate_events()
         assert panel.stimulation_hz is None
@@ -481,8 +479,7 @@ def test_auto_load_failures_retry_and_worker_guards(tmp_path):
         panel._browse_results()
         wait_until(lambda: panel.load_worker is None)
         assert panel.stimulation_hz is None
-        assert panel.selected_channels == ("C3", "C4")
-        assert panel.roi_name == "Persistent ROI"
+        assert panel.plot_rois == {"Persistent ROI": ("C3", "C4"), "Left central": ("C3",)}
         assert panel.dataset.events[0].target_hz == 10.0
         def fail_roi(**kwargs):
             raise OSError("Synthetic saved plot failure")
@@ -567,11 +564,11 @@ def _run_batch_plot_probe(tmp_path, name, body):
     assert old_plot.read_bytes() == b"Preserve this previous plot"
 
 
-def test_saved_plot_worker_batches_events_and_uses_each_saved_frequency(tmp_path):
+def test_saved_plot_worker_keeps_each_roi_separate_across_all_conditions(tmp_path):
     _run_batch_plot_probe(tmp_path, "batch_worker", '''
         def roi_outputs(**kwargs):
-            assert kwargs["channels"] == ("C3", "C4")
-            assert kwargs["roi_name"] == "Configured ROI"
+            expected_channels = {"Configured ROI": ("C3", "C4"), "Left central": ("C3",)}
+            assert kwargs["channels"] == expected_channels[kwargs["roi_name"]]
             calls.append(("roi", dict(kwargs)))
             return result_for("roi", kwargs)
 
@@ -584,8 +581,9 @@ def test_saved_plot_worker_batches_events_and_uses_each_saved_frequency(tmp_path
         saved_gui.create_saved_roi_outputs = roi_outputs
         saved_gui.create_saved_scalp_outputs = scalp_outputs
         events = tuple(("cue", code) for code in (11, 12, 21, 22))
-        base_request = dict(events=events, participant_id=None, channels=("c3", "C4", "MISSING"),
-                            roi_name="Configured ROI", stimulation_hz=None)
+        configured_rois = {"Configured ROI": ("c3", "C4", "MISSING"), "Left central": ("C3",)}
+        base_request = dict(events=events, participant_id=None, rois=configured_rois,
+                            stimulation_hz=None)
 
         def run_worker(kind, **overrides):
             request = dict(base_request, kind=kind)
@@ -598,23 +596,30 @@ def test_saved_plot_worker_batches_events_and_uses_each_saved_frequency(tmp_path
             app.processEvents()
             assert worker.error is None, worker.error
             assert worker.result["kind"] == kind
-            assert worker.result["requested_count"] == len(request["events"])
-            assert len(progress) >= len(request["events"])
+            expected_count = len(request["events"]) * (len(request["rois"]) if kind == "roi" else 1)
+            assert worker.result["requested_count"] == expected_count
+            assert len(progress) >= expected_count
             assert all(isinstance(message, str) and message for message in progress)
             return worker.result
 
         result = run_worker("roi")
         assert not result["failures"]
-        assert len(result["outputs"]) == 4
-        assert [output["trigger_code"] for output in result["outputs"]] == [11, 12, 21, 22]
+        assert len(result["outputs"]) == 8
+        assert {(output["trigger_code"], output["roi_name"]) for output in result["outputs"]} == {
+            (code, roi) for code in (11, 12, 21, 22) for roi in configured_rois
+        }
         assert all(output["event_type"] == "cue" for output in result["outputs"])
-        assert [output["trigger_label"] for output in result["outputs"]] == [
-            "Condition 11", "Condition 12", "Condition 21", "Condition 22",
-        ]
-        assert [kwargs["stimulation_hz"] for _, kwargs in calls] == [10.0, 20.0, None, 40.0]
+        assert all(output["trigger_label"] == f"Condition {output['trigger_code']}"
+                   for output in result["outputs"])
+        expected_frequencies = {11: 10.0, 12: 20.0, 21: None, 22: 40.0}
+        assert all(kwargs["stimulation_hz"] == expected_frequencies[kwargs["trigger_code"]]
+                   for _, kwargs in calls)
         assert all(kwargs["participant_id"] is None for _, kwargs in calls)
         assert all(Path(output["plot_path"]).is_file() for output in result["outputs"])
-        assert base_request["channels"] == ("c3", "C4", "MISSING")
+        assert result["missing_channels"] == {"Configured ROI": ["MISSING"]}
+        assert base_request["rois"] == {
+            "Configured ROI": ("c3", "C4", "MISSING"), "Left central": ("C3",),
+        }
 
         calls.clear()
         scalp = run_worker("scalp")
@@ -635,16 +640,16 @@ def test_saved_plot_worker_batches_events_and_uses_each_saved_frequency(tmp_path
         assert not calls
         assert all("50 Hz" in failure and "Settings" in failure for failure in outside["failures"])
 
-        absent = run_worker("roi", channels=("MISSING",))
+        absent = run_worker("roi", rois={"Absent ROI": ("MISSING",)})
         assert not absent["outputs"] and len(absent["failures"]) == 4
-        assert absent["missing_channels"] == ["MISSING"]
-        assert all("Settings" in failure for failure in absent["failures"])
+        assert absent["missing_channels"] == {"Absent ROI": ["MISSING"]}
+        assert all("Settings" in failure and "Absent ROI" in failure for failure in absent["failures"])
         assert not calls
         print("SAVED_BATCH_OK")
     ''')
 
 
-def test_all_conditions_panel_restricts_participant_and_continues_after_failure(tmp_path):
+def test_all_conditions_panel_keeps_rois_separate_and_continues_after_one_roi_fails(tmp_path):
     _run_batch_plot_probe(tmp_path, "all_conditions_panel", '''
         from PySide6.QtWidgets import QDoubleSpinBox, QLabel
         from sssep_batch.gui_style import SectionCard
@@ -654,13 +659,14 @@ def test_all_conditions_panel_restricts_participant_and_continues_after_failure(
         mode = "partial_failure"
 
         def roi_outputs(**kwargs):
-            assert kwargs["channels"] == ("C3", "C4")
+            channels = {"Configured ROI": ("C3", "C4"), "Left central": ("C3",)}
+            assert kwargs["channels"] == channels[kwargs["roi_name"]]
             assert kwargs["stimulation_hz"] == 31.0
             calls.append(dict(kwargs))
-            if mode == "partial_failure" and kwargs["trigger_code"] == 12:
+            if mode == "partial_failure" and kwargs["trigger_code"] == 12 and kwargs["roi_name"] == "Configured ROI":
                 middle_started.set()
                 assert release.wait(5), "GUI did not release middle condition"
-            if mode == "partial_failure" and kwargs["trigger_code"] == 21:
+            if mode == "partial_failure" and kwargs["trigger_code"] == 21 and kwargs["roi_name"] == "Configured ROI":
                 raise ValueError("No usable ROI electrodes for condition 21")
             return result_for("roi", kwargs)
 
@@ -676,8 +682,8 @@ def test_all_conditions_panel_restricts_participant_and_continues_after_failure(
         saved_gui.create_saved_roi_outputs = roi_outputs
         saved_gui.QMessageBox = MessageBox
         panel = saved_gui.SavedPlotsPanel()
-        panel.set_plot_settings(roi_name="Configured ROI", channels=("C3", "C4"),
-                                stimulation_hz=31.0)
+        plot_rois = {"Configured ROI": ("C3", "C4", "MISSING"), "Left central": ("C3",)}
+        panel.set_plot_settings(plot_rois=plot_rois, stimulation_hz=31.0)
         panel._results_loaded(dataset)
         panel._refresh_controls(False)
         panel.show()
@@ -696,10 +702,11 @@ def test_all_conditions_panel_restricts_participant_and_continues_after_failure(
         worker = panel.plot_worker
         worker.finished.connect(lambda: results.append(worker.result))
         assert worker.request["events"] == tuple(("cue", code) for code in (11, 12, 21, 22))
+        assert worker.request["rois"] == plot_rois
         wait_until(middle_started.is_set)
         assert panel.is_busy() and busy == [True]
-        assert len(calls) == 2
-        assert len(list((source.parent / "saved_fft_plots").glob("roi_11_*.png"))) == 1
+        assert len(calls) == 3
+        assert len(list((source.parent / "saved_fft_plots").glob("roi_11_*.png"))) == 2
         for widget in (panel.results_edit, panel.results_browse_button, panel.results_load_button,
                        panel.level_combo, panel.event_combo, panel.create_roi_button,
                        panel.create_scalp_button, panel.view_button):
@@ -710,11 +717,20 @@ def test_all_conditions_panel_restricts_participant_and_continues_after_failure(
         release.set()
         wait_until(lambda: panel.plot_worker is None)
         assert busy == [True, False]
-        assert [call["trigger_code"] for call in calls] == [11, 12, 21, 22]
+        assert [(call["trigger_code"], call["roi_name"]) for call in calls] == [
+            (code, name) for code in (11, 12, 21, 22) for name in plot_rois
+        ]
         assert all(call["event_type"] == "cue" for call in calls)
-        assert len(results) == 1 and len(results[0]["outputs"]) == 3
+        assert len(results) == 1 and len(results[0]["outputs"]) == 7
         assert len(results[0]["failures"]) == 1
-        assert len(messages) == 1 and "21" in messages[0][1]
+        assert results[0]["requested_count"] == 8
+        assert len(messages) == 1 and "21" in messages[0][1] and "Configured ROI" in messages[0][1]
+        assert any(output["trigger_code"] == 21 and output["roi_name"] == "Left central"
+                   for output in results[0]["outputs"])
+        assert "7 of 8" in panel.status_label.text()
+        assert all(name in panel.plot_details.toPlainText() for name in plot_rois)
+        assert "MISSING" in panel.plot_details.toPlainText()
+        assert "No usable ROI electrodes" in panel.plot_details.toPlainText()
         assert panel.view_button.isEnabled()
         assert panel.plot_output_folder == str(source.parent / "saved_fft_plots")
         successful_plots = {Path(result["plot_path"]): Path(result["plot_path"]).read_bytes()
@@ -732,10 +748,11 @@ def test_all_conditions_panel_restricts_participant_and_continues_after_failure(
         panel._start_plot("roi")
         assert panel.plot_worker.request["events"] == (("cue", 11), ("cue", 22))
         wait_until(lambda: panel.plot_worker is None)
-        assert [call["trigger_code"] for call in calls] == [11, 22]
+        assert [(call["trigger_code"], call["roi_name"]) for call in calls] == [
+            (code, name) for code in (11, 22) for name in plot_rois
+        ]
         assert all(call["participant_id"] == "P02" for call in calls)
-        assert panel.selected_channels == ("C3", "C4")
-        assert panel.roi_name == "Configured ROI" and panel.stimulation_hz == 31.0
+        assert panel.plot_rois == plot_rois and panel.stimulation_hz == 31.0
 
         calls.clear()
         panel.event_combo.setCurrentIndex(participant_events.index(("baseline", 1)))
@@ -744,7 +761,8 @@ def test_all_conditions_panel_restricts_participant_and_continues_after_failure(
         panel._start_plot("roi")
         assert panel.plot_worker.request["events"] == (("baseline", 1),)
         wait_until(lambda: panel.plot_worker is None)
-        assert len(calls) == 1 and calls[0]["event_type"] == "baseline"
+        assert len(calls) == 2 and all(call["event_type"] == "baseline" for call in calls)
+        assert [call["roi_name"] for call in calls] == list(plot_rois)
         panel.level_combo.setCurrentIndex(panel.level_combo.findData("group"))
         assert panel.event_combo.currentData() == ("baseline", 1)
         second_condition = next(index for index in range(panel.event_combo.count())
@@ -754,6 +772,48 @@ def test_all_conditions_panel_restricts_participant_and_continues_after_failure(
         assert panel.event_combo.currentData() == ("cue", 12)
         assert all(path.read_bytes() == data for path, data in successful_plots.items())
         assert len(messages) == 1
+        panel.close()
+        print("SAVED_BATCH_OK")
+    ''')
+
+
+def test_scalp_maps_do_not_require_or_multiply_by_selected_rois(tmp_path):
+    _run_batch_plot_probe(tmp_path, "scalp_without_rois", '''
+        messages = []
+
+        class MessageBox:
+            @staticmethod
+            def warning(parent, title, message):
+                messages.append((title, message))
+            critical = warning
+
+        def scalp_outputs(**kwargs):
+            calls.append(dict(kwargs))
+            return result_for("scalp", kwargs)
+
+        saved_gui.QMessageBox = MessageBox
+        saved_gui.create_saved_scalp_outputs = scalp_outputs
+        panel = saved_gui.SavedPlotsPanel()
+        panel.set_plot_settings(plot_rois={}, stimulation_hz=26.0)
+        panel._results_loaded(dataset)
+        panel._refresh_controls(False)
+        panel.event_combo.setCurrentIndex(panel.event_combo.findData("all"))
+        panel._start_plot("roi")
+        assert panel.plot_worker is None
+        assert len(messages) == 1
+        assert "ROI" in messages[0][1] and "Settings" in messages[0][1]
+        assert not calls
+
+        panel._start_plot("scalp")
+        worker = panel.plot_worker
+        wait_until(lambda: panel.plot_worker is None)
+        assert len(calls) == 4
+        assert [call["trigger_code"] for call in calls] == [11, 12, 21, 22]
+        assert worker.result["requested_count"] == 4
+        assert len(worker.result["outputs"]) == 4
+        assert not worker.result["failures"]
+        assert panel.plot_rois == {}
+        assert panel.view_button.isEnabled()
         panel.close()
         print("SAVED_BATCH_OK")
     ''')
