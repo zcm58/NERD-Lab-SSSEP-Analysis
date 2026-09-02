@@ -16,10 +16,16 @@ The package is organized around these boundaries:
 - `pipeline.py`
   Per-file stage order only.
 - `saved_plots_gui.py`
-  Saved-result tab and its background load/plot workers.
+  Saved-result view and its background load/plot workers.
 - `gui_style.py`
   Launcher-only FPVS Studio styling, section cards, forms, and scrolling.
-  Keep the three tabs and fixed action/status footers; leave task frames alone.
+  Keep View-menu workflow navigation and action/status footers; leave task frames alone.
+- `task_settings_gui.py`
+  Modal File > Settings editor. Save validates and persists a draft before applying
+  it; Cancel preserves prior settings. The home starts both conditions.
+- `launcher_settings.py`
+  Validated persistent preferences in ignored `.sssep_gui_settings.json`. Atomic
+  writes, legacy folder migration, and hardware settings excluded from storage.
 - `loading.py`
   FPVS-compatible BioSemi channel-subset loading from external input.
 - `analysis/`
@@ -80,8 +86,8 @@ The package is organized around these boundaries:
   selected electrode; skip only affected PNGs when it is unresolved and retain
   contributing-participant counts. Existing ROI means remain only in downstream
   summaries and CSV mean columns.
-- Use the `AnalysisProtocol` supplied by the launcher for the selected
-  condition's fixed codes and labels, epoch duration, expected counts, and
+- Use the `AnalysisProtocol` supplied by the launcher for both conditions'
+  four fixed codes and labels, epoch duration, expected counts, and
   optional stimulation frequency.
 - Local SSSEP amplitude SNR and Gap/Break comparisons are downstream summaries,
   not a claim of parity with FPVS's neighboring-bin SNR method.
@@ -122,7 +128,10 @@ The package is organized around these boundaries:
   duration, and plot-frequency range. ROI source exports retain each
   participant's contributing electrodes and curve. Scalp maps keep variable
   electrode Ns visible, omit labels without montage coordinates, and never
-  replace missing channels with zero.
+  replace missing channels with zero. Scalp-map Excel exports contain only
+  electrode names and numeric FFT amplitudes (µV), with fitted column widths.
+  Retain finite unmapped electrode values in the workbook and report omissions
+  in the GUI; canonical CSVs keep all provenance and participant counts.
 - Save one participant and one group selected-electrode PNG per usable cue.
 
 ### `events/`
@@ -136,7 +145,11 @@ The package is organized around these boundaries:
   runs. Confirmed test mode uses the simulated backend and must be logged.
 - Keep cue emission as the first external action in the matching
   `QOpenGLWindow.frameSwapped` callback for each newly drawn cue.
-- Freshly shuffle balanced cues and insert breaks between them. Align a Qt
+- Run both hands first, then right hand/right ankle. Freshly shuffle balanced
+  cues per condition and insert breaks within each block. The block boundary
+  waits for Space on the visible handover screen, then Y on a separate visible
+  confirmation screen; ignore held-key repeats. Neither screen sends markers.
+  Align a Qt
   `PreciseTimer` deadline and countdown to each accepted cue/break swap; close
   cues on the following break swap or final black swap. Breaks send no markers.
 - BioSemi events are one raw byte, codes `1..255`, over fixed `COM3` at 115200

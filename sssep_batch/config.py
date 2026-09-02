@@ -17,7 +17,7 @@ BATCH_WORKERS = 3
 
 # True saves diagnostic amplitude PNG images; False skips those images.
 SAVE_PLOTS = True
-# Default electrode selected in the launcher's analysis tab. Each run can choose
+# Default electrode selected in File > Settings. Each run can choose
 # another electrode without editing this file.
 PLOT_CHANNEL = "Cz"
 
@@ -38,8 +38,8 @@ OUTPUT_ROOT = ""
 # consistent across recordings that will be compared.
 
 # Trigger codes mark the prompt that appeared at that instant. These fixed codes
-# match the disabled fields on the participant-task tab. A GUI analysis uses the
-# selected condition's codes so presentation and analysis stay synchronized.
+# match the disabled fields in File > Settings. GUI analysis uses both
+# conditions' codes so presentation and analysis stay synchronized.
 ACTIVE_EVENT_CODES = [11, 12, 21, 22]
 
 # Trigger used for the separately measured Gap/Break baseline.
@@ -57,9 +57,9 @@ TRIGGER_LABELS = {
     100: "Gap/Break",
 }
 
-# Optional stimulation frequency in hertz (Hz). TENS is controlled externally,
-# so None avoids guessing. The analysis tab can add the correct value for a run.
-STIMULATION_FREQUENCY_HZ = None
+# Default TENS stimulation frequency in hertz (Hz). TENS is controlled externally;
+# use File > Settings to match the unit, or leave blank if the frequency is unknown.
+STIMULATION_FREQUENCY_HZ = 26.0
 TRIGGER_HZ_MAP = {
     11: STIMULATION_FREQUENCY_HZ,
     12: STIMULATION_FREQUENCY_HZ,

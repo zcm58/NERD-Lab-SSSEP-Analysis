@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from sssep_batch.analysis.saved_fft import (
+    PARTICIPANT_FFT_FILENAME,
     SavedFftDataset,
     load_saved_fft_dataset,
     saved_scalp_frequency_bounds,
@@ -33,6 +34,31 @@ from sssep_batch.analysis.saved_outputs import (
 )
 from sssep_batch.config import PLOT_CHANNEL, STIMULATION_FREQUENCY_HZ
 from sssep_batch.gui_style import SectionCard, build_page, hint_label, make_form
+
+
+def _saved_results_source(selected_path: str) -> Path:
+    """Resolve a run or the newest immediate run below an analysis output root."""
+
+    selected = Path(selected_path).expanduser()
+    if not selected.is_dir():
+        return selected
+    direct = selected / PARTICIPANT_FFT_FILENAME
+    if direct.is_file():
+        return direct
+    candidates = [
+        child / PARTICIPANT_FFT_FILENAME
+        for child in selected.iterdir()
+        if child.is_dir() and (child / PARTICIPANT_FFT_FILENAME).is_file()
+    ]
+    if not candidates:
+        raise ValueError(
+            f"No {PARTICIPANT_FFT_FILENAME} was found in this folder or its "
+            f"immediate run folders:\n{selected}"
+        )
+    return max(
+        candidates,
+        key=lambda path: (path.stat().st_mtime_ns, path.parent.name.casefold(), path.parent.name),
+    )
 
 
 class SavedFftLoadWorker(QThread):
@@ -47,10 +73,12 @@ class SavedFftLoadWorker(QThread):
     def run(self) -> None:
         """Read the selected saved results and report one terminal signal."""
 
+        source = Path(self.selected_path)
         try:
-            self.dataset = load_saved_fft_dataset(self.selected_path)
+            source = _saved_results_source(self.selected_path)
+            self.dataset = load_saved_fft_dataset(source)
         except Exception as exc:
-            self.error = exc
+            self.error = ValueError(f"Could not load saved FFT data from:\n{source}\n\n{exc}")
 
 
 class SavedPlotWorker(QThread):
@@ -83,6 +111,7 @@ class SavedPlotWorker(QThread):
                     **common,
                     channels=tuple(self.request["channels"]),
                     roi_name=str(self.request["roi_name"]),
+                    stimulation_hz=float(self.request["stimulation_hz"]),
                 )
             elif self.request["kind"] == "scalp":
                 self.result = create_saved_scalp_outputs(
@@ -110,7 +139,7 @@ class SavedPlotsPanel(QWidget):
 
         self.results_edit = QLineEdit(initial_folder)
         self.results_browse_button = QPushButton("Browse...")
-        self.results_load_button = QPushButton("Load Results")
+        self.results_load_button = QPushButton("Reload Results")
         self.level_combo = QComboBox()
         self.level_combo.addItem("Group average", "group")
         self.level_combo.addItem("Individual participant", "participant")
@@ -142,7 +171,7 @@ class SavedPlotsPanel(QWidget):
         self.create_scalp_button = QPushButton("Create Scalp Map")
         self.view_button = QPushButton("View New Plot")
         self.status_label = QLabel(
-            "Choose an earlier SSSEP run folder, then click Load Results."
+            "Choose a processed results folder to load its FFT data automatically."
         )
 
         self._build_layout()
@@ -173,7 +202,7 @@ class SavedPlotsPanel(QWidget):
         for label, control, stretch in (
             ("Plot level", self.level_combo, 2),
             ("Participant", self.participant_combo, 1),
-            ("Cue / event", self.event_combo, 2),
+            ("Trigger code / event", self.event_combo, 2),
         ):
             field = QVBoxLayout()
             field.setSpacing(6)
@@ -194,14 +223,17 @@ class SavedPlotsPanel(QWidget):
         self.create_roi_button.setProperty("uiRole", "primary")
 
         scalp_card = SectionCard(
-            "Scalp map",
-            "Map FFT amplitude at the nearest saved frequency bin.",
+            "Stimulation frequency",
+            "Set the FFT marker and scalp-map frequency.",
         )
         scalp_form = make_form()
         scalp_form.addRow("TENS Unit Stimulation Frequency (Hz)", self.frequency_spin)
         scalp_card.body.addLayout(scalp_form)
         scalp_card.body.addWidget(
-            hint_label("Scalp maps always use all available electrodes.")
+            hint_label(
+                "Starts at the frequency saved for this trigger code when available. "
+                "Scalp maps use the nearest saved bin and all available electrodes."
+            )
         )
         scalp_card.body.addStretch(1)
 
@@ -225,6 +257,7 @@ class SavedPlotsPanel(QWidget):
         self.results_browse_button.clicked.connect(self._browse_results)
         self.results_load_button.clicked.connect(self._load_results)
         self.results_edit.textChanged.connect(self._source_path_changed)
+        self.results_edit.editingFinished.connect(self.ensure_results_loaded)
         self.level_combo.currentIndexChanged.connect(self._level_changed)
         self.participant_combo.currentIndexChanged.connect(self._participant_changed)
         self.event_combo.currentIndexChanged.connect(self._event_changed)
@@ -238,6 +271,12 @@ class SavedPlotsPanel(QWidget):
 
         self.results_edit.setText(str(folder))
 
+    def ensure_results_loaded(self) -> None:
+        """Load on view activation or completed path entry, reusing valid loaded data."""
+
+        if self.dataset is None:
+            self._load_results()
+
     def _source_path_changed(self, _text: str = "") -> None:
         """Discard loaded data when the visible source path changes."""
 
@@ -245,16 +284,19 @@ class SavedPlotsPanel(QWidget):
             return
         if self.dataset is None and not self.plot_output_folder:
             return
+        self._clear_loaded_results()
+        self._refresh_controls(False)
+        self.status_label.setText(
+            "Results folder changed. Finish entering the path to load its FFT data."
+        )
+
+    def _clear_loaded_results(self) -> None:
         self.dataset = None
         self.plot_output_folder = ""
         self.participant_combo.clear()
         self.event_combo.clear()
         self.channel_list.clear()
         self.roi_name_edit.clear()
-        self._refresh_controls(False)
-        self.status_label.setText(
-            "Results folder changed. Click Load Results before creating a plot."
-        )
 
     def is_busy(self) -> bool:
         """Return whether saved FFT loading or plotting is still active."""
@@ -287,6 +329,7 @@ class SavedPlotsPanel(QWidget):
         )
         if folder:
             self.results_edit.setText(folder)
+            self.ensure_results_loaded()
 
     def _load_results(self) -> None:
         """Load one consolidated participant FFT table off the UI thread."""
@@ -295,19 +338,17 @@ class SavedPlotsPanel(QWidget):
             return
         selected_path = self.results_edit.text().strip()
         if not selected_path:
-            self._warn(
-                "Saved Results Need Attention",
-                "Choose a processed SSSEP results folder first.",
+            self.status_label.setText(
+                "Choose a processed results folder to load its FFT data automatically."
             )
             return
 
-        self.dataset = None
-        self.plot_output_folder = ""
-        self._set_working(True)
-        self.status_label.setText("Loading and checking the saved FFT data...")
+        self._clear_loaded_results()
         self.load_worker = SavedFftLoadWorker(selected_path, self)
         self.load_worker.finished.connect(self._load_finished)
         self.load_worker.finished.connect(self.load_worker.deleteLater)
+        self._set_working(True)
+        self.status_label.setText("Finding and checking the saved FFT data...")
         self.load_worker.start()
 
     def _results_loaded(self, dataset: SavedFftDataset) -> None:
@@ -340,7 +381,7 @@ class SavedPlotsPanel(QWidget):
         self.status_label.setText(
             f"Loaded {len(dataset.participant_ids)} participant(s), "
             f"{len(dataset.events)} event(s), and {len(dataset.channel_names)} "
-            "electrode(s). Choose what to plot."
+            f"electrode(s) from {dataset.source_csv.parent}. Choose what to plot."
         )
 
     def _results_failed(self, exc: Exception) -> None:
@@ -356,18 +397,22 @@ class SavedPlotsPanel(QWidget):
         worker = self.load_worker
         if worker is None:
             return
+        error = worker.error
         try:
-            if worker.error is not None:
-                self._results_failed(worker.error)
-            elif worker.dataset is not None:
+            if error is None and worker.dataset is not None:
                 self._results_loaded(worker.dataset)
-            else:
-                self._results_failed(
-                    RuntimeError("The saved FFT loader returned no result.")
-                )
+            elif error is None:
+                error = RuntimeError("The saved FFT loader returned no result.")
+        except Exception as exc:
+            self._clear_loaded_results()
+            error = exc
         finally:
             self.load_worker = None
             self._set_working(False)
+        if error is not None:
+            # A modal dialog runs a nested event loop: release the finished
+            # worker first so its queued deletion cannot leave a stale handle.
+            self._results_failed(error)
 
     def _level_changed(self) -> None:
         """Enable participant selection only for participant-level plots."""
@@ -432,6 +477,8 @@ class SavedPlotsPanel(QWidget):
         )
         if event is not None and event.target_hz is not None:
             self.frequency_spin.setValue(event.target_hz)
+        elif STIMULATION_FREQUENCY_HZ is not None:
+            self.frequency_spin.setValue(STIMULATION_FREQUENCY_HZ)
 
     def _channels_changed(self) -> None:
         """Keep the default name aligned with a single selected electrode."""
@@ -459,7 +506,7 @@ class SavedPlotsPanel(QWidget):
             return
         selected_event = self.event_combo.currentData()
         if not isinstance(selected_event, tuple) or len(selected_event) != 2:
-            self._warn("Saved Results Need Attention", "Choose a cue or event before plotting.")
+            self._warn("Saved Results Need Attention", "Choose a trigger code before plotting.")
             return
 
         participant_id = None
@@ -486,7 +533,10 @@ class SavedPlotsPanel(QWidget):
                     "Enter a short electrode or ROI name before plotting.",
                 )
                 return
-            request.update(channels=channels, roi_name=roi_name)
+            request.update(
+                channels=channels, roi_name=roi_name,
+                stimulation_hz=self.frequency_spin.value(),
+            )
             working_message = "Creating the saved electrode / ROI FFT plot..."
         elif kind == "scalp":
             request["frequency_hz"] = self.frequency_spin.value()
@@ -526,7 +576,7 @@ class SavedPlotsPanel(QWidget):
             self.status_label.setText(
                 f"Scalp map created at the nearest FFT bin: requested "
                 f"{requested:g} Hz, plotted {actual:g} Hz ({count_text}). "
-                "The exact electrode values were saved beside the PNG."
+                "Electrode names and FFT amplitudes were saved in Excel beside the PNG."
                 f"{omitted_text}"
             )
         else:
@@ -550,18 +600,19 @@ class SavedPlotsPanel(QWidget):
         worker = self.plot_worker
         if worker is None:
             return
+        error = worker.error
         try:
-            if worker.error is not None:
-                self._plot_failed(worker.error)
-            elif worker.result is not None:
+            if error is None and worker.result is not None:
                 self._plot_finished(worker.result)
-            else:
-                self._plot_failed(
-                    RuntimeError("The saved FFT plot worker returned no result.")
-                )
+            elif error is None:
+                error = RuntimeError("The saved FFT plot worker returned no result.")
+        except Exception as exc:
+            error = exc
         finally:
             self.plot_worker = None
             self._set_working(False)
+        if error is not None:
+            self._plot_failed(error)
 
     def _set_working(self, working: bool) -> None:
         """Enable saved-result controls only when data are loaded and idle."""

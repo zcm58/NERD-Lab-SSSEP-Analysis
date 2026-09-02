@@ -19,12 +19,18 @@ This package runs the participant cue task. TENS is controlled externally.
 - Use one raw byte per event (`1..255`) over fixed COM3 at 115200 baud, 8N1.
 - Keep both-hands codes fixed at `11`/`12` and hand/ankle codes fixed at
   `21`/`22`. Keep their GUI controls disabled. Code `0` is not an event.
-- Require positive cue/break durations and a positive even total epoch count.
-  Shuffle equal cue counts for each run; consecutive repeats are allowed.
+- Require positive cue/break durations and a positive even epoch count per
+  condition. Always run both hands then right hand/right ankle, shuffling
+  balanced cues within each block; consecutive repeats are allowed.
 - Show editable cue/break text and a top-center countdown. Add breaks only
   between cue epochs; never send a marker for a break or countdown redraw.
 - Align a Qt `PreciseTimer` deadline to each accepted cue/break swap. Close each
-  cue on the following break swap, or the terminal black swap for the final cue.
+  cue on the following break, handover, or terminal black swap.
+- Between conditions, wait for Space on the visible electrode handover screen,
+  then a fresh Y on its separately visible confirmation. No timers or markers
+  run during this pause. Escape still aborts; held-key repeats cannot advance.
+- Log planned onsets relative to each condition, explicitly label their
+  timebase, and retain actual times relative to the whole experiment start.
 - Abort visibly after trigger failure; never continue with a null backend.
   Test mode uses the concrete simulated backend.
 - Run the participant presenter on the Qt main thread.

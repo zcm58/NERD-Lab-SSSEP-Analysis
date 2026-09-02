@@ -1,6 +1,7 @@
 """Participant cue presentation and BioSemi trigger runtime."""
 
 from .models import (
+    CONDITION_ORDER,
     CueEpoch,
     CuePresentationRecord,
     CueTarget,
@@ -14,6 +15,7 @@ from .runner import QtTaskRunner, write_task_event_log
 from .schedule import build_cue_schedule
 
 __all__ = [
+    "CONDITION_ORDER",
     "CueEpoch",
     "CuePresentationRecord",
     "CueTarget",

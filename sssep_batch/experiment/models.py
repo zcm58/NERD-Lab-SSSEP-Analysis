@@ -27,6 +27,11 @@ class CueTarget(str, Enum):
     RIGHT_ANKLE = "right_ankle"
 
 
+CONDITION_ORDER = (
+    TaskCondition.BOTH_HANDS,
+    TaskCondition.RIGHT_HAND_AND_ANKLE,
+)
+
 CONDITION_CUES: dict[TaskCondition, tuple[CueTarget, CueTarget]] = {
     TaskCondition.BOTH_HANDS: (CueTarget.LEFT_HAND, CueTarget.RIGHT_HAND),
     TaskCondition.RIGHT_HAND_AND_ANKLE: (CueTarget.RIGHT_HAND, CueTarget.RIGHT_ANKLE),
@@ -75,9 +80,9 @@ class CueTriggerCodes:
         )
         for code in codes:
             if not isinstance(code, int) or isinstance(code, bool) or not 1 <= code <= 255:
-                raise ValueError("Each cue trigger code must be an integer from 1 to 255.")
+                raise ValueError("Each trigger code must be an integer from 1 to 255.")
         if len(set(codes)) != len(codes):
-            raise ValueError("Cue trigger codes must be unique.")
+            raise ValueError("Trigger codes must be unique.")
         if BASELINE_EVENT_CODE in codes:
             raise ValueError(
                 f"Trigger code {BASELINE_EVENT_CODE} is reserved for the Gap/Break baseline."
@@ -102,17 +107,16 @@ class CueTriggerCodes:
             return code_lookup[(condition, cue)]
         except KeyError as exc:
             raise ValueError(
-                f"Cue {cue.value!r} is not valid for condition {condition.value!r}."
+                f"Participant prompt {cue.value!r} is not valid for condition {condition.value!r}."
             ) from exc
 
 
 @dataclass(frozen=True, slots=True)
 class TaskSettings:
-    """Settings supplied by the operator GUI for one participant task."""
+    """Settings for one participant's fixed two-condition experiment."""
 
-    condition: TaskCondition
     epoch_duration_sec: float
-    total_epochs: int
+    epochs_per_condition: int
     trigger_codes: CueTriggerCodes
     serial_port: str = field(default=BIOSEMI_SERIAL_PORT, init=False)
     output_folder: Path | None = None
@@ -125,8 +129,6 @@ class TaskSettings:
     break_prompt: str = DEFAULT_BREAK_PROMPT
 
     def __post_init__(self) -> None:
-        if not isinstance(self.condition, TaskCondition):
-            raise TypeError("condition must be a TaskCondition value.")
         for name in ("epoch_duration_sec", "break_duration_sec"):
             duration = getattr(self, name)
             if (
@@ -138,12 +140,14 @@ class TaskSettings:
                 raise ValueError(f"{name} must be a finite number greater than zero.")
             object.__setattr__(self, name, float(duration))
         if (
-            not isinstance(self.total_epochs, int)
-            or isinstance(self.total_epochs, bool)
-            or self.total_epochs <= 0
-            or self.total_epochs % 2 != 0
+            not isinstance(self.epochs_per_condition, int)
+            or isinstance(self.epochs_per_condition, bool)
+            or self.epochs_per_condition <= 0
+            or self.epochs_per_condition % 2 != 0
         ):
-            raise ValueError("total_epochs must be a positive even integer for cue balance.")
+            raise ValueError(
+                "epochs_per_condition must be a positive even integer to balance trigger codes."
+            )
         if not isinstance(self.trigger_codes, CueTriggerCodes):
             raise TypeError("trigger_codes must be a CueTriggerCodes value.")
         if self.random_seed is not None and (
@@ -163,6 +167,12 @@ class TaskSettings:
         if self.output_folder is not None:
             object.__setattr__(self, "output_folder", Path(self.output_folder))
 
+    @property
+    def total_epochs(self) -> int:
+        """Return the cue count across both conditions, excluding breaks."""
+
+        return self.epochs_per_condition * len(CONDITION_ORDER)
+
     def prompt_for(self, cue: CueTarget) -> str:
         """Return the operator's display text without changing the cue identity."""
 
@@ -175,7 +185,7 @@ class TaskSettings:
 
 @dataclass(frozen=True, slots=True)
 class CueEpoch:
-    """One planned cue epoch; ``epoch_index`` is zero based."""
+    """One cue with a global zero-based index and condition-relative planned onset."""
 
     epoch_index: int
     condition: TaskCondition
@@ -227,18 +237,16 @@ class TaskRunResult:
 
 def analysis_protocol_for_task(
     *,
-    condition: TaskCondition,
     epoch_duration_sec: float,
-    total_epochs: int,
+    epochs_per_condition: int,
     trigger_codes: CueTriggerCodes,
     target_hz: float | None = None,
 ) -> AnalysisProtocol:
-    """Build analysis settings from the participant-task fields in the GUI."""
+    """Analyze all four cues using the experiment's duration and per-cue count."""
 
     validated = TaskSettings(
-        condition=condition,
         epoch_duration_sec=epoch_duration_sec,
-        total_epochs=total_epochs,
+        epochs_per_condition=epochs_per_condition,
         trigger_codes=trigger_codes,
     )
     return AnalysisProtocol(
@@ -251,10 +259,11 @@ def analysis_protocol_for_task(
                 ),
                 target_hz=target_hz,
             )
+            for condition in CONDITION_ORDER
             for cue in CONDITION_CUES[condition]
         ),
         event_duration_sec=validated.epoch_duration_sec,
-        expected_repetitions_per_trigger=validated.total_epochs // 2,
+        expected_repetitions_per_trigger=validated.epochs_per_condition // 2,
         baseline_event_code=BASELINE_EVENT_CODE,
         baseline_label=TRIGGER_LABELS[BASELINE_EVENT_CODE],
     )

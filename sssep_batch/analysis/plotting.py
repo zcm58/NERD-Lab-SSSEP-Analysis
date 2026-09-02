@@ -43,6 +43,15 @@ def _check_baseline_alignment(active: Spectrum, baseline: Spectrum) -> None:
         raise ValueError("Active and baseline spectra must have matching channels and frequency bins.")
 
 
+def _plot_stimulation_marker(axes, stimulation_hz: float | None) -> None:
+    """Label the external TENS frequency without modifying FFT amplitudes."""
+    if stimulation_hz is not None:
+        axes.axvline(
+            stimulation_hz, linestyle="--", linewidth=1.8, color="#a33b32",
+            label="TENS Unit Stimulation Frequency",
+        )
+
+
 def plot_spectrum(
     active: Spectrum,
     baseline: Spectrum | None,
@@ -51,7 +60,7 @@ def plot_spectrum(
     target_hz: float | None,
     channel_names: list[str],
     plot_channel: str,
-    active_label: str = "Cue average",
+    active_label: str = "Trigger code average",
     baseline_label: str = "Gap/Break baseline",
 ) -> None:
     """Save one electrode's FFT amplitudes in microvolts as a PNG."""
@@ -79,12 +88,7 @@ def plot_spectrum(
         for hz in FIXED_HZ_LINES:
             plt.axvline(hz, linestyle=":", linewidth=1.0)
             plt.text(hz + 0.10, y_text, f"{hz:g} Hz", rotation=90, va="top", fontsize=8)
-        if target_hz is not None:
-            plt.axvline(target_hz, linestyle="-", linewidth=1.8)
-            plt.text(
-                target_hz + 0.15, y_max * 0.88 if y_max > 0 else 1.0,
-                f"Expected {target_hz:g} Hz", rotation=90, va="top", fontsize=9,
-            )
+        _plot_stimulation_marker(plt.gca(), target_hz)
         plt.title(f"{title} - Electrode {plot_channel}")
         plt.xlabel("Frequency (Hz)")
         plt.ylabel(f"FFT amplitude at {plot_channel} (µV)")
@@ -103,8 +107,9 @@ def plot_saved_roi_spectrum(
     spectrum: RoiSpectrum,
     roi_name: str,
     outpath: Path,
+    stimulation_hz: float | None = None,
 ) -> None:
-    """Save a participant or group ROI curve reconstructed from the FFT CSV."""
+    """Save an ROI curve with an optional display-only stimulation marker override."""
 
     plot_fmin = spectrum.provenance.plot_fmin_hz
     plot_fmax = spectrum.provenance.plot_fmax_hz
@@ -129,16 +134,8 @@ def plot_saved_roi_spectrum(
             linewidth=1.8,
             label=level,
         )
-        if spectrum.event.target_hz is not None:
-            axes.axvline(spectrum.event.target_hz, linestyle="-", linewidth=1.8)
-            axes.text(
-                spectrum.event.target_hz + 0.15,
-                y_max * 0.88 if y_max > 0 else 1.0,
-                f"Expected {spectrum.event.target_hz:g} Hz",
-                rotation=90,
-                va="top",
-                fontsize=9,
-            )
+        marker_hz = spectrum.event.target_hz if stimulation_hz is None else stimulation_hz
+        _plot_stimulation_marker(axes, marker_hz)
         axes.set_title(
             f"{level} - {spectrum.event.trigger_label} - {roi_name}"
         )

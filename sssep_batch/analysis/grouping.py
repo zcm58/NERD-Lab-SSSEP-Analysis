@@ -68,8 +68,7 @@ def _validate_records(
         if record_key in seen_records:
             raise ValueError(
                 "Duplicate participant/event/trigger record: "
-                f"participant={record.participant_id!r}, event_type={record.event_type!r}, "
-                f"trigger_code={record.trigger_code}."
+                f"participant={record.participant_id!r}, trigger code={record.trigger_code}."
             )
         seen_records.add(record_key)
 
@@ -78,7 +77,7 @@ def _validate_records(
         if event_key in definitions and definitions[event_key] != definition:
             raise ValueError(
                 "Inconsistent trigger label or target frequency for "
-                f"event_type={record.event_type!r}, trigger_code={record.trigger_code}."
+                f"trigger code {record.trigger_code}."
             )
         definitions[event_key] = definition
 
@@ -290,7 +289,7 @@ def group_spectra_to_dataframe(groups: Iterable[GroupSpectrum]) -> pd.DataFrame:
     for group in groups:
         key = (group.event_type, group.trigger_code)
         if key in seen_groups:
-            raise ValueError(f"Duplicate group spectrum for {key}.")
+            raise ValueError(f"Duplicate group spectrum for trigger code {group.trigger_code}.")
         seen_groups.add(key)
         if group.spectrum.method != expected_method:
             raise ValueError("Group spectra use inconsistent processing methods.")

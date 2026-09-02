@@ -121,6 +121,12 @@ def apply_launcher_style(window: QWidget) -> None:
         QLabel[uiRole="title"] {{ font-size: 24px; font-weight: 700; }}
         QLabel[uiRole="sectionTitle"] {{ font-size: 16px; font-weight: 700; }}
         QLabel[uiRole="muted"] {{ color: {muted}; }}
+        QMenuBar {{ background: {page}; padding: 2px 0; }}
+        QMenuBar::item {{ padding: 6px 10px; border-radius: 4px; }}
+        QMenuBar::item:selected, QMenu::item:selected {{ background: {alternate}; }}
+        QMenu {{ background: {surface}; border: 1px solid {border}; padding: 4px; }}
+        QMenu::item {{ padding: 7px 24px; }}
+        QMenu::item:disabled {{ color: {disabled}; }}
         QTabWidget::pane {{ border: none; background: {page}; }}
         QTabBar::tab {{
             padding: 10px 18px; margin-right: 4px; color: {muted};

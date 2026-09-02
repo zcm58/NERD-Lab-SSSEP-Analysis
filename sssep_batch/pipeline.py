@@ -274,10 +274,10 @@ def process_one_bdf(
                     output_stem = f"{file_stem}_cue_{code:03d}_fft_amplitude"
                     plot_spectrum(
                         active=spectrum, baseline=baseline_fft,
-                        title=f"{file_stem} - Cue {code} {label} - FFT amplitude",
+                        title=f"{file_stem} - Trigger code {code} {label} - FFT amplitude",
                         outpath=plots_dir / f"{output_stem}.png", target_hz=target_hz,
                         channel_names=fft_channels, plot_channel=plot_channel,
-                        active_label=f"Cue average ({n_epochs} epochs)",
+                        active_label=f"Trigger code average ({n_epochs} epochs)",
                         baseline_label=(
                             f"Gap/Break average ({len(baseline_epochs.epochs)} epochs)"
                         ),
@@ -293,7 +293,7 @@ def process_one_bdf(
                     plotted += 1
 
         log_func(
-            f"Created {plotted} participant amplitude plot(s), one per usable cue; "
+            f"Created {plotted} participant amplitude plot(s), one per usable trigger code; "
             f"{plot_failures} plot(s) failed."
         )
         stage = "saving_outputs"

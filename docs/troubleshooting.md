@@ -27,11 +27,13 @@ If it already shows Python 3.13, run the same command without `-Recreate`.
 | `COM3` is busy | Close any program using `COM3`, then restart the launcher. Do not run the task without a working trigger connection. |
 | Fullscreen opens on the wrong display | Make the participant display the Windows primary display before starting, then reopen the launcher. |
 | The ready screen does not continue | Click the fullscreen task window and press **Space**. |
+| Condition 2 does not start | Press **Space** on the handover screen, then release any held keys and press **Y** on the confirmation screen. Space alone cannot start Condition 2. |
 | I need to stop the task | Press **Escape**. Keep the CSV log and record that the run was aborted. |
-| Cues or markers seem late | Stop using that session. Save its log and ask the supervisor to check the display and BioSemi Status channel. |
+| Participant prompts or trigger codes seem late | Stop using that session. Save its log and ask the supervisor to check the display and BioSemi Status channel. |
 
-The software requests a one-byte marker from the callback for the cue's Qt
-buffer swap. This does not measure physical screen onset or marker arrival.
+The software requests each one-byte trigger code from the callback for the
+participant prompt frame's Qt buffer swap. This does not measure physical screen
+onset or marker arrival.
 Confirm timing with a photodiode and the BioSemi Status channel before collecting
 study data.
 

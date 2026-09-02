@@ -7,13 +7,14 @@ import sys
 import textwrap
 
 
-def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
+def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
     """Two task launches should create main-thread runners and restore controls."""
     script = tmp_path / "task_gui_probe.py"
     script.write_text(
         textwrap.dedent(
             r'''
             from pathlib import Path
+            from dataclasses import replace
             from types import SimpleNamespace
             import os
             import sys
@@ -22,7 +23,8 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
 
             from PySide6.QtCore import QObject, QPoint, QRect, QTimer, Signal
             from PySide6.QtGui import QFont, QFontDatabase
-            from PySide6.QtWidgets import QApplication, QLabel, QScrollArea
+            from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QScrollArea, QSpinBox
+            import sssep_batch.task_settings_gui as settings_gui
             import sssep_batch.gui as gui
 
             class FakeTaskRunner(QObject):
@@ -78,88 +80,141 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                         QApplication.instance().exit(1)
                 return wrapped
 
-            def assert_trigger_codes_locked(window):
-                trigger_spins = (
-                    window.both_hands_left_code_spin,
-                    window.both_hands_right_code_spin,
-                    window.hand_ankle_hand_code_spin,
-                    window.hand_ankle_ankle_code_spin,
-                )
+            def assert_trigger_codes_locked(dialog):
+                trigger_spins = dialog.trigger_spins
                 assert [spin.value() for spin in trigger_spins] == [11, 12, 21, 22]
                 assert all(spin.minimum() == spin.maximum() for spin in trigger_spins)
                 assert all(not spin.isEnabled() for spin in trigger_spins)
 
-            def prompt_controls(window):
-                return (
-                    window.break_duration_spin,
-                    window.left_hand_prompt_edit,
-                    window.right_hand_prompt_edit,
-                    window.right_ankle_prompt_edit,
-                    window.break_prompt_edit,
-                )
+            @checked
+            def cancel_settings():
+                dialog = QApplication.activeModalWidget()
+                assert dialog.windowTitle() == "SSSEP Settings"
+                assert not hasattr(dialog, "serial_port_edit")
+                assert not hasattr(dialog, "condition_combo")
+                assert dialog.epochs_per_condition_spin.value() == 10
+                assert dialog.epoch_duration_spin.value() == 15.0
+                assert dialog.break_duration_spin.value() == 10.0
+                assert dialog.stimulation_frequency_edit.text() == "26"
+                assert not dialog.test_mode_checkbox.isChecked()
+                assert_trigger_codes_locked(dialog)
+                dialog.epoch_duration_spin.setValue(30.0)
+                dialog.epochs_per_condition_spin.setValue(20)
+                dialog.left_hand_prompt_edit.setText("Unsaved prompt")
+                dialog.reject()
+
+            @checked
+            def save_settings():
+                dialog = QApplication.activeModalWidget()
+                assert "TENS Unit Stimulation Frequency (Hz)" in {
+                    label.text() for label in dialog.findChildren(QLabel)
+                }
+                assert dialog.plot_channel_combo.count() == 64
+                assert dialog.plot_channel_combo.currentText() == gui.PLOT_CHANNEL
+                assert dialog.epochs_per_condition_spin.singleStep() == 2
+                assert dialog.left_hand_prompt_edit.text() == "Think of your left hand"
+                assert dialog.right_hand_prompt_edit.text() == "Think of your right hand"
+                assert dialog.right_ankle_prompt_edit.text() == "Think of your right ankle"
+                assert dialog.break_prompt_edit.text() == "Now let's take a short break."
+                for index in range(dialog.tabs.count()):
+                    dialog.tabs.setCurrentIndex(index)
+                    QApplication.processEvents()
+                    scroll = dialog.tabs.currentWidget().findChild(QScrollArea, "pageScrollArea")
+                    assert scroll.widget().width() == scroll.viewport().width()
+                dialog.epoch_duration_spin.setValue(15.0)
+                dialog.break_duration_spin.setValue(4.5)
+                dialog.epochs_per_condition_spin.setValue(4)
+                dialog.task_log_edit.setText(str(log_folder))
+                dialog.stimulation_frequency_edit.setText("12.5")
+                dialog.plot_channel_combo.setCurrentText("C4")
+                dialog.left_hand_prompt_edit.setText("  Focus on your left hand.  ")
+                dialog.right_hand_prompt_edit.setText("Focus on your right hand.")
+                dialog.right_ankle_prompt_edit.setText("Focus on your right ankle.")
+                dialog.break_prompt_edit.setText(" ")
+                dialog._save()
+                assert dialog.isVisible()
+                assert messages[-1][0] == "Settings Need Attention"
+                assert window_ref[0].session_settings.epochs_per_condition == 10
+                messages.clear()
+                dialog.break_prompt_edit.setText("Rest for a moment.")
+                dialog.stimulation_frequency_edit.setText("nan")
+                dialog._save()
+                assert dialog.isVisible()
+                assert "finite number" in messages[-1][1]
+                messages.clear()
+                dialog.stimulation_frequency_edit.setText("12.5")
+                assert_trigger_codes_locked(dialog)
+                save_to_disk = gui.save_launcher_settings
+                def fail_save(*args, **kwargs):
+                    raise OSError("Settings folder is read-only")
+                gui.save_launcher_settings = fail_save
+                dialog._save()
+                assert dialog.isVisible()
+                assert window_ref[0].session_settings.epochs_per_condition == 10
+                assert not gui.SETTINGS_PATH.exists()
+                assert messages[-1][0] == "Could Not Save Settings"
+                messages.clear()
+                gui.save_launcher_settings = save_to_disk
+                dialog._save()
 
             @checked
             def start_probe():
                 window = next(w for w in QApplication.topLevelWidgets()
-                              if w.windowTitle() == "SSSEP Task and Analysis")
+                              if w.windowTitle() == "NERD Lab SSSEP Task")
                 window_ref.append(window)
-                assert [window.tabs.tabText(index) for index in range(window.tabs.count())] == [
-                    "Run Participant Task", "Analyze Recordings", "Plot Saved FFT"
+                assert [action.text() for action in window.view_actions] == [
+                    "SSSEP Task", "Process Data", "Generate FFT Plots"
                 ]
-                assert "TENS Unit Stimulation Frequency (Hz)" in {
-                    label.text() for label in window.findChildren(QLabel)
+                assert window.pages.count() == 3
+                assert not hasattr(window, "tabs")
+                assert not window.task_page.findChildren(QLineEdit)
+                assert not window.task_page.findChildren(QSpinBox)
+                assert window.start_task_button.text() == "Start SSSEP Task"
+                assert window.session_settings.total_epochs == 20
+                assert not hasattr(window, "condition_combo")
+                assert window.settings_action.isEnabled()
+                menu_bar = window.layout().menuBar()
+                assert [action.text() for action in menu_bar.actions()] == ["File", "View"]
+                assert window.settings_action in menu_bar.actions()[0].menu().actions()
+                assert {label.text() for label in window.findChildren(QLabel) if label.isVisible()} == {
+                    "Change settings in File > Settings.", "NERD Lab SSSEP Task"
                 }
-                assert window.plot_channel_combo.count() == 64
-                assert window.plot_channel_combo.currentText() == gui.PLOT_CHANNEL
-                assert not hasattr(window, "serial_port_edit")
-                assert window.total_epochs_spin.singleStep() == 2
-                assert window.total_epochs_spin.value() % 2 == 0
-                assert window.break_duration_spin.value() == 10.0
-                assert window.left_hand_prompt_edit.text() == "Think of your left hand"
-                assert window.right_hand_prompt_edit.text() == "Think of your right hand"
-                assert window.right_ankle_prompt_edit.text() == "Think of your right ankle"
-                assert window.break_prompt_edit.text() == "Now let's take a short break."
-                assert "fresh random order" in window.total_epochs_spin.toolTip()
-                scroll = window.task_tab.findChild(QScrollArea, "pageScrollArea")
+                for index, action in enumerate(window.view_actions):
+                    action.trigger()
+                    assert window.pages.currentIndex() == index
+                    assert action.isChecked()
+                window.view_actions[0].trigger()
                 window.resize(820, 680)
                 QApplication.processEvents()
-                for widget in prompt_controls(window):
-                    assert widget.isVisible()
-                    scroll.ensureWidgetVisible(widget)
-                    QApplication.processEvents()
-                    position = widget.mapTo(scroll.viewport(), QPoint(0, 0))
-                    assert scroll.viewport().rect().contains(QRect(position, widget.size()))
-                assert scroll.widget().width() == scroll.viewport().width()
                 button = window.start_task_button
-                position = button.mapTo(window.task_tab, QPoint(0, 0))
-                assert window.task_tab.rect().contains(QRect(position, button.size()))
-                assert not window.test_mode_checkbox.isChecked()
-                assert window.task_runner is None
-                assert_trigger_codes_locked(window)
-
-                window.condition_combo.setCurrentIndex(1)
-                window.epoch_duration_spin.setValue(2.5)
-                window.break_duration_spin.setValue(4.5)
-                window.total_epochs_spin.setValue(4)
-                window.task_log_edit.setText(str(log_folder))
-                window.stimulation_frequency_edit.setText("12.5")
-                window.left_hand_prompt_edit.setText("  Focus on your left hand.  ")
-                window.right_hand_prompt_edit.setText("Focus on your right hand.")
-                window.right_ankle_prompt_edit.setText("Focus on your right ankle.")
-                window.break_prompt_edit.setText(" ")
+                position = button.mapTo(window.task_page, QPoint(0, 0))
+                assert window.task_page.rect().contains(QRect(position, button.size()))
+                original = window.session_settings
+                window.session_settings = replace(original, output_folder=None)
                 window._start_task()
                 assert not runners
-                assert not window.task_running
-                assert messages[-1][0] == "Task Settings Need Attention"
+                assert "File > Settings" in messages[-1][1]
                 messages.clear()
-                window.break_prompt_edit.setText("Rest for a moment.")
+                window.session_settings = original
+                QTimer.singleShot(0, cancel_settings)
+                window.settings_action.trigger()
+                assert window.session_settings is original
+                assert not gui.SETTINGS_PATH.exists()
+                QTimer.singleShot(0, save_settings)
+                window.settings_action.trigger()
+                assert window.session_settings is not original
+                assert window.session_settings.epochs_per_condition == 4
+                assert window.plot_channel == "C4"
+                assert gui.SETTINGS_PATH.exists()
+                assert window.session_settings.total_epochs == 8
+                assert "C4" in window.analysis_settings_label.text()
                 analysis_protocol = window._analysis_protocol()
-                assert analysis_protocol.active_event_codes == (21, 22)
-                assert analysis_protocol.event_duration_sec == 2.5
+                assert analysis_protocol.active_event_codes == (11, 12, 21, 22)
+                assert analysis_protocol.event_duration_sec == 15.0
                 assert analysis_protocol.expected_repetitions_per_trigger == 2
                 assert [
                     trigger.target_hz for trigger in analysis_protocol.active_triggers
-                ] == [12.5, 12.5]
+                ] == [12.5] * 4
                 window._start_task()
                 QTimer.singleShot(0, check_first_run)
 
@@ -170,20 +225,24 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 assert window.task_runner is runners[0]
                 assert start_thread_ids == [main_thread_id]
                 assert not window.start_task_button.isEnabled()
-                assert not window.tabs.isTabEnabled(1)
-                assert not window.tabs.isTabEnabled(2)
-                assert all(not widget.isEnabled() for widget in prompt_controls(window))
-                assert_trigger_codes_locked(window)
+                assert not window.view_actions[1].isEnabled()
+                assert not window.view_actions[2].isEnabled()
+                assert not window.settings_action.isEnabled()
+                assert not any(action.isEnabled() for action in window.view_actions)
+                window._show_view(1)
+                assert window.pages.currentIndex() == 0
+                window._open_settings()
+                assert QApplication.activeModalWidget() is None
                 assert not window.close(), "Active participant task accepted close"
                 settings = settings_seen[0]
-                assert settings.condition is gui.TaskCondition.RIGHT_HAND_AND_ANKLE
-                assert settings.epoch_duration_sec == 2.5
+                assert settings.epoch_duration_sec == 15.0
                 assert settings.break_duration_sec == 4.5
                 assert settings.left_hand_prompt == "Focus on your left hand."
                 assert settings.right_hand_prompt == "Focus on your right hand."
                 assert settings.right_ankle_prompt == "Focus on your right ankle."
                 assert settings.break_prompt == "Rest for a moment."
-                assert settings.total_epochs == 4
+                assert settings.epochs_per_condition == 4
+                assert settings.total_epochs == 8
                 assert settings.test_mode is False
                 assert settings.serial_port == "COM3"
                 assert settings.output_folder == log_folder
@@ -197,11 +256,10 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 assert not window.task_running
                 assert window.task_runner is None
                 assert window.start_task_button.isEnabled()
-                assert window.tabs.isTabEnabled(1)
-                assert window.tabs.isTabEnabled(2)
-                assert all(widget.isEnabled() for widget in prompt_controls(window))
-                assert_trigger_codes_locked(window)
-                assert "Task complete: 4 epoch(s)." in window.task_status_label.text()
+                assert window.view_actions[1].isEnabled()
+                assert window.view_actions[2].isEnabled()
+                assert window.settings_action.isEnabled()
+                assert "Task complete: 8 epoch(s)." in window.task_status_label.text()
                 window._start_task()
                 QTimer.singleShot(0, check_second_run)
 
@@ -219,7 +277,14 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
             def test_mode_confirmation():
                 window = window_ref[0]
                 assert window.task_runner is None
-                window.test_mode_checkbox.setChecked(True)
+                @checked
+                def enable_test_mode():
+                    dialog = QApplication.activeModalWidget()
+                    dialog.test_mode_checkbox.setChecked(True)
+                    dialog._save()
+                QTimer.singleShot(0, enable_test_mode)
+                window.settings_action.trigger()
+                assert window.session_settings.test_mode
                 previous_status = window.task_status_label.text()
 
                 question_answers.append(MessageBox.No)
@@ -227,7 +292,7 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 assert window.task_runner is None
                 assert not window.task_running
                 assert window.task_status_label.text() == previous_status
-                assert window.test_mode_checkbox.isEnabled()
+                assert window.settings_action.isEnabled()
 
                 question_answers.append(MessageBox.Yes)
                 window._start_task()
@@ -239,7 +304,7 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 assert len(runners) == 3
                 assert window.task_runner is runners[2]
                 assert settings_seen[2].test_mode is True
-                assert not window.test_mode_checkbox.isEnabled()
+                assert not window.settings_action.isEnabled()
                 assert questions == [
                     (
                         "Confirm Test Mode",
@@ -305,14 +370,36 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 messages, questions, question_answers = [], [], []
                 errors, window_ref = [], []
                 observed = set()
+                settings_gui.QMessageBox = MessageBox
                 gui.QtTaskRunner = FakeTaskRunner
-                gui.load_saved_folders = lambda: {}
+                gui.SETTINGS_PATH = log_folder.parent / "gui-settings.json"
                 qt = gui._require_pyside6()
                 qt.update(QApplication=AppFactory, QMessageBox=MessageBox)
                 gui._require_pyside6 = lambda: qt
                 exit_code = gui.launch_gui()
                 assert exit_code == 0, (exit_code, errors)
                 assert observed == {"closed"}, (observed, errors)
+                before_reopen = gui.SETTINGS_PATH.read_bytes()
+                assert gui.launch_gui() == 0
+                reopened = QApplication.instance()._sssep_launcher_window
+                assert reopened.session_settings == settings_seen[-1]
+                assert reopened.plot_channel == "C4"
+                assert reopened.stimulation_hz == 12.5
+                assert reopened.pages.currentIndex() == 0
+                def cancel_reopened():
+                    dialog = QApplication.activeModalWidget()
+                    dialog.epochs_per_condition_spin.setValue(40)
+                    dialog.break_prompt_edit.setText("Discard this")
+                    dialog.reject()
+                QTimer.singleShot(0, cancel_reopened)
+                reopened.settings_action.trigger()
+                assert gui.SETTINGS_PATH.read_bytes() == before_reopen
+                assert reopened.session_settings == settings_seen[-1]
+                question_answers.append(MessageBox.No)
+                reopened._start_task()
+                assert reopened.task_runner is None
+                assert len(runners) == 3
+                assert reopened.close()
                 print("TASK_GUI_OK")
             '''
         ),

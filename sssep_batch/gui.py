@@ -6,9 +6,8 @@ plot work stay off the GUI thread.
 
 from __future__ import annotations
 
-import json
 import sys
-from math import isfinite
+from dataclasses import replace
 from pathlib import Path
 
 import mne
@@ -25,82 +24,39 @@ from sssep_batch.config import (
 from sssep_batch.experiment import (
     CueTriggerCodes,
     QtTaskRunner,
-    TaskCondition,
     TaskSettings,
     analysis_protocol_for_task,
 )
-from sssep_batch.experiment.models import (
-    CUE_PROMPTS,
-    DEFAULT_BREAK_DURATION_SEC,
-    DEFAULT_BREAK_PROMPT,
-    CueTarget,
-)
 from sssep_batch.models import AnalysisProtocol
+from sssep_batch.launcher_settings import (
+    SETTINGS_PATH,
+    LauncherSettings,
+    load_launcher_settings,
+    load_saved_folders,
+    save_folder_defaults,
+    save_launcher_settings,
+)
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SETTINGS_PATH = REPO_ROOT / ".sssep_gui_settings.json"
 BIOSEMI64_CHANNELS = tuple(mne.channels.make_standard_montage("biosemi64").ch_names)
-
-
-def load_saved_folders(settings_path: str | Path = SETTINGS_PATH) -> dict[str, str]:
-    """Load saved folder defaults from `.sssep_gui_settings.json` if present."""
-    path = Path(settings_path)
-    if not path.exists():
-        return {}
-
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Saved GUI settings are not valid JSON: {path}") from exc
-
-    if not isinstance(payload, dict):
-        raise ValueError(f"Saved GUI settings must contain a JSON object: {path}")
-
-    saved: dict[str, str] = {}
-    for key in ("input_folder", "output_root"):
-        value = payload.get(key, "")
-        if value is None:
-            value = ""
-        if not isinstance(value, str):
-            raise ValueError(f"Saved GUI setting {key!r} must be a string: {path}")
-        saved[key] = value
-    return saved
-
-
-def save_folder_defaults(
-    input_folder: str,
-    output_root: str,
-    settings_path: str | Path = SETTINGS_PATH,
-) -> None:
-    """Save local GUI folder defaults without editing `config.py`."""
-    path = Path(settings_path)
-    payload = {
-        "input_folder": input_folder,
-        "output_root": output_root,
-    }
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def _require_pyside6():
     """Import PySide6 lazily and provide a clear install message if missing."""
     try:
-        from PySide6.QtCore import QThread, QUrl, Signal
-        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
+        from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
         from PySide6.QtWidgets import (
             QApplication,
-            QCheckBox,
-            QComboBox,
-            QDoubleSpinBox,
+            QDialog,
             QFileDialog,
-            QGridLayout,
             QHBoxLayout,
             QLabel,
             QLineEdit,
+            QMenuBar,
             QMessageBox,
             QPushButton,
-            QSpinBox,
-            QTabWidget,
+            QStackedWidget,
             QVBoxLayout,
             QWidget,
         )
@@ -112,20 +68,21 @@ def _require_pyside6():
 
     return {
         "QApplication": QApplication,
-        "QCheckBox": QCheckBox,
-        "QComboBox": QComboBox,
+        "QAction": QAction,
+        "QActionGroup": QActionGroup,
         "QDesktopServices": QDesktopServices,
-        "QDoubleSpinBox": QDoubleSpinBox,
+        "QDialog": QDialog,
         "QFileDialog": QFileDialog,
-        "QGridLayout": QGridLayout,
         "QHBoxLayout": QHBoxLayout,
         "QLabel": QLabel,
         "QLineEdit": QLineEdit,
+        "QMenuBar": QMenuBar,
         "QMessageBox": QMessageBox,
         "QPushButton": QPushButton,
-        "QSpinBox": QSpinBox,
-        "QTabWidget": QTabWidget,
+        "Qt": Qt,
+        "QStackedWidget": QStackedWidget,
         "QThread": QThread,
+        "QTimer": QTimer,
         "QUrl": QUrl,
         "QVBoxLayout": QVBoxLayout,
         "QWidget": QWidget,
@@ -144,22 +101,24 @@ def launch_gui() -> int:
         make_form,
     )
     from sssep_batch.saved_plots_gui import SavedPlotsPanel
+    from sssep_batch.task_settings_gui import TaskSettingsDialog
 
     QApplication = qt["QApplication"]
-    QCheckBox = qt["QCheckBox"]
-    QComboBox = qt["QComboBox"]
+    QAction = qt["QAction"]
+    QActionGroup = qt["QActionGroup"]
     QDesktopServices = qt["QDesktopServices"]
-    QDoubleSpinBox = qt["QDoubleSpinBox"]
+    QDialog = qt["QDialog"]
     QFileDialog = qt["QFileDialog"]
-    QGridLayout = qt["QGridLayout"]
     QHBoxLayout = qt["QHBoxLayout"]
     QLabel = qt["QLabel"]
     QLineEdit = qt["QLineEdit"]
+    QMenuBar = qt["QMenuBar"]
     QMessageBox = qt["QMessageBox"]
     QPushButton = qt["QPushButton"]
-    QSpinBox = qt["QSpinBox"]
-    QTabWidget = qt["QTabWidget"]
+    Qt = qt["Qt"]
+    QStackedWidget = qt["QStackedWidget"]
     QThread = qt["QThread"]
+    QTimer = qt["QTimer"]
     QUrl = qt["QUrl"]
     QVBoxLayout = qt["QVBoxLayout"]
     QWidget = qt["QWidget"]
@@ -220,185 +179,97 @@ def launch_gui() -> int:
             self.task_running = False
             self.output_folder = ""
 
-            self.setWindowTitle("SSSEP Task and Analysis")
-            self.tabs = QTabWidget()
-            self.task_tab = QWidget()
-            self.analysis_tab = QWidget()
+            self.setWindowTitle("NERD Lab SSSEP Task")
+            self.pages = QStackedWidget()
+            self.task_page = QWidget()
+            self.analysis_page = QWidget()
 
-            self.condition_combo = QComboBox()
-            self.condition_combo.addItem(
-                "Both hands (left hand / right hand)",
-                TaskCondition.BOTH_HANDS.value,
+            self.session_settings = TaskSettings(
+                epoch_duration_sec=EVENT_DURATION_SEC,
+                epochs_per_condition=EXPECTED_REPETITIONS_PER_TRIGGER * 2,
+                trigger_codes=CueTriggerCodes(11, 12, 21, 22),
             )
-            self.condition_combo.addItem(
-                "Right hand and right ankle",
-                TaskCondition.RIGHT_HAND_AND_ANKLE.value,
-            )
-            self.epoch_duration_spin = QDoubleSpinBox()
-            self.epoch_duration_spin.setRange(0.1, 3600.0)
-            self.epoch_duration_spin.setDecimals(2)
-            self.epoch_duration_spin.setSingleStep(0.5)
-            self.epoch_duration_spin.setValue(EVENT_DURATION_SEC)
-            self.epoch_duration_spin.setSuffix(" seconds")
-            self.break_duration_spin = QDoubleSpinBox()
-            self.break_duration_spin.setRange(0.1, 3600.0)
-            self.break_duration_spin.setDecimals(2)
-            self.break_duration_spin.setSingleStep(0.5)
-            self.break_duration_spin.setValue(DEFAULT_BREAK_DURATION_SEC)
-            self.break_duration_spin.setSuffix(" seconds")
-            self.break_duration_spin.setToolTip(
-                "A break appears between cue epochs, but not before or after the task."
-            )
-            self.total_epochs_spin = QSpinBox()
-            self.total_epochs_spin.setRange(2, 10000)
-            self.total_epochs_spin.setSingleStep(2)
-            self.total_epochs_spin.setValue(EXPECTED_REPETITIONS_PER_TRIGGER * 2)
-            self.total_epochs_spin.setToolTip(
-                "Each cue appears equally often. A fresh random order is chosen "
-                "for every task; the same cue may appear twice in a row."
-            )
-            self.left_hand_prompt_edit = QLineEdit(CUE_PROMPTS[CueTarget.LEFT_HAND])
-            self.right_hand_prompt_edit = QLineEdit(CUE_PROMPTS[CueTarget.RIGHT_HAND])
-            self.right_ankle_prompt_edit = QLineEdit(CUE_PROMPTS[CueTarget.RIGHT_ANKLE])
-            self.break_prompt_edit = QLineEdit(DEFAULT_BREAK_PROMPT)
-            self.test_mode_checkbox = QCheckBox(
-                "Test mode (no BioSemi triggers)"
-            )
-            self.test_mode_checkbox.setToolTip(
-                "Run the fullscreen task without opening COM3 or sending triggers."
-            )
-
-            self.both_hands_left_code_spin = self._new_fixed_trigger_spin(11)
-            self.both_hands_right_code_spin = self._new_fixed_trigger_spin(12)
-            self.hand_ankle_hand_code_spin = self._new_fixed_trigger_spin(21)
-            self.hand_ankle_ankle_code_spin = self._new_fixed_trigger_spin(22)
-            self.task_log_edit = QLineEdit()
-            self.task_log_browse_button = QPushButton("Browse...")
-            self.start_task_button = QPushButton("Start Task")
-            self.task_status_label = QLabel(
-                "Choose task settings, confirm BioSemi is ready, then click Start Task."
-            )
+            self.settings_action = QAction("Settings...", self)
+            self.start_task_button = QPushButton("Start SSSEP Task")
+            self.task_status_label = QLabel("")
+            self.task_status_label.hide()
 
             self.input_edit = QLineEdit()
             self.output_edit = QLineEdit()
             self.input_browse_button = QPushButton("Browse...")
             self.output_browse_button = QPushButton("Browse...")
-            self.plot_channel_combo = QComboBox()
-            self.plot_channel_combo.addItems(BIOSEMI64_CHANNELS)
             if PLOT_CHANNEL not in BIOSEMI64_CHANNELS:
                 raise ValueError(
                     f"Configured PLOT_CHANNEL {PLOT_CHANNEL!r} is not a BioSemi64 "
                     "electrode. Correct sssep_batch/config.py before opening the "
                     "analysis launcher."
                 )
-            self.plot_channel_combo.setCurrentText(PLOT_CHANNEL)
-            self.stimulation_frequency_edit = QLineEdit()
-            self.stimulation_frequency_edit.setPlaceholderText("Optional")
-            if STIMULATION_FREQUENCY_HZ is not None:
-                self.stimulation_frequency_edit.setText(
-                    f"{STIMULATION_FREQUENCY_HZ:g}"
-                )
-            self.save_checkbox = QCheckBox("Save folders for next time")
-            self.save_checkbox.setChecked(True)
+            self.plot_channel = PLOT_CHANNEL
+            self.stimulation_hz = STIMULATION_FREQUENCY_HZ
+            self.remember_folders = True
+            self.analysis_settings_label = hint_label("")
             self.process_button = QPushButton("Process Data")
             self.view_output_button = QPushButton("View Output")
             self.view_output_button.setEnabled(False)
             self.status_label = QLabel("Choose folders, then click Process Data.")
-            self.saved_plots_tab = SavedPlotsPanel(parent=self)
+            self.saved_plots_page = SavedPlotsPanel(parent=self)
 
-            self._load_initial_folders()
+            self._load_settings()
             self._build_layout()
             apply_launcher_style(self)
             self._connect_signals()
 
-        @staticmethod
-        def _new_fixed_trigger_spin(code: int):
-            """Show one study trigger code without allowing operator edits."""
-            spin = QSpinBox()
-            spin.setRange(code, code)
-            spin.setValue(code)
-            spin.setEnabled(False)
-            spin.setToolTip("Fixed BioSemi trigger code for this study")
-            return spin
-
-        def _load_initial_folders(self) -> None:
-            """Populate folder fields from saved settings or config defaults."""
+        def _load_settings(self) -> None:
+            """Restore saved preferences without changing fixed study settings."""
+            defaults = LauncherSettings(
+                task=replace(
+                    self.session_settings,
+                    output_folder=Path(OUTPUT_ROOT) if OUTPUT_ROOT else None,
+                ),
+                plot_channel=self.plot_channel,
+                stimulation_hz=self.stimulation_hz,
+                input_folder=INPUT_FOLDER,
+                output_root=OUTPUT_ROOT,
+            )
+            self._settings_need_review = False
             try:
-                saved = load_saved_folders()
-            except ValueError as exc:
-                saved = {}
-                self.status_label.setText(str(exc))
-
-            input_default = saved.get("input_folder") or INPUT_FOLDER
-            output_default = saved.get("output_root") or OUTPUT_ROOT
-            self.input_edit.setText(input_default)
-            self.output_edit.setText(output_default)
-            self.task_log_edit.setText(output_default)
-            self.saved_plots_tab.set_results_folder(output_default)
+                saved = load_launcher_settings(
+                    defaults, channels=BIOSEMI64_CHANNELS, settings_path=SETTINGS_PATH
+                )
+            except (OSError, TypeError, ValueError) as exc:
+                saved = defaults
+                self._settings_need_review = True
+                message = (
+                    f"Saved settings could not be loaded:\n{exc}\n\n"
+                    "Review File > Settings and click Save before running a task "
+                    "or processing recordings. The existing settings file has not changed."
+                )
+                QTimer.singleShot(0, lambda: QMessageBox.warning(
+                    self, "Saved Settings Need Attention", message
+                ))
+            self.session_settings = saved.task
+            self.plot_channel = saved.plot_channel
+            self.stimulation_hz = saved.stimulation_hz
+            self.remember_folders = saved.remember_folders
+            self.input_edit.setText(saved.input_folder if saved.remember_folders else INPUT_FOLDER)
+            self.output_edit.setText(saved.output_root if saved.remember_folders else OUTPUT_ROOT)
+            self.saved_plots_page.set_results_folder(self.output_edit.text())
 
         def _build_layout(self) -> None:
-            """Group the three workflows using the FPVS Studio visual hierarchy."""
-            session_card = SectionCard(
-                "Session settings", "Equal cue counts in a fresh random order."
-            )
-            session_form = make_form()
-            session_form.addRow("Condition", self.condition_combo)
-            session_form.addRow("Duration of each epoch", self.epoch_duration_spin)
-            session_form.addRow("Break between epochs", self.break_duration_spin)
-            session_form.addRow("Total epochs (even)", self.total_epochs_spin)
-            session_card.body.addLayout(session_form)
-
-            text_card = SectionCard(
-                "Participant text", "The words shown on the fullscreen display."
-            )
-            text_form = make_form()
-            text_form.addRow("Left hand text", self.left_hand_prompt_edit)
-            text_form.addRow("Right hand text", self.right_hand_prompt_edit)
-            text_form.addRow("Right ankle text", self.right_ankle_prompt_edit)
-            text_form.addRow("Break text", self.break_prompt_edit)
-            text_card.body.addLayout(text_form)
-
-            trigger_card = SectionCard(
-                "BioSemi trigger codes", "Fixed for this study; editing is disabled."
-            )
-            trigger_form = make_form()
-            for label, spin in (
-                ("Both hands: left hand", self.both_hands_left_code_spin),
-                ("Both hands: right hand", self.both_hands_right_code_spin),
-                ("Hand/ankle: right hand", self.hand_ankle_hand_code_spin),
-                ("Hand/ankle: right ankle", self.hand_ankle_ankle_code_spin),
-            ):
-                trigger_form.addRow(label, spin)
-            trigger_card.body.addLayout(trigger_form)
-
-            run_card = SectionCard(
-                "Task log and test mode", "TENS stimulation is controlled externally."
-            )
-            task_log_row = QHBoxLayout()
-            task_log_row.addWidget(self.task_log_edit)
-            task_log_row.addWidget(self.task_log_browse_button)
-            run_card.body.addWidget(QLabel("Task log folder"))
-            run_card.body.addLayout(task_log_row)
-            run_card.body.addWidget(self.test_mode_checkbox)
-            run_card.body.addWidget(hint_label(
-                "Keep the CSV log with the participant's recording. Test mode "
-                "runs the screens without sending BioSemi triggers."
-            ))
-
-            task_body, task_footer = build_page(self.task_tab)
-            task_grid = QGridLayout()
-            task_grid.setSpacing(12)
-            task_grid.setColumnStretch(0, 1)
-            task_grid.setColumnStretch(1, 1)
-            task_grid.addWidget(session_card, 0, 0)
-            task_grid.addWidget(text_card, 0, 1)
-            task_grid.addWidget(trigger_card, 1, 0)
-            task_grid.addWidget(run_card, 1, 1)
-            task_body.addLayout(task_grid)
-            self.task_status_label.setWordWrap(True)
+            """Keep the task home minimal; select other workflows from View."""
+            task_layout = QVBoxLayout(self.task_page)
+            task_layout.setContentsMargins(24, 32, 24, 24)
+            task_layout.setSpacing(18)
+            task_layout.addStretch(1)
             self.start_task_button.setProperty("uiRole", "primary")
-            task_footer.addWidget(self.task_status_label, 1)
-            task_footer.addWidget(self.start_task_button)
+            self.start_task_button.setMinimumSize(260, 60)
+            task_layout.addWidget(
+                self.start_task_button, alignment=Qt.AlignmentFlag.AlignHCenter
+            )
+            settings_hint = hint_label("Change settings in File > Settings.")
+            settings_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            task_layout.addWidget(settings_hint)
+            task_layout.addStretch(1)
 
             input_row = QHBoxLayout()
             input_row.addWidget(self.input_edit)
@@ -415,24 +286,18 @@ def launch_gui() -> int:
             files_form.addRow("Input folder", input_row)
             files_form.addRow("Output folder", output_row)
             files_card.body.addLayout(files_form)
-            files_card.body.addWidget(self.save_checkbox)
 
             fft_card = SectionCard(
                 "FFT output", "Full electrode data are saved for later plotting."
             )
-            fft_form = make_form()
-            fft_form.addRow("Electrode to plot", self.plot_channel_combo)
-            fft_form.addRow(
-                "TENS Unit Stimulation Frequency (Hz)",
-                self.stimulation_frequency_edit,
-            )
-            fft_card.body.addLayout(fft_form)
+            fft_card.body.addWidget(self.analysis_settings_label)
+            fft_card.body.addWidget(hint_label("Change analysis settings in File > Settings."))
 
-            analysis_body, analysis_footer = build_page(self.analysis_tab)
+            analysis_body, analysis_footer = build_page(self.analysis_page)
             analysis_body.addWidget(hint_label(
-                "Match the condition, epoch duration, and epoch count on Run "
-                "Participant Task to your recordings. Same-cue epochs are "
-                "averaged before FFT."
+                "Match the epoch duration and epochs per condition in File > "
+                "Settings to your recordings. Epochs for the same trigger code "
+                "are averaged before FFT."
             ))
             analysis_body.addWidget(files_card)
             analysis_body.addWidget(fft_card)
@@ -442,40 +307,103 @@ def launch_gui() -> int:
             analysis_footer.addWidget(self.view_output_button)
             analysis_footer.addWidget(self.process_button)
 
-            self.tabs.addTab(self.task_tab, "Run Participant Task")
-            self.tabs.addTab(self.analysis_tab, "Analyze Recordings")
-            self.tabs.addTab(self.saved_plots_tab, "Plot Saved FFT")
+            for page in (self.task_page, self.analysis_page, self.saved_plots_page):
+                self.pages.addWidget(page)
             layout = QVBoxLayout()
             layout.setContentsMargins(24, 18, 24, 18)
             layout.setSpacing(12)
-            title = QLabel("SSSEP Task and Analysis")
-            title.setProperty("uiRole", "title")
-            layout.addWidget(title)
-            layout.addWidget(hint_label("NERD Lab  |  Participant tasks and EEG analysis"))
-            layout.addWidget(self.tabs)
+            menu_bar = QMenuBar(self)
+            menu_bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.file_menu = menu_bar.addMenu("File")
+            # Retain the wrapper so Qt's menu action survives Python collection.
+            self.file_menu_action = self.file_menu.menuAction()
+            self.file_menu.addAction(self.settings_action)
+            self.view_menu = menu_bar.addMenu("View")
+            self.view_menu_action = self.view_menu.menuAction()
+            self.view_action_group = QActionGroup(self)
+            self.view_actions = []
+            for index, name in enumerate(("SSSEP Task", "Process Data", "Generate FFT Plots")):
+                action = QAction(name, self)
+                action.setCheckable(True)
+                action.triggered.connect(lambda _checked=False, i=index: self._show_view(i))
+                self.view_action_group.addAction(action)
+                self.view_menu.addAction(action)
+                self.view_actions.append(action)
+            layout.setMenuBar(menu_bar)
+            self.title_label = QLabel("NERD Lab SSSEP Task")
+            self.title_label.setProperty("uiRole", "title")
+            layout.addWidget(self.title_label)
+            layout.addWidget(self.pages)
             self.setLayout(layout)
+            self._refresh_settings_summary()
+            self._show_view(0)
+
+        def _show_view(self, index: int) -> None:
+            """Change workflow only when its action is available."""
+            if not self.view_actions[index].isEnabled():
+                return
+            self.pages.setCurrentIndex(index)
+            self.view_actions[index].setChecked(True)
+            self.title_label.setText(
+                ("NERD Lab SSSEP Task", "Process Data", "Generate FFT Plots")[index]
+            )
+            if index == 2:
+                self.saved_plots_page.ensure_results_loaded()
 
         def _connect_signals(self) -> None:
             """Connect button clicks to the methods that handle them."""
-            self.task_log_browse_button.clicked.connect(self._browse_task_log)
+            self.settings_action.triggered.connect(self._open_settings)
             self.start_task_button.clicked.connect(self._start_task)
             self.input_browse_button.clicked.connect(self._browse_input)
             self.output_browse_button.clicked.connect(self._browse_output)
             self.process_button.clicked.connect(self._start_processing)
             self.view_output_button.clicked.connect(self._view_output)
-            self.saved_plots_tab.busy_changed.connect(
+            self.saved_plots_page.busy_changed.connect(
                 self._saved_plot_busy_changed
             )
 
-        def _browse_task_log(self) -> None:
-            """Choose where the participant-task CSV log will be saved."""
-            folder = QFileDialog.getExistingDirectory(
-                self,
-                "Choose Task Log Folder",
-                self.task_log_edit.text().strip(),
+        def _open_settings(self) -> None:
+            """Apply a validated draft only after the operator chooses Save."""
+            if self.worker is not None or self.task_running or self.saved_plots_page.is_busy():
+                return
+            dialog = TaskSettingsDialog(
+                self.session_settings,
+                channels=BIOSEMI64_CHANNELS,
+                plot_channel=self.plot_channel,
+                stimulation_hz=self.stimulation_hz,
+                remember_folders=self.remember_folders,
+                parent=self,
+                on_save=self._save_settings_draft,
             )
-            if folder:
-                self.task_log_edit.setText(folder)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.session_settings = dialog.settings
+                self.plot_channel = dialog.plot_channel
+                self.stimulation_hz = dialog.stimulation_hz
+                self.remember_folders = dialog.remember_folders
+                self._settings_need_review = False
+                self._refresh_settings_summary()
+            dialog.deleteLater()
+
+        def _save_settings_draft(self, task, plot_channel, stimulation_hz, remember_folders) -> None:
+            """Persist the validated draft before the Settings dialog accepts it."""
+            save_launcher_settings(
+                LauncherSettings(
+                    task=task, plot_channel=plot_channel, stimulation_hz=stimulation_hz,
+                    remember_folders=remember_folders,
+                    input_folder=self.input_edit.text().strip() if remember_folders else "",
+                    output_root=self.output_edit.text().strip() if remember_folders else "",
+                ),
+                settings_path=SETTINGS_PATH,
+            )
+
+        def _refresh_settings_summary(self) -> None:
+            settings = self.session_settings
+            frequency = "Not set" if self.stimulation_hz is None else f"{self.stimulation_hz:g} Hz"
+            self.analysis_settings_label.setText(
+                f"Both conditions  |  {settings.epoch_duration_sec:g}-second epochs  |  "
+                f"{settings.epochs_per_condition} epochs per condition\n"
+                f"Electrode: {self.plot_channel}  |  TENS stimulation frequency: {frequency}"
+            )
 
         def _browse_input(self) -> None:
             """Open a folder picker for the input `.bdf` folder."""
@@ -499,11 +427,11 @@ def launch_gui() -> int:
 
         def _start_processing(self) -> None:
             """Start setup checks and processing off the UI thread."""
-            if self.worker is not None or self.task_running:
+            if self.worker is not None or self.task_running or self.saved_plots_page.is_busy():
                 return
             input_folder = self.input_edit.text().strip()
             output_root = self.output_edit.text().strip()
-            plot_channel = self.plot_channel_combo.currentText().strip()
+            plot_channel = self.plot_channel
             try:
                 analysis_protocol = self._analysis_protocol()
             except (TypeError, ValueError) as exc:
@@ -533,62 +461,29 @@ def launch_gui() -> int:
             self.worker.start()
 
         def _task_settings(self) -> TaskSettings:
-            """Build the validated participant settings currently shown."""
-            log_folder = self.task_log_edit.text().strip()
-            if not log_folder:
-                raise ValueError("Choose a task log folder before starting the task.")
-            return TaskSettings(
-                condition=TaskCondition(self.condition_combo.currentData()),
-                epoch_duration_sec=self.epoch_duration_spin.value(),
-                total_epochs=self.total_epochs_spin.value(),
-                trigger_codes=CueTriggerCodes(
-                    self.both_hands_left_code_spin.value(),
-                    self.both_hands_right_code_spin.value(),
-                    self.hand_ankle_hand_code_spin.value(),
-                    self.hand_ankle_ankle_code_spin.value(),
-                ),
-                output_folder=Path(log_folder),
-                test_mode=self.test_mode_checkbox.isChecked(),
-                break_duration_sec=self.break_duration_spin.value(),
-                left_hand_prompt=self.left_hand_prompt_edit.text(),
-                right_hand_prompt=self.right_hand_prompt_edit.text(),
-                right_ankle_prompt=self.right_ankle_prompt_edit.text(),
-                break_prompt=self.break_prompt_edit.text(),
-            )
+            """Require a log destination before starting the accepted session."""
+            self._require_reviewed_settings()
+            if self.session_settings.output_folder is None:
+                raise ValueError("Choose a task log folder in File > Settings before starting.")
+            return self.session_settings
 
         def _analysis_protocol(self) -> AnalysisProtocol:
-            """Use the visible task fields when cutting and labeling FFT epochs."""
-
-            frequency_text = self.stimulation_frequency_edit.text().strip()
-            target_hz: float | None = None
-            if frequency_text:
-                try:
-                    target_hz = float(frequency_text)
-                except ValueError as exc:
-                    raise ValueError(
-                        "Stimulation frequency must be a number, or left blank."
-                    ) from exc
-                if not isfinite(target_hz) or target_hz <= 0:
-                    raise ValueError(
-                        "Stimulation frequency must be a finite number above zero."
-                    )
-
+            """Use the accepted session settings for both recorded conditions."""
+            self._require_reviewed_settings()
             return analysis_protocol_for_task(
-                condition=TaskCondition(self.condition_combo.currentData()),
-                epoch_duration_sec=self.epoch_duration_spin.value(),
-                total_epochs=self.total_epochs_spin.value(),
-                trigger_codes=CueTriggerCodes(
-                    self.both_hands_left_code_spin.value(),
-                    self.both_hands_right_code_spin.value(),
-                    self.hand_ankle_hand_code_spin.value(),
-                    self.hand_ankle_ankle_code_spin.value(),
-                ),
-                target_hz=target_hz,
+                epoch_duration_sec=self.session_settings.epoch_duration_sec,
+                epochs_per_condition=self.session_settings.epochs_per_condition,
+                trigger_codes=self.session_settings.trigger_codes,
+                target_hz=self.stimulation_hz,
             )
+
+        def _require_reviewed_settings(self) -> None:
+            if self._settings_need_review:
+                raise ValueError("Review File > Settings and click Save before continuing.")
 
         def _start_task(self) -> None:
             """Validate task fields and start the Qt presentation session."""
-            if self.task_running or self.worker is not None:
+            if self.task_running or self.worker is not None or self.saved_plots_page.is_busy():
                 return
             try:
                 settings = self._task_settings()
@@ -634,9 +529,9 @@ def launch_gui() -> int:
                     "Processing is still running. Keep this window open until it finishes."
                 )
                 return
-            if self.saved_plots_tab.is_busy():
+            if self.saved_plots_page.is_busy():
                 event.ignore()
-                self.saved_plots_tab.show_busy_close_message()
+                self.saved_plots_page.show_busy_close_message()
                 return
             if self.task_running:
                 event.ignore()
@@ -645,6 +540,8 @@ def launch_gui() -> int:
                     "screen before closing this window."
                 )
                 return
+            if self.remember_folders and not self._settings_need_review:
+                self._save_recording_folders()
             super().closeEvent(event)
 
         def _shutdown_application(self) -> None:
@@ -653,7 +550,7 @@ def launch_gui() -> int:
                 self.task_runner.request_stop()
             if self.worker is not None and self.worker.isRunning():
                 self.worker.wait()
-            self.saved_plots_tab.wait_for_workers()
+            self.saved_plots_page.wait_for_workers()
 
         def _worker_finished(self) -> None:
             """Release the stopped worker before accepting another run."""
@@ -666,49 +563,33 @@ def launch_gui() -> int:
             self.output_edit.setEnabled(not running)
             self.input_browse_button.setEnabled(not running)
             self.output_browse_button.setEnabled(not running)
-            self.plot_channel_combo.setEnabled(not running)
-            self.stimulation_frequency_edit.setEnabled(not running)
-            self.save_checkbox.setEnabled(not running)
+            self._set_navigation_busy(running)
             self.process_button.setEnabled(not running)
             self.view_output_button.setEnabled(False if running else bool(self.output_folder))
-            self.tabs.setTabEnabled(0, not running)
-            self.tabs.setTabEnabled(2, not running)
 
         def _set_task_running(self, running: bool) -> None:
             """Enable or disable task fields during a presentation."""
-            for widget in (
-                self.condition_combo,
-                self.epoch_duration_spin,
-                self.break_duration_spin,
-                self.total_epochs_spin,
-                self.left_hand_prompt_edit,
-                self.right_hand_prompt_edit,
-                self.right_ankle_prompt_edit,
-                self.break_prompt_edit,
-                self.test_mode_checkbox,
-                self.task_log_edit,
-                self.task_log_browse_button,
-                self.start_task_button,
-            ):
-                widget.setEnabled(not running)
-            self.tabs.setTabEnabled(1, not running)
-            self.tabs.setTabEnabled(2, not running)
+            self._set_navigation_busy(running)
+            self.start_task_button.setEnabled(not running)
 
         def _saved_plot_busy_changed(self, working: bool) -> None:
-            """Keep the task and analysis tabs idle during saved-result work."""
+            """Keep other workflows idle during saved-result work."""
+            self._set_navigation_busy(working)
 
-            self.tabs.setTabEnabled(0, not working)
-            self.tabs.setTabEnabled(1, not working)
+        def _set_navigation_busy(self, working: bool) -> None:
+            self.settings_action.setEnabled(not working)
+            for action in self.view_actions:
+                action.setEnabled(not working)
 
         def _update_task_progress(self, completed: int, total: int) -> None:
             """Show cue progress emitted by the presentation runner."""
             if completed == 0:
                 self.task_status_label.setText(
-                    f"Task started. Waiting to present {total} cue epochs."
+                    f"Task started. Waiting to present {total} epochs."
                 )
             else:
                 self.task_status_label.setText(
-                    f"Presented cue epoch {completed} of {total}."
+                    f"Presented epoch {completed} of {total}."
                 )
 
         def _task_finished(self, result) -> None:
@@ -756,7 +637,7 @@ def launch_gui() -> int:
         def _processing_finished(self, result: dict[str, object]) -> None:
             """Show batch results while retaining the thread until it finishes."""
             self.output_folder = str(result["output_folder"])
-            self.saved_plots_tab.set_results_folder(self.output_folder)
+            self.saved_plots_page.set_results_folder(self.output_folder)
             failed = int(result.get("failed", 0) or 0)
             total = int(result.get("total_files", 0) or 0)
             participant_plot_failures = int(
@@ -779,7 +660,7 @@ def launch_gui() -> int:
                 )
             if participant_plot_failures:
                 issues.append(
-                    f"{participant_plot_failures} participant cue plot(s) failed; "
+                    f"{participant_plot_failures} participant trigger code plot(s) failed; "
                     "FFT data were retained"
                 )
             if group_status == "failed":
@@ -791,7 +672,7 @@ def launch_gui() -> int:
                 issues.append("no usable FFT spectra were available for group results")
             elif group_plot_errors:
                 issues.append(
-                    f"{len(group_plot_errors)} group cue plot(s) failed"
+                    f"{len(group_plot_errors)} group trigger code plot(s) failed"
                     + (
                         f"; see {group_plot_error_file}"
                         if group_plot_error_file
@@ -799,7 +680,7 @@ def launch_gui() -> int:
                     )
                 )
             elif skipped_group_cues:
-                issues.append("some cue plots were skipped because data were unavailable")
+                issues.append("some trigger code plots were skipped because data were unavailable")
             elif group_plot_warnings:
                 issues.append(
                     "some group plots omit the baseline because matched data "
@@ -816,19 +697,22 @@ def launch_gui() -> int:
             else:
                 self.status_label.setText(
                     f"Processing complete: {total} participant file(s), "
-                    f"{group_plot_count} group cue plot(s). Click View Output."
+                    f"{group_plot_count} group trigger code plot(s). Click View Output."
                 )
-            if self.save_checkbox.isChecked():
-                try:
-                    save_folder_defaults(
-                        self.input_edit.text().strip(), self.output_edit.text().strip()
-                    )
-                except OSError as exc:
-                    QMessageBox.warning(
-                        self,
-                        "Could Not Save Folders",
-                        f"Processing finished, but folder defaults were not saved.\n\n{exc}",
-                    )
+            if self.remember_folders:
+                self._save_recording_folders()
+
+        def _save_recording_folders(self) -> None:
+            try:
+                save_folder_defaults(
+                    self.input_edit.text().strip(), self.output_edit.text().strip(),
+                    settings_path=SETTINGS_PATH,
+                )
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(
+                    self, "Could Not Save Folders",
+                    f"Recording folders could not be saved. Other settings were kept.\n\n{exc}",
+                )
 
         def _processing_failed(self, exc: Exception) -> None:
             """Show a top-level failure message if the whole batch could not run."""

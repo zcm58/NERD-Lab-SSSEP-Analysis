@@ -12,9 +12,11 @@ PySide6 also presents the fullscreen participant task.
 | If you want to change… | Start here |
 | --- | --- |
 | Python environment or pinned libraries | [install.ps1](install.ps1) and [requirements.txt](requirements.txt) |
-| Main launcher, participant-task fields, BDF fields, or progress messages | [gui.py](sssep_batch/gui.py) |
+| Main launcher, File/View menus, BDF fields, or progress messages | [gui.py](sssep_batch/gui.py) |
+| File > Settings dialog, session fields, or participant text | [task_settings_gui.py](sssep_batch/task_settings_gui.py) |
+| Persistent preferences, validation, or legacy folder settings | [launcher_settings.py](sssep_batch/launcher_settings.py) |
 | Launcher colors, section cards, forms, or scrollable pages | [gui_style.py](sssep_batch/gui_style.py) |
-| Saved-results tab, its controls, or its background workers | [saved_plots_gui.py](sssep_batch/saved_plots_gui.py) |
+| Saved-results view, its controls, or its background workers | [saved_plots_gui.py](sssep_batch/saved_plots_gui.py) |
 | Analysis defaults and advanced processing settings | [config.py](sssep_batch/config.py) |
 | Task settings and event records | [experiment/models.py](sssep_batch/experiment/models.py) |
 | Balanced randomized cue order | [experiment/schedule.py](sssep_batch/experiment/schedule.py) |
@@ -30,7 +32,7 @@ PySide6 also presents the fullscreen participant task.
 | FFT calculation | [analysis/spectra.py](sssep_batch/analysis/spectra.py) |
 | Consolidated participant tables and equal-participant group averages | [analysis/grouping.py](sssep_batch/analysis/grouping.py) |
 | Reloading saved FFT CSVs, later ROI averaging, and scalp-map values | [analysis/saved_fft.py](sssep_batch/analysis/saved_fft.py) |
-| Writing later FFT plots and their exact source-data CSVs | [analysis/saved_outputs.py](sssep_batch/analysis/saved_outputs.py) |
+| Writing later FFT plots, ROI CSVs, and scalp-map Excel values | [analysis/saved_outputs.py](sssep_batch/analysis/saved_outputs.py) |
 | Event codes and durations passed into analysis | [analysis/protocol.py](sssep_batch/analysis/protocol.py) |
 | Existing summary values | [analysis/metrics.py](sssep_batch/analysis/metrics.py) |
 | Participant/group electrode or ROI graphs and scalp maps | [analysis/plotting.py](sssep_batch/analysis/plotting.py) |
@@ -48,7 +50,8 @@ Participant task:
 Normal runs open the fixed `COM3` connection before participant screens. A
 checked and confirmed test mode uses a simulated backend and clearly marks the
 ready screen and task CSV; it never opens COM3 or sends markers. After
-Space starts the task, a main-thread `QOpenGLWindow` draws each cue. Its
+Space starts the task, a main-thread `QOpenGLWindow` draws each cue. Both hands
+run first, followed by hand/ankle after untimed Space-then-Y admin screens. Its
 matching `frameSwapped` callback immediately requests the cue's unique `1..255`
 marker through the selected backend after Qt completes that frame's buffer
 swap. A Qt `PreciseTimer` advances between cue and break screens at their
@@ -58,7 +61,7 @@ redraws send no markers. Escape aborts. TENS control stays outside this program.
 
 Recording analysis:
 
-`entrypoint → gui task fields → analysis protocol → batch → pipeline → preprocessing / events / FFT → participant outputs → group outputs`
+`entrypoint → File > Settings → four-code analysis protocol → batch → pipeline → preprocessing / events / FFT → participant outputs → group outputs`
 
 The numerical order is load/montage → EXG reference/drop → filter → resample
 → interpolate → average reference → recorded events → complete SSSEP epochs
@@ -71,25 +74,47 @@ cue at each level.
 
 Saved-result plotting is separate:
 
-`saved participant FFT CSV → strict reload → participant/electrode/event selection → later ROI mean or scalp-bin values → PNG plus plotted-value CSV`
+`saved participant FFT CSV → strict reload → participant/electrode/event selection → later ROI mean or scalp-bin values → PNG plus ROI CSVs or scalp XLSX`
 
 Later ROI means average electrodes within participant before the equal-weight
 group mean. Their source exports retain every participant curve and its actual
 electrode membership. Scalp maps use finite electrodes with coordinates in the
 saved `standard_1005` montage; missing or unmapped electrodes are not replaced
-with zero. Hemisphere comparisons and statistics remain external.
+with zero. Each scalp workbook contains only electrode names and numeric FFT
+amplitudes (µV), with XlsxWriter-fitted column widths. Finite unmapped electrodes
+remain in the workbook; omission warnings remain in the GUI. The full canonical
+FFT CSVs retain provenance and participant counts. Hemisphere comparisons and
+statistics remain external.
 
 ## Keep these behaviors
 
-- Keep one launcher with separate participant-task, BDF-processing, and saved
-  FFT plotting tabs.
+- Keep one launcher with **View > SSSEP Task / Process Data / Generate FFT
+  Plots** and a `QStackedWidget`, not main workflow tabs. The home shows only
+  its NERD Lab SSSEP Task title, Start SSSEP Task button, and settings hint.
+  Experiment fields and analysis defaults live in File > Settings. Save
+  validates and atomically writes the draft to ignored `.sssep_gui_settings.json`
+  before applying it; Cancel changes neither disk nor current preferences.
+  Preserve fixed hardware codes and fresh randomization outside saved settings.
+  Retain the old folder-only JSON format on load and merge folder updates without
+  discarding session preferences. Invalid saved settings require visible review
+  and Save before task/analysis use; never silently overwrite the bad file.
+  Disable Settings and View actions while a task or worker is active.
 - Keep launcher styling in `gui_style.py`: FPVS Studio's light/dark colors,
-  section cards, and action hierarchy, adapted to the three SSSEP tabs. Theme
-  selection follows the system palette at launch. Scroll settings on smaller
-  windows while keeping actions and status visible. Do not style the fullscreen
+  section cards, and action hierarchy. Theme selection follows the system palette
+  at launch. Size Settings to show Session controls without scrolling where
+  desktop space permits; retain scrolling on small displays and visible Save/
+  Cancel buttons. Do not style the fullscreen
   participant task or change processing to match launcher appearance.
 - Keep saved-result plotting separate from BDF processing so one FFT calculation
-  can support many later plots.
+  can support many later plots. Opening Generate FFT Plots loads the selected
+  source in a worker; a parent results folder selects its most recently updated
+  immediate run. Browse or finished path edits also load automatically. Reuse
+  unchanged loaded data and keep Reload Results as an explicit refresh. Source
+  changes invalidate old selections; load failures must not leave stale data usable.
+- The default TENS frequency is 26 Hz. Preserve saved operator preferences and
+  recorded target frequencies. FFT PNGs show the selected target with a dashed
+  vertical line labeled TENS Unit Stimulation Frequency. A saved-plot frequency
+  override changes only the marker, never the canonical FFT data or metadata.
 - Keep PySide6 presentation and live serial output inside `experiment/`,
   separate from BDF analysis.
 - Keep `COM3` fixed and absent from the GUI. Open and check it before participant
@@ -97,12 +122,15 @@ with zero. Hemisphere comparisons and statistics remain external.
   require explicit confirmation and must be recorded in the task CSV.
 - Request each cue's marker immediately from the callback for its matching Qt
   buffer swap.
-- Require an even epoch count and freshly shuffle equal numbers of both cues;
-  repeats are allowed. Insert a configurable break between cue epochs only.
+- Require an even epoch count per condition and freshly shuffle balanced cues
+  within each block. Always run both hands then hand/ankle. Timed breaks only
+  separate cues within a block; the handover waits for Space and then Y on its
+  separately visible confirmation screen. Held-key repeats cannot advance it.
 - Keep cue/break text editable without changing cue identities or marker codes.
   Short breaks are not marked as code `100` baselines.
-- Pass the visible condition, duration, epoch count, and that condition's fixed
-  cue codes into each analysis batch; do not fall back to unrelated settings.
+- Pass both conditions' four fixed cue codes, the configured duration, and half
+  the per-condition epoch count as expected repetitions into each analysis
+  batch; do not fall back to unrelated settings.
 - Preserve the validated FPVS analysis method unless a change is authorized.
 - Require a complete configured epoch, then remove 2.5 seconds from its start
   and end before cue averaging and FFT calculation. This SSSEP analysis window
@@ -139,7 +167,7 @@ with zero. Hemisphere comparisons and statistics remain external.
    .\.venv\Scripts\python.exe -m pytest -q
    ```
 
-3. Run the PyCharm entrypoint and check the affected tab.
+3. Run the PyCharm entrypoint and check the affected view.
 4. Update the relevant guide when a setting, output, or workflow changes.
 
 Use Python 3.13 and the existing dependency pins. Synthetic tests do not prove

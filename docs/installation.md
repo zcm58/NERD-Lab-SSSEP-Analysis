@@ -30,6 +30,6 @@ Do this once per computer. You need an internet connection.
    `.venv\Scripts\python.exe` inside the project.
 
 7. **Check the launcher.** Right-click `main.py` and select **Run**. The task,
-   recording-analysis, and saved-FFT plotting tabs should open.
+   recording-analysis, and saved-FFT plotting workflows are in the **View** menu.
 
 [User guide](user-guide.md) | [Help](troubleshooting.md) | [Home](../README.md)

@@ -7,11 +7,14 @@ to be run from PyCharm. The current user-facing workflow is:
 
 1. Right-click `main.py`
 2. Click `Run 'main'`
-3. Choose the participant task, recording analysis, or saved FFT plotting tab
+3. Use View > SSSEP Task, Process Data, or Generate FFT Plots
 
 Do not redesign this around command-line flags unless the user explicitly asks
-for that. Task settings and the plotted electrode belong in the GUI;
+for that. Task settings and the plotted electrode belong in **File > Settings**;
 `config.py` remains the source for analysis defaults and advanced settings.
+
+Use **trigger code** in app text and plot labels. Preserve internal `cue` event
+values, task-log fields, and filenames so existing results remain compatible.
 
 ## Product Scope
 
@@ -30,10 +33,15 @@ amplitude scalp maps. Hemisphere comparisons and statistical analysis stay
 outside this package; existing ROI mean compatibility fields remain in exported
 CSVs/summaries.
 
-The participant runtime freshly shuffles equal numbers of its two cues for each
-run; repeats are allowed. Configurable breaks (10 seconds by default) separate
-cue epochs. Cue/break text is editable and each timed screen has a countdown.
-Breaks send no markers. Keep fixed codes `11`/`12` for both hands and `21`/`22`
+Every run completes both hands first, then right hand/right ankle. Freshly
+shuffle balanced cues within each condition (default 10 epochs each). Timed
+breaks (default 10 seconds) separate cues within a condition. Between conditions,
+wait for Space on the electrode handover screen, then a fresh Y on its visible
+confirmation screen. Neither screen sends markers or has a countdown.
+Cue/break text is editable in File > Settings. Save preferences across launches
+in ignored `.sssep_gui_settings.json`; never save hardware codes or random seeds.
+The home shows only its title, Start SSSEP Task button, and settings hint. Use
+the View menu instead of workflow tabs. Keep fixed codes `11`/`12` for both hands and `21`/`22`
 for hand and ankle, with all four code controls disabled in the GUI. Record any
 future timing, code, frequency, or counterbalancing change in
 `docs/task-protocol.md` before implementation.
@@ -115,7 +123,7 @@ authorized:
   electrode; if it is unresolved, skip only the affected participant/group
   plot and report the contributing participant count. Existing ROI summary/CSV
   mean fields remain compatibility outputs and report their actual channels.
-- Carry the launcher's condition, fixed cue codes, duration, and expected
+- Carry both conditions' fixed cue codes, the configured duration, and expected
   repetitions into the batch through `AnalysisProtocol`. Never analyze task
   recordings with unrelated event settings.
 - Keep full per-electrode nonnegative-frequency amplitudes and method metadata
@@ -125,12 +133,22 @@ authorized:
 - Treat `participant_fft_amplitudes.csv` as the canonical saved plotting source.
   Later ROIs average electrodes within participant before equal-participant
   group averaging. Scalp maps use finite available electrodes at the nearest
-  saved FFT bin and report the actual bin and per-electrode participant counts.
+  saved FFT bin. Keep per-electrode participant counts in the canonical group
+  CSV. Each scalp-map `.xlsx` contains only electrode names and numeric FFT
+  amplitudes (µV), with automatically fitted columns; report unmapped electrodes
+  in the GUI without removing their finite values from the workbook.
 - Keep file-level parallelism in `batch.py`. Parallelism is across files, not
   inside a single file.
 - Keep native thread limits at `1` per worker to avoid oversubscription during
   parallel batch runs.
 - Create one participant and one group selected-electrode plot per usable cue.
+- Default the TENS frequency to 26 Hz without overwriting saved preferences.
+  FFT plots mark the selected frequency with a dashed vertical line labeled
+  `TENS Unit Stimulation Frequency`; saved-plot marker overrides never change
+  FFT values or source metadata.
+- Opening Generate FFT Plots auto-loads the selected source in its worker.
+  A parent results folder selects its most recently updated immediate run;
+  invalidate stale selections on path changes and report load failures.
 - Keep each batch in a newly created, unique run subfolder. Preserve previous
   runs and the GUI's parent-root saved setting.
 - Retain GUI workers until completion and block window close while a batch,

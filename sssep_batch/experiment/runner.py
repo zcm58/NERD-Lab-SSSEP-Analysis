@@ -32,6 +32,17 @@ READY_PROMPT = "Press Space when you are ready to begin.\n\nPress Escape to stop
 TEST_MODE_READY_PROMPT = (
     "TEST MODE: BioSemi triggers are disabled.\n\n" + READY_PROMPT
 )
+CONDITION_HANDOVER_PROMPT = (
+    "Condition 1 complete.\n\n"
+    "Before starting Condition 2, please remove the TENS unit electrodes from "
+    "the left hand and place them on the right ankle.\n\n"
+    "When finished, press space to continue the experiment."
+)
+CONDITION_CONFIRM_PROMPT = (
+    "By continuing, you are confirming that the TENS unit electrodes are "
+    "properly secured on the right hand and right ankle.\n\n"
+    "Press 'Y' to continue."
+)
 FRAME_TIMEOUT_MS = 5_000
 
 
@@ -83,7 +94,7 @@ class PresentationSurface(Protocol):
 
 
 PresentationSurfaceFactory = Callable[
-    [FrameCallback, FrameCallback, ErrorCallback], PresentationSurface
+    [FrameCallback, FrameCallback, FrameCallback, ErrorCallback], PresentationSurface
 ]
 
 
@@ -122,11 +133,13 @@ class _QtCueWindow(QOpenGLWindow):
     def __init__(
         self,
         on_space: FrameCallback,
+        on_confirm: FrameCallback,
         on_escape: FrameCallback,
         on_error: ErrorCallback,
     ) -> None:
         super().__init__()
         self._on_space = on_space
+        self._on_confirm = on_confirm
         self._on_escape = on_escape
         self._on_error = on_error
         self._text = ""
@@ -180,7 +193,7 @@ class _QtCueWindow(QOpenGLWindow):
 
     def schedule(self, delay_seconds: float, callback: FrameCallback) -> None:
         if self._scheduled_callback is not None:
-            raise RuntimeError("A participant cue timer is already pending.")
+            raise RuntimeError("A participant screen timer is already pending.")
         self._scheduled_callback = callback
         self._epoch_timer.start(max(1, ceil(delay_seconds * 1_000)))
 
@@ -245,9 +258,16 @@ class _QtCueWindow(QOpenGLWindow):
             event.accept()
             self._run_callback(self._on_escape)
             return
+        if event.isAutoRepeat():
+            event.accept()
+            return
         if event.key() == Qt.Key.Key_Space:
             event.accept()
             self._run_callback(self._on_space)
+            return
+        if event.key() == Qt.Key.Key_Y:
+            event.accept()
+            self._run_callback(self._on_confirm)
             return
         super().keyPressEvent(event)
 
@@ -359,6 +379,8 @@ class QtTaskRunner(QObject):
         self._task_zero: float | None = None
         self._next_epoch_index = 0
         self._ready_visible = False
+        self._handover_visible = False
+        self._confirmation_visible = False
         self._started = False
         self._finished = False
 
@@ -388,6 +410,7 @@ class QtTaskRunner(QObject):
             )
             self._surface = self._surface_factory(
                 self._space_pressed,
+                self._confirm_pressed,
                 self._escape_pressed,
                 self._fail,
             )
@@ -420,11 +443,25 @@ class QtTaskRunner(QObject):
         self._ready_visible = True
 
     def _space_pressed(self) -> None:
-        if not self._ready_visible or self._task_zero is not None or self._finished:
+        if self._finished:
+            return
+        if self._handover_visible:
+            self._handover_visible = False
+            self._require_surface().present(
+                CONDITION_CONFIRM_PROMPT, self._confirmation_frame_swapped
+            )
+            return
+        if not self._ready_visible or self._task_zero is not None:
             return
         settings = self._require_settings()
         self._task_zero = self._monotonic()
         self.progress_changed.emit(0, settings.total_epochs)
+        self._request_next_cue()
+
+    def _confirm_pressed(self) -> None:
+        if not self._confirmation_visible or self._finished:
+            return
+        self._confirmation_visible = False
         self._request_next_cue()
 
     def _escape_pressed(self) -> None:
@@ -492,6 +529,14 @@ class QtTaskRunner(QObject):
 
     def _cue_duration_reached(self) -> None:
         if self._next_epoch_index < len(self._schedule):
+            if (
+                self._schedule[self._next_epoch_index].condition
+                != self._schedule[self._next_epoch_index - 1].condition
+            ):
+                self._require_surface().present(
+                    CONDITION_HANDOVER_PROMPT, self._handover_frame_swapped
+                )
+                return
             settings = self._require_settings()
             self._require_surface().present(
                 settings.break_prompt,
@@ -500,6 +545,18 @@ class QtTaskRunner(QObject):
             )
             return
         self._require_surface().present("", self._terminal_frame_swapped)
+
+    def _handover_frame_swapped(self) -> None:
+        self._close_last_record(
+            self._records, offset_time_sec=self._elapsed_seconds(), completed=True
+        )
+        self._handover_visible = True
+        self.progress_changed.emit(
+            self._next_epoch_index, self._require_settings().total_epochs
+        )
+
+    def _confirmation_frame_swapped(self) -> None:
+        self._confirmation_visible = True
 
     def _break_frame_swapped(self) -> None:
         settings = self._require_settings()
@@ -715,6 +772,9 @@ def write_task_event_log(result: TaskRunResult, output_folder: Path) -> Path:
         "abort_reason",
         "break_duration_sec",
         "break_prompt",
+        "epochs_per_condition",
+        "condition_epoch_number",
+        "scheduled_onset_reference",
     ]
     with output_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -754,6 +814,11 @@ def write_task_event_log(result: TaskRunResult, output_folder: Path) -> Path:
                     "abort_reason": result.abort_reason,
                     "break_duration_sec": result.settings.break_duration_sec,
                     "break_prompt": result.settings.break_prompt,
+                    "epochs_per_condition": result.settings.epochs_per_condition,
+                    "condition_epoch_number": (
+                        epoch.epoch_index % result.settings.epochs_per_condition + 1
+                    ),
+                    "scheduled_onset_reference": "condition_start",
                 }
             )
     return output_path

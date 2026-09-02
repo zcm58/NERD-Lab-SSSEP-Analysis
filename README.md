@@ -1,12 +1,12 @@
 # NERD Lab SSSEP Task and Analysis
 
 Run the SSSEP attention task and analyze its BioSemi `.bdf` recordings from one
-simple program. The task shows fullscreen body-part cues and sends cue markers
-to BioSemi. For each participant, the analysis averages all usable epochs with
-the same cue before the FFT. The default epoch is 15 seconds; the FFT uses only
-its middle 10 seconds after removing 2.5 seconds from each end. The program
-creates one graph per cue for the selected electrode, then creates the same
-cue-level graphs for the group.
+simple program. The task shows fullscreen body-part prompts and sends trigger
+codes to BioSemi. For each participant, the analysis averages all usable epochs
+with the same trigger code before the FFT. The default epoch is 15 seconds;
+the FFT uses only its middle 10 seconds after removing 2.5 seconds from each end. The program
+creates one graph per trigger code for the selected electrode, then creates
+the same graphs for the group.
 
 TENS stimulation is controlled outside this program.
 
@@ -17,25 +17,30 @@ TENS stimulation is controlled outside this program.
 3. **Something went wrong?** See [troubleshooting](docs/troubleshooting.md).
 
 Once set up, right-click [main.py](main.py) in PyCharm and choose **Run**. The
-launcher has three tabs:
+launcher opens the task home. Use **View** to switch workflows:
 
-- **Run Participant Task** presents the cues, sends BioSemi markers through the
-  fixed `COM3` connection, and saves a task log. Cues are balanced and shuffled,
-  with configurable breaks, editable text, and countdowns. A confirmed test
-  mode runs the same screens without opening COM3 or sending markers.
-- **Analyze Recordings** processes saved `.bdf` files and creates FFT results.
-- **Plot Saved FFT** reopens an earlier FFT CSV to make participant/group
+- **SSSEP Task** has one **Start SSSEP Task** button. Each experiment
+  runs both hands first, then right hand/right ankle after an administrator
+  handover and confirmation. Participant prompts are balanced and shuffled,
+  with breaks and countdowns. BioSemi markers use fixed `COM3`; confirmed test
+  mode skips them.
+- **Process Data** processes saved `.bdf` files and creates FFT results.
+- **Generate FFT Plots** reopens an earlier FFT CSV to make participant/group
   electrode or ROI plots and scalp maps without processing the BDF files again.
 
-The analysis uses the condition, epoch duration, epoch count, and fixed trigger
-codes shown in the participant-task tab. Set the condition, duration, and epoch
-count to match the recordings before processing them.
+Edit session settings, participant text, and analysis options under **File >
+Settings**. Click **Save** to keep changes after closing the app. The default
+is 10 epochs per condition, or 20 overall. Analysis uses
+both conditions' fixed codes; match the duration and count to your recordings.
 
 Use one `.bdf` file per participant in an analysis batch. Each run saves one
-consolidated participant FFT CSV and one group FFT CSV. These are CSV files that
-can be opened in Excel; the program does not create Excel workbooks.
+consolidated participant FFT CSV and one group FFT CSV, both readable in Excel.
+Scalp-map exports save a separate two-column Excel workbook: electrode and FFT
+amplitude, with column widths fitted automatically.
 `participant_fft_amplitudes.csv` is the reusable source for later plots.
 It keeps the pipeline version and settings needed to validate a later reload.
+**Generate FFT Plots** loads the selected results automatically. The TENS
+frequency defaults to **26 Hz** and is marked by a labeled dashed line on FFT plots.
 
 ## Where things live
 

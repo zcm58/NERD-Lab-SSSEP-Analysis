@@ -2,18 +2,33 @@
 
 This page records the task behavior that the software must preserve.
 
-- **Both hands:** randomly ordered left-hand and right-hand cues.
-- **Right hand + right ankle:** randomly ordered right-hand and right-ankle cues.
-- Each run freshly shuffles equal numbers of its two cues. Consecutive repeats
+- Every experiment runs **Condition 1: both hands** first (left-hand and
+  right-hand cues), then **Condition 2: right hand + right ankle** (right-hand
+  and right-ankle cues). The order is fixed and is not an operator setting.
+- Each condition freshly shuffles equal numbers of its two cues. Consecutive repeats
   are allowed; randomization does not guarantee a different order every time.
 - Default prompts are `Think of your left hand`, `Think of your right hand`,
   and `Think of your right ankle`. The operator can edit these and the break
-  text in the GUI. Text changes do not change cue identities or marker codes.
-- The operator chooses the epoch duration and an even total epoch count. The
-  default duration is 15 seconds.
+  text under **File > Settings**. Text changes do not change cue identities or
+  marker codes. The home screen starts the whole experiment.
+- The operator chooses the epoch duration and an even **epoch count per
+  condition**. Defaults are 15 seconds and 10 epochs per condition (20 overall).
 - A configurable break (10 seconds by default) separates every pair of cue
-  epochs, including repeated cues. No break precedes the first or follows the
-  last cue. The default text is `Now let's take a short break.`
+  epochs within each condition, including repeated cues. No timed break precedes
+  the first or follows the last cue of a condition. The default text is
+  `Now let's take a short break.`
+- After Condition 1's last full epoch, an untimed screen replaces its cue:
+  `Condition 1 complete. Before starting Condition 2, please remove the TENS
+  unit electrodes from the left hand and place them on the right ankle. When
+  finished, press space to continue the experiment.` The accepted screen swap
+  closes the final Condition 1 epoch in the log.
+- A fresh **Space** press on that visible screen opens a second untimed screen:
+  `By continuing, you are confirming that the TENS unit electrodes are properly
+  secured on the right hand and right ankle. Press 'Y' to continue.` Only a fresh
+  **Y** press after this screen is visible starts Condition 2. Early presses,
+  held-key repeats, and additional Space presses cannot bypass confirmation.
+  Neither handover screen sends a marker or displays a countdown. Escape aborts
+  from either screen. The serial connection stays open across the handover.
 - A top-center countdown shows the seconds remaining in each cue and break,
   aligned to the accepted onset swap. Countdown redraws send no markers.
 - After COM3 opens, PySide6 presents the ready frame. The task stops with an
@@ -41,13 +56,24 @@ This page records the task behavior that the software must preserve.
 - `COM3` is fixed and is not editable in the launcher.
 - **Space** starts from the fullscreen ready screen; **Escape** aborts.
 - A CSV task log records the scheduled and presented epochs and trigger events,
-  the actual cue text, and the configured break duration and text.
+  the actual cue text, and the configured break duration and text. One file
+  covers both conditions. `total_epochs` counts the whole experiment; additive
+  `epochs_per_condition` and `condition_epoch_number` fields identify the blocks.
+  Planned `scheduled_onset_sec` values are relative to each condition's planned
+  start, explicitly labeled by `scheduled_onset_reference=condition_start`.
+  Actual cue/trigger/offset times remain relative to the experiment start and
+  include the operator's untimed handover pause.
 - TENS stimulation is controlled externally.
 
-The analysis tab uses the condition, duration, epoch count, and fixed cue codes
-shown in the task tab. Its optional stimulation-frequency field adds
-the correct expected-frequency marker and summary values without controlling
-the TENS unit. The frequency must be inside the usable plot, filter, and FFT
+The Process Data view uses both conditions' four fixed cue codes and the duration
+and per-condition epoch count from **File > Settings**. The stimulation-frequency
+field defaults to **26 Hz** and remains editable to match the external TENS unit.
+It adds frequency-specific summary values and a dashed vertical FFT-plot marker
+labeled `TENS Unit Stimulation Frequency`, without controlling the TENS unit.
+Saved FFT plotting uses the recorded frequency when available; the displayed
+frequency selection supplies the marker when plotting from saved data. Neither
+the marker nor this default changes the FFT amplitudes. The frequency must be
+inside the usable plot, filter, and FFT
 range (3–50 Hz by default). Leaving it blank still saves the complete
 per-electrode FFT.
 

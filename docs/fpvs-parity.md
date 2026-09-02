@@ -125,8 +125,8 @@ Parity means identical preprocessing and per-electrode amplitude FFT
 calculation for identical input data, settings, electrode labels, and samples
 supplied to the FFT. These experiment-specific choices remain:
 
-- The selected SSSEP condition supplies fixed launcher trigger codes (`11`/`12`
-  or `21`/`22`); cue duration remains editable. The default full window is 15
+- Both SSSEP conditions supply fixed trigger codes (`11`/`12` and `21`/`22`);
+  cue duration remains editable in File > Settings. The default full window is 15
   seconds, or 3840 samples at 256 Hz. Other durations use
   `round(duration * sampling_rate)` samples, with a stop-exclusive slice and no
   extra endpoint. Event indices account for MNE's `raw.first_samp`.
@@ -139,7 +139,8 @@ supplied to the FFT. These experiment-specific choices remain:
   experiment.
 - FFT bin spacing is the reciprocal of the analyzed duration: 0.1 Hz for the
   default middle 10-second window. The optional
-  stimulation frequency shown in the launcher adds expected-frequency markers
+  stimulation frequency shown in the launcher defaults to 26 Hz and adds dashed
+  FFT markers labeled `TENS Unit Stimulation Frequency`
   and SSSEP summary values. Leaving it blank leaves those target summaries
   unavailable while preserving the full per-electrode FFT.
 - Recognized complete 64-channel sets are ordered exactly as FPVS's default
@@ -174,7 +175,7 @@ active epochs is reported as failed.
   analysis-window duration, and plot-frequency range.
 - `group_fft_amplitudes.csv` contains equal-participant group means and the
   contributing participant count for each electrode. Both exports are CSV
-  files that can be opened in Excel; the program does not create workbooks.
+  files that can be opened in Excel.
 - The group CSV's baseline row uses all available participant baselines. A cue
   plot instead uses a cue-matched baseline cohort and omits the baseline line
   if any cue contributor lacks matching selected-electrode data.
@@ -183,14 +184,17 @@ active epochs is reported as failed.
   `group_cue_###_fft_amplitude.png` per usable cue. If the selected electrode
   is unavailable, only the affected plot is skipped; spectra and participant
   counts remain available.
-- The **Plot Saved FFT** tab reloads `participant_fft_amplitudes.csv` after the
+- **View > Generate FFT Plots** reloads `participant_fft_amplitudes.csv` after the
   parity-checked FFT is complete. Electrode/ROI curves and raw-amplitude scalp
   maps are downstream displays: they do not alter preprocessing or FFT values.
   Later ROI group curves average electrodes within participant first. A scalp
   map uses the nearest saved FFT bin, reports that actual bin, and does not fill
   missing electrodes with zero. ROI source data retain participant-specific
-  electrode membership; scalp source data retain per-electrode participant
-  counts and mark labels omitted for missing montage coordinates.
+  electrode membership. Each scalp map exports a two-column `.xlsx` workbook
+  containing electrode names and numeric FFT amplitudes in µV, with fitted
+  column widths. Per-electrode participant counts remain in the canonical
+  group CSV; the GUI reports labels omitted for missing montage coordinates.
+  Those labels' finite FFT values remain in the workbook.
 - New summary fields use explicit `*_amplitude_uv` names. Amplitude ratios use
   `20 * log10(ratio)`. Missing active/baseline measurements remain unavailable.
 - Old power and Welch outputs are retired. Do not combine them with the new

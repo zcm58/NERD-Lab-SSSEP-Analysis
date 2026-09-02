@@ -791,7 +791,7 @@ def run_batch(
                         baseline_warning = (
                             f"Group baseline omitted for trigger {trigger.code} "
                             f"({trigger.label}): selected-electrode baseline data were "
-                            "missing for cue participant(s) "
+                            "missing for participant(s) contributing to this trigger code "
                             f"{missing_baseline_participants}."
                         )
                         group_plot_warnings.append(baseline_warning)
@@ -827,13 +827,13 @@ def run_batch(
                             active=cue_spectrum,
                             baseline=baseline_spectrum,
                             title=(
-                                f"Group - Cue {trigger.code} {trigger.label} - FFT amplitude"
+                                f"Group - Trigger code {trigger.code} {trigger.label} - FFT amplitude"
                             ),
                             outpath=plot_path,
                             target_hz=trigger.target_hz,
                             channel_names=[selected_plot_channel],
                             plot_channel=selected_plot_channel,
-                            active_label=f"Cue group mean (N={cue_count})",
+                            active_label=f"Trigger code group mean (N={cue_count})",
                             baseline_label=baseline_label,
                         )
                     except Exception as exc:
@@ -861,7 +861,7 @@ def run_batch(
                 if plot_error_details:
                     plot_error_path = output_path / "GROUP_PLOT_ERRORS.txt"
                     plot_error_path.write_text(
-                        "One or more group cue plots failed. Consolidated FFT CSV "
+                        "One or more group trigger code plots failed. Consolidated FFT CSV "
                         "files and successful plots were preserved.\n\n"
                         + "\n\n".join(plot_error_details),
                         encoding="utf-8",
@@ -873,7 +873,7 @@ def run_batch(
                 else:
                     group_plot_status = "success"
                 logger.info(
-                    "Created %d group plot(s), one per usable cue for electrode %s.",
+                    "Created %d group plot(s), one per usable trigger code for electrode %s.",
                     len(group_plot_files),
                     selected_plot_channel,
                 )

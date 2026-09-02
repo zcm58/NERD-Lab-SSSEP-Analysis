@@ -122,7 +122,7 @@ def test_pipeline_uses_fpvs_order_and_creates_one_plot_per_cue(monkeypatch, tmp_
     assert cue_records[0].spectrum.freqs[1] == pytest.approx(0.1)
     assert "Cz" in cue_records[0].channel_names
     assert plots[0]["active"].amplitude_uv.ndim == 2
-    assert "one per usable cue" in (
+    assert "one per usable trigger code" in (
         Path(result["output_folder"]) / "synthetic_processing_report.txt"
     ).read_text()
 

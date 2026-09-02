@@ -207,7 +207,7 @@ class ParticipantSpectrum:
         if not isinstance(self.file_name, str) or not self.file_name.strip():
             raise ValueError("file_name must be a non-empty string.")
         if self.event_type not in {"cue", "baseline"}:
-            raise ValueError("event_type must be 'cue' or 'baseline'.")
+            raise ValueError("The event type must identify a trigger code epoch or baseline.")
         if (
             not isinstance(self.trigger_code, int)
             or isinstance(self.trigger_code, bool)

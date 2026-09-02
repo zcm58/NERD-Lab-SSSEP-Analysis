@@ -508,7 +508,7 @@ def test_group_plot_failure_does_not_stop_later_plots_or_hide_csv_success(
     calls: list[int] = []
 
     def fake_plot(**kwargs):
-        trigger_code = 11 if "Cue 11" in kwargs["title"] else 12
+        trigger_code = 11 if "Trigger code 11" in kwargs["title"] else 12
         calls.append(trigger_code)
         if trigger_code == 11:
             raise RuntimeError("synthetic plot failure")
@@ -579,7 +579,7 @@ def test_group_plot_baseline_uses_only_complete_matched_cue_participants(
     captured: dict[int, dict[str, object]] = {}
 
     def fake_plot(**kwargs):
-        trigger_code = 11 if "Cue 11" in kwargs["title"] else 12
+        trigger_code = 11 if "Trigger code 11" in kwargs["title"] else 12
         captured[trigger_code] = kwargs
         Path(kwargs["outpath"]).write_bytes(b"png")
 

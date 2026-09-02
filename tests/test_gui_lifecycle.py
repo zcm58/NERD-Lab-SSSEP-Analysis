@@ -28,7 +28,7 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
                        plot_channel=None, analysis_protocol=None):
             assert threading.current_thread() is not threading.main_thread()
             assert plot_channel == "C4"
-            assert analysis_protocol.active_event_codes == (11, 12)
+            assert analysis_protocol.active_event_codes == (11, 12, 21, 22)
             assert analysis_protocol.event_duration_sec == 15.0
             with ProcessPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(sum, [1, 2, 3])
@@ -57,13 +57,16 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
         @checked
         def start_probe():
             window = next(w for w in QApplication.topLevelWidgets()
-                          if w.windowTitle() == "SSSEP Task and Analysis")
-            assert [window.tabs.tabText(index) for index in range(window.tabs.count())] == [
-                "Run Participant Task", "Analyze Recordings", "Plot Saved FFT"
+                          if w.windowTitle() == "NERD Lab SSSEP Task")
+            assert [action.text() for action in window.view_actions] == [
+                "SSSEP Task", "Process Data", "Generate FFT Plots"
             ]
+            assert window.pages.count() == 3
+            window._show_view(1)
+            assert window.pages.currentWidget() is window.analysis_page
             window.input_edit.setText(str(input_folder))
             window.output_edit.setText(str(output_root))
-            window.plot_channel_combo.setCurrentText("C4")
+            window.plot_channel = "C4"
             window._start_processing()
 
             @checked
@@ -78,10 +81,13 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
                     QTimer.singleShot(10, wait_for_worker)
                     return
                 assert window.worker.isRunning()
+                assert not window.settings_action.isEnabled()
                 assert not window.close(), "Active worker window accepted close"
                 assert window.isVisible()
                 assert not window.process_button.isEnabled()
-                assert not window.tabs.isTabEnabled(2)
+                assert all(not action.isEnabled() for action in window.view_actions)
+                window._show_view(0)
+                assert window.pages.currentIndex() == 1
                 release.set()
                 QTimer.singleShot(10, wait_for_finished)
 
@@ -91,7 +97,8 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
                     QTimer.singleShot(10, wait_for_finished)
                     return
                 assert window.process_button.isEnabled()
-                assert window.tabs.isTabEnabled(2)
+                assert window.settings_action.isEnabled()
+                assert all(action.isEnabled() for action in window.view_actions)
                 assert window.output_edit.text() == str(output_root)
                 if outcome == "success":
                     assert window.output_folder == str(run_folder)
@@ -106,6 +113,9 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
                     assert saved == []
                     assert messages == [("Setup Needs Attention", "No .bdf files were found.")]
                 assert window.close(), "Stopped worker prevented window close"
+                assert saved == [(str(input_folder), str(output_root))] * (
+                    2 if outcome == "success" else 1
+                )
                 observed.add("closed")
 
             window.worker.batch_finished.connect(check_result_signal)
@@ -144,8 +154,8 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
             saved, opened, messages, errors = [], [], [], []
             observed = set()
             gui.run_batch = fake_batch
-            gui.load_saved_folders = lambda: {}
-            gui.save_folder_defaults = lambda *args: saved.append(args)
+            gui.load_launcher_settings = lambda defaults, **kwargs: defaults
+            gui.save_folder_defaults = lambda *args, **kwargs: saved.append(args)
             qt = gui._require_pyside6()
             qt.update(QApplication=AppFactory, QMessageBox=MessageBox,
                       QDesktopServices=DesktopServices)
@@ -221,7 +231,8 @@ def test_application_shutdown_without_active_task_runner(
             if __name__ == "__main__":
                 app_mode, shutdown_method = sys.argv[1:3]
                 errors = []
-                gui.load_saved_folders = lambda: {}
+                gui.load_launcher_settings = lambda defaults, **kwargs: defaults
+                gui.save_folder_defaults = lambda *args, **kwargs: None
 
                 if app_mode == "existing":
                     app = QApplication(sys.argv)
@@ -270,6 +281,7 @@ def test_application_exit_cooperatively_stops_active_participant_task(tmp_path):
             r'''
             from pathlib import Path
             from types import SimpleNamespace
+            from dataclasses import replace
             import sys
             import threading
 
@@ -335,7 +347,7 @@ def test_application_exit_cooperatively_stops_active_participant_task(tmp_path):
 
             def start_task():
                 window = QApplication.instance()._sssep_launcher_window
-                window.task_log_edit.setText(str(log_folder))
+                window.session_settings = replace(window.session_settings, output_folder=log_folder)
                 window._start_task()
                 QTimer.singleShot(0, request_shutdown_when_started)
 
@@ -343,7 +355,8 @@ def test_application_exit_cooperatively_stops_active_participant_task(tmp_path):
                 log_folder = Path(sys.argv[1])
                 main_thread_id = threading.get_ident()
                 runners = []
-                gui.load_saved_folders = lambda: {}
+                gui.load_launcher_settings = lambda defaults, **kwargs: defaults
+                gui.save_folder_defaults = lambda *args, **kwargs: None
                 gui.QtTaskRunner = FakeTaskRunner
                 qt = gui._require_pyside6()
                 qt.update(QApplication=AppFactory)
@@ -419,6 +432,7 @@ def test_application_exit_waits_for_active_batch_worker(tmp_path):
 
             def start_batch():
                 window = QApplication.instance()._sssep_launcher_window
+                window._show_view(1)
                 window.input_edit.setText(str(input_folder))
                 window.output_edit.setText(str(output_folder))
                 window._start_processing()
@@ -437,7 +451,8 @@ def test_application_exit_waits_for_active_batch_worker(tmp_path):
 
             if __name__ == "__main__":
                 input_folder, output_folder = map(Path, sys.argv[1:3])
-                gui.load_saved_folders = lambda: {}
+                gui.load_launcher_settings = lambda defaults, **kwargs: defaults
+                gui.save_folder_defaults = lambda *args, **kwargs: None
                 gui.run_batch = fake_batch
                 qt = gui._require_pyside6()
                 qt.update(QApplication=AppFactory)
@@ -483,7 +498,8 @@ def test_invalid_configured_plot_channel_fails_clearly(tmp_path):
             import sssep_batch.gui as gui
 
             gui.PLOT_CHANNEL = "NotAChannel"
-            gui.load_saved_folders = lambda: {}
+            gui.load_launcher_settings = lambda defaults, **kwargs: defaults
+            gui.save_folder_defaults = lambda *args, **kwargs: None
 
             try:
                 gui.launch_gui()

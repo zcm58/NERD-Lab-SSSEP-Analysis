@@ -1,6 +1,8 @@
 """Checks for reloading and plotting consolidated participant FFT data."""
 
 from pathlib import Path
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
 import matplotlib
 
@@ -79,6 +81,37 @@ def write_saved_dataset(tmp_path, records) -> tuple[Path, Path]:
     return run_folder, source_csv
 
 
+def read_scalp_workbook(path: str) -> tuple[dict[str, str | float], dict[int, float]]:
+    """Inspect real XLSX cells and sizing without adding a reader dependency."""
+    namespace = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    with ZipFile(path) as archive:
+        workbook = ElementTree.fromstring(archive.read("xl/workbook.xml"))
+        sheets = workbook.findall("s:sheets/s:sheet", namespace)
+        assert [sheet.attrib["name"] for sheet in sheets] == ["FFT amplitudes"]
+        strings_xml = ElementTree.fromstring(archive.read("xl/sharedStrings.xml"))
+        strings = ["".join(item.itertext()) for item in strings_xml]
+        worksheet = ElementTree.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+
+    cells = {}
+    for cell in worksheet.findall("s:sheetData/s:row/s:c", namespace):
+        assert cell.find("s:f", namespace) is None
+        raw_value = cell.find("s:v", namespace).text
+        if cell.attrib.get("t") == "s":
+            value = strings[int(raw_value)]
+        else:
+            assert cell.attrib.get("t") in (None, "n")
+            value = float(raw_value)
+        cells[cell.attrib["r"]] = value
+    widths = {}
+    for column in worksheet.findall("s:cols/s:col", namespace):
+        assert column.attrib["customWidth"] == "1"
+        for index in range(int(column.attrib["min"]), int(column.attrib["max"]) + 1):
+            widths[index] = float(column.attrib["width"])
+    assert set(widths) == {1, 2}
+    assert all(reference.startswith(("A", "B")) for reference in cells)
+    return cells, widths
+
+
 def test_saved_fft_round_trip_recovers_events_participants_and_electrodes(tmp_path):
     records = (
         make_record("P01", {"C3": [1, 2, 3], "C4": [4, 5, 6]}),
@@ -100,7 +133,7 @@ def test_saved_fft_round_trip_recovers_events_participants_and_electrodes(tmp_pa
     assert dataset.participant_ids == ("P01", "P02")
     assert dataset.channel_names == ("C3", "C4")
     assert [event.display_name for event in dataset.events] == [
-        "Cue 11: BothHands Left Hand",
+        "Trigger code 11: BothHands Left Hand",
         "Baseline 100: Gap/Break",
     ]
     assert dataset.processing_method == "fpvs_amplitude_v1"
@@ -507,9 +540,10 @@ def test_saved_fft_grid_must_match_sampling_and_window_provenance(
         load_saved_fft_dataset(run_folder)
 
 
-def test_saved_roi_and_scalp_outputs_include_exact_source_data(tmp_path):
+@pytest.mark.parametrize("participant_id", [None, "P02"])
+def test_saved_roi_and_scalp_outputs_include_exact_source_data(tmp_path, participant_id):
     channels = {
-        "Fp1": [1, 2, 3],
+        "Fp1": [1, 2.123456789012345, 3],
         "Fp2": [2, 3, 4],
         "F7": [3, 4, 5],
         "F8": [4, 5, 6],
@@ -518,10 +552,15 @@ def test_saved_roi_and_scalp_outputs_include_exact_source_data(tmp_path):
         "O1": [7, 8, 9],
         "O2": [8, 9, 10],
     }
-    run_folder, _ = write_saved_dataset(
+    second_channels = {
+        channel: [value + 10 for value in amplitudes]
+        for channel, amplitudes in channels.items()
+    }
+    run_folder, source_csv = write_saved_dataset(
         tmp_path,
-        (make_record("P01", channels), make_record("P02", channels)),
+        (make_record("P01", channels), make_record("P02", second_channels)),
     )
+    original_source = source_csv.read_bytes()
     dataset = load_saved_fft_dataset(run_folder)
 
     roi_result = create_saved_roi_outputs(
@@ -535,20 +574,78 @@ def test_saved_roi_and_scalp_outputs_include_exact_source_data(tmp_path):
         dataset,
         event_type="cue",
         trigger_code=11,
-        frequency_hz=10.0,
+        frequency_hz=11.0,
+        participant_id=participant_id,
     )
 
     for result in (roi_result, scalp_result):
         assert result["plot_path"].endswith(".png")
-        assert result["source_csv"].endswith("_data.csv")
-        assert pd.read_csv(result["source_csv"]).shape[0] > 0
         assert (run_folder / "saved_fft_plots") in Path(result["plot_path"]).parents
-        assert "fpvs_reference_commit" in pd.read_csv(result["source_csv"]).columns
-        assert "epoch_window_sec" in pd.read_csv(result["source_csv"]).columns
-        assert "fft_crop_start_sec" in pd.read_csv(result["source_csv"]).columns
-        assert "fft_crop_end_sec" in pd.read_csv(result["source_csv"]).columns
+    assert roi_result["source_csv"].endswith("_data.csv")
+    roi_source = pd.read_csv(roi_result["source_csv"])
+    assert not roi_source.empty
+    assert {
+        "fpvs_reference_commit", "epoch_window_sec", "fft_crop_start_sec", "fft_crop_end_sec",
+    }.issubset(roi_source.columns)
     participant_values = pd.read_csv(roi_result["participant_source_csv"])
     assert set(participant_values.participant_id) == {"P01", "P02"}
+
+    assert "source_csv" not in scalp_result
+    workbook_path = Path(scalp_result["source_xlsx"])
+    assert workbook_path.name == f"{participant_id or 'group'}_cue_011_10_Hz_scalp_map_data.xlsx"
+    assert sorted(path.suffix for path in workbook_path.parent.iterdir()) == [".png", ".xlsx"]
+    cells, widths = read_scalp_workbook(str(workbook_path))
+    assert cells["A1"] == "Electrode"
+    assert cells["B1"] == "FFT amplitude (µV)"
+    assert len(cells) == 2 * (len(channels) + 1)
+    assert widths[1] >= 9.0  # Header is wider than Excel's default 8.43 characters.
+    assert widths[2] >= 18.0
+    assert [cells[f"A{index}"] for index in range(2, 10)] == list(channels)
+    expected = [values[1] + (5 if participant_id is None else 10) for values in channels.values()]
+    assert [cells[f"B{index}"] for index in range(2, 10)] == pytest.approx(expected, rel=1e-14)
+    assert all(isinstance(cells[f"B{index}"], float) for index in range(2, 10))
+    assert scalp_result["requested_frequency_hz"] == 11.0
+    assert scalp_result["actual_frequency_hz"] == 10.0
+    assert source_csv.read_bytes() == original_source
+
+
+def test_saved_roi_stimulation_override_changes_only_png_marker(tmp_path, monkeypatch):
+    from sssep_batch.analysis import plotting
+
+    run_folder, source_csv = write_saved_dataset(
+        tmp_path,
+        (
+            make_record("P01", {"C3": [1, 2, 3], "C4": [3, 6, 9]}, target_hz=10.0),
+            make_record("P02", {"C3": [2, 4, 6], "C4": [6, 12, 18]}, target_hz=10.0),
+        ),
+    )
+    original_source = source_csv.read_bytes()
+    dataset = load_saved_fft_dataset(run_folder)
+    figures = []
+    monkeypatch.setattr(plotting.plt.Figure, "savefig", lambda figure, *_args, **_kwargs: figures.append(figure))
+
+    original = create_saved_roi_outputs(
+        dataset, event_type="cue", trigger_code=11, channels=("C3", "C4"), roi_name="Central",
+    )
+    overridden = create_saved_roi_outputs(
+        dataset, event_type="cue", trigger_code=11, channels=("C3", "C4"), roi_name="Central",
+        stimulation_hz=26.0,
+    )
+
+    for result_key in ("source_csv", "participant_source_csv"):
+        assert Path(original[result_key]).read_bytes() == Path(overridden[result_key]).read_bytes()
+    source = pd.read_csv(overridden["source_csv"])
+    assert source.target_hz.tolist() == [10.0, 10.0, 10.0]
+    np.testing.assert_array_equal(source.fft_amplitude_uv, [3.0, 6.0, 9.0])
+    for figure, expected_frequency in zip(figures, [10.0, 26.0]):
+        axes = figure.axes[0]
+        marker = next(line for line in axes.lines if line.get_label() == "TENS Unit Stimulation Frequency")
+        assert list(marker.get_xdata()) == [expected_frequency, expected_frequency]
+        assert marker.get_linestyle() == "--"
+        np.testing.assert_array_equal(axes.lines[0].get_ydata(), source.fft_amplitude_uv)
+    assert len(figures) == 2
+    assert dataset.events[0].target_hz == 10.0
+    assert source_csv.read_bytes() == original_source
 
 
 def test_saved_scalp_plot_requires_four_mapped_electrodes(tmp_path):
@@ -604,10 +701,10 @@ def test_saved_scalp_plot_omits_unmapped_electrodes_and_records_them(tmp_path):
     )
 
     assert result["omitted_channels"] == ["Unknown"]
-    source = pd.read_csv(result["source_csv"])
-    assert not bool(
-        source.loc[source.electrode == "Unknown", "included_in_scalp_map"].iloc[0]
-    )
+    cells, _ = read_scalp_workbook(result["source_xlsx"])
+    assert len(cells) == 12
+    assert cells["A6"] == "Unknown"
+    assert cells["B6"] == 6.0
 
 
 def test_saved_scalp_plot_uses_the_montage_recorded_in_the_csv(tmp_path):
@@ -665,6 +762,42 @@ def test_failed_roi_render_removes_partial_output_folder(
             roi_name="C3",
         )
     assert not list((run_folder / "saved_fft_plots").glob("plot_*"))
+
+
+def test_failed_scalp_workbook_removes_png_and_partial_workbook(tmp_path, monkeypatch):
+    import sssep_batch.analysis.saved_outputs as saved_outputs
+
+    run_folder, source_csv = write_saved_dataset(
+        tmp_path,
+        (make_record("P01", {
+            "Fp1": [1, 2, 3], "Fp2": [2, 3, 4],
+            "C3": [3, 4, 5], "C4": [4, 5, 6],
+        }),),
+    )
+    original_source = source_csv.read_bytes()
+    dataset = load_saved_fft_dataset(run_folder)
+    old_folder = run_folder / "saved_fft_plots" / "previous_success"
+    old_folder.mkdir(parents=True)
+    previous_png = old_folder / "keep.png"
+    previous_png.write_bytes(b"previous successful output")
+    attempts = []
+
+    def fail_workbook(_values, output_path):
+        output_path = Path(output_path)
+        assert len(list(output_path.parent.glob("*.png"))) == 1
+        output_path.write_bytes(b"partial workbook")
+        attempts.append(output_path)
+        raise OSError("synthetic workbook failure")
+
+    monkeypatch.setattr(saved_outputs, "_write_scalp_workbook", fail_workbook)
+    with pytest.raises(OSError, match="synthetic workbook failure"):
+        create_saved_scalp_outputs(
+            dataset, event_type="cue", trigger_code=11, frequency_hz=10.0,
+        )
+    assert len(attempts) == 1
+    assert not attempts[0].parent.exists()
+    assert previous_png.read_bytes() == b"previous successful output"
+    assert source_csv.read_bytes() == original_source
 
 
 def test_saved_scalp_frequency_is_limited_to_configured_plot_range(tmp_path):

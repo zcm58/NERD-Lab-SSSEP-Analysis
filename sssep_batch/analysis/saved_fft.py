@@ -74,7 +74,7 @@ class SavedEvent:
     def display_name(self) -> str:
         """Return a concise label for a GUI selector."""
 
-        kind = "Cue" if self.event_type == "cue" else "Baseline"
+        kind = "Trigger code" if self.event_type == "cue" else "Baseline"
         return f"{kind} {self.trigger_code}: {self.trigger_label}"
 
 
@@ -570,7 +570,7 @@ def _validate_text_columns(frame: pd.DataFrame) -> None:
             raise ValueError(f"Saved FFT column {column!r} contains a blank value.")
         frame[column] = frame[column].astype(str).str.strip()
     if not frame["event_type"].isin(("cue", "baseline")).all():
-        raise ValueError("Saved FFT event_type values must be 'cue' or 'baseline'.")
+        raise ValueError("Saved FFT event types must identify trigger code epochs or baselines.")
 
 
 def _validate_participant_file_mapping(frame: pd.DataFrame) -> None:
@@ -772,7 +772,7 @@ def _selected_records(
     )
     if not records:
         raise ValueError(
-            f"No saved spectra match event_type={event_type!r}, trigger_code={trigger_code}."
+            f"No saved spectra match trigger code {trigger_code} and the selected event type."
         )
     if participant_id is not None:
         participant = str(participant_id).strip()

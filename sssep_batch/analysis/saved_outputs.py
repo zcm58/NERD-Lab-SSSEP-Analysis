@@ -1,4 +1,4 @@
-"""Write plots and source CSVs from validated saved SSSEP FFT data."""
+"""Write plots, ROI source CSVs, and scalp workbooks from saved FFT data."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from tempfile import mkdtemp
 from typing import Iterable
 
 import pandas as pd
+from xlsxwriter import Workbook
 
 from sssep_batch.analysis.plotting import (
     plot_saved_roi_spectrum,
@@ -82,31 +83,18 @@ def roi_participant_source_dataframe(
     return pd.concat(frames, ignore_index=True)
 
 
-def scalp_source_dataframe(
-    values: ScalpMapValues,
-    omitted_channels: Iterable[str] = (),
-) -> pd.DataFrame:
-    """Return the exact electrode values used for one saved scalp map."""
-
-    level = values.participant_id or "Group average"
-    omitted = set(omitted_channels)
-    return pd.DataFrame(
-        {
-            "level": level,
-            "event_type": values.event.event_type,
-            "trigger_code": values.event.trigger_code,
-            "trigger_label": values.event.trigger_label,
-            "requested_frequency_hz": values.requested_frequency_hz,
-            "plotted_frequency_hz": values.actual_frequency_hz,
-            **_provenance_columns(values.provenance),
-            "electrode": values.channel_names,
-            "fft_amplitude_uv": values.amplitude_uv,
-            "participant_count": values.participant_counts,
-            "included_in_scalp_map": [
-                channel not in omitted for channel in values.channel_names
-            ],
-        }
-    )
+def _write_scalp_workbook(values: ScalpMapValues, output_path: Path) -> None:
+    """Save only electrode names and numeric FFT amplitudes, with fitted columns."""
+    with Workbook(output_path) as workbook:
+        worksheet = workbook.add_worksheet("FFT amplitudes")
+        worksheet.write_row(0, 0, ("Electrode", "FFT amplitude (µV)"))
+        for row, (channel, amplitude) in enumerate(
+            zip(values.channel_names, values.amplitude_uv), start=1
+        ):
+            # Electrode labels are text, even if a saved label starts with '='.
+            worksheet.write_string(row, 0, channel)
+            worksheet.write_number(row, 1, float(amplitude))
+        worksheet.autofit()
 
 
 def _provenance_columns(provenance: FftProvenance) -> dict[str, object]:
@@ -175,8 +163,9 @@ def create_saved_roi_outputs(
     channels: Iterable[str],
     roi_name: str,
     participant_id: str | None = None,
+    stimulation_hz: float | None = None,
 ) -> dict[str, object]:
-    """Create a saved-data ROI PNG and its exact plotted-value CSV."""
+    """Create an ROI PNG and source CSV; frequency overrides affect its marker only."""
 
     name = str(roi_name).strip()
     if not name:
@@ -202,7 +191,7 @@ def create_saved_roi_outputs(
             participant_source_csv,
             index=False,
         )
-        plot_saved_roi_spectrum(spectrum, name, plot_path)
+        plot_saved_roi_spectrum(spectrum, name, plot_path, stimulation_hz=stimulation_hz)
     except Exception:
         _remove_failed_plot_folder(dataset, output_folder)
         raise
@@ -225,7 +214,7 @@ def create_saved_scalp_outputs(
     frequency_hz: float,
     participant_id: str | None = None,
 ) -> dict[str, object]:
-    """Create a saved-data scalp-map PNG and its exact electrode-value CSV."""
+    """Create a scalp-map PNG and a two-column electrode/amplitude workbook."""
 
     values = saved_scalp_values(
         dataset,
@@ -240,14 +229,11 @@ def create_saved_scalp_outputs(
         f"{level}_{event_type}_{trigger_code:03d}_"
         f"{values.actual_frequency_hz:g}_Hz_scalp_map"
     )
-    source_csv = output_folder / f"{stem}_data.csv"
+    source_xlsx = output_folder / f"{stem}_data.xlsx"
     plot_path = output_folder / f"{stem}.png"
     try:
         omitted_channels = plot_saved_scalp_map(values, plot_path)
-        scalp_source_dataframe(values, omitted_channels).to_csv(
-            source_csv,
-            index=False,
-        )
+        _write_scalp_workbook(values, source_xlsx)
     except Exception:
         _remove_failed_plot_folder(dataset, output_folder)
         raise
@@ -261,7 +247,7 @@ def create_saved_scalp_outputs(
         "kind": "scalp",
         "output_folder": str(output_folder),
         "plot_path": str(plot_path),
-        "source_csv": str(source_csv),
+        "source_xlsx": str(source_xlsx),
         "requested_frequency_hz": values.requested_frequency_hz,
         "actual_frequency_hz": values.actual_frequency_hz,
         "participant_count_min": min(included_counts),
