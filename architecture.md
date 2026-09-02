@@ -32,7 +32,7 @@ PySide6 also presents the fullscreen participant task.
 | FFT calculation | [analysis/spectra.py](sssep_batch/analysis/spectra.py) |
 | Consolidated participant tables and equal-participant group averages | [analysis/grouping.py](sssep_batch/analysis/grouping.py) |
 | Reloading saved FFT CSVs, later ROI averaging, and scalp-map values | [analysis/saved_fft.py](sssep_batch/analysis/saved_fft.py) |
-| Writing later FFT plots, ROI CSVs, and scalp-map Excel values | [analysis/saved_outputs.py](sssep_batch/analysis/saved_outputs.py) |
+| Writing later FFT and scalp-map PNGs | [analysis/saved_outputs.py](sssep_batch/analysis/saved_outputs.py) |
 | Event codes and durations passed into analysis | [analysis/protocol.py](sssep_batch/analysis/protocol.py) |
 | Existing summary values | [analysis/metrics.py](sssep_batch/analysis/metrics.py) |
 | Participant/group electrode or ROI graphs and scalp maps | [analysis/plotting.py](sssep_batch/analysis/plotting.py) |
@@ -74,17 +74,18 @@ cue at each level.
 
 Saved-result plotting is separate:
 
-`saved participant FFT CSV → strict reload → participant/electrode/event selection → later ROI mean or scalp-bin values → PNG plus ROI CSVs or scalp XLSX`
+`saved participant FFT CSV → strict reload → participant/electrode/event selection → later ROI mean or scalp-bin values → PNG in saved_fft_plots`
 
 Later ROI means average electrodes within participant before the equal-weight
-group mean. Their source exports retain every participant curve and its actual
-electrode membership. Scalp maps use finite electrodes with coordinates in the
+group mean, retaining participant contributions in memory. Scalp maps use finite
+electrodes with coordinates in the
 saved `standard_1005` montage; missing or unmapped electrodes are not replaced
-with zero. Each scalp workbook contains only electrode names and numeric FFT
-amplitudes (µV), with XlsxWriter-fitted column widths. Finite unmapped electrodes
-remain in the workbook; omission warnings remain in the GUI. The full canonical
-FFT CSVs retain provenance and participant counts. Hemisphere comparisons and
-statistics remain external.
+with zero. Saved plots are PNGs directly in `saved_fft_plots`, without per-plot
+CSV/Excel copies or subfolders. Reserve filenames exclusively and add numbered
+suffixes for repeats; on failure remove only that attempt's PNG, never the
+shared folder or earlier outputs. The canonical FFT CSVs retain all amplitudes,
+provenance, and participant counts. Omission warnings remain in the GUI.
+Hemisphere comparisons and statistics remain external.
 
 ## Keep these behaviors
 

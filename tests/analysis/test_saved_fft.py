@@ -1,8 +1,6 @@
 """Checks for reloading and plotting consolidated participant FFT data."""
 
 from pathlib import Path
-from xml.etree import ElementTree
-from zipfile import ZipFile
 
 import matplotlib
 
@@ -22,7 +20,6 @@ from sssep_batch.analysis.saved_fft import (
 from sssep_batch.analysis.saved_outputs import (
     create_saved_roi_outputs,
     create_saved_scalp_outputs,
-    roi_participant_source_dataframe,
 )
 from sssep_batch.config import PROCESSING_METHOD
 from sssep_batch.models import ParticipantSpectrum, Spectrum
@@ -79,37 +76,6 @@ def write_saved_dataset(tmp_path, records) -> tuple[Path, Path]:
     source_csv = run_folder / PARTICIPANT_FFT_FILENAME
     participant_spectra_to_dataframe(records).to_csv(source_csv, index=False)
     return run_folder, source_csv
-
-
-def read_scalp_workbook(path: str) -> tuple[dict[str, str | float], dict[int, float]]:
-    """Inspect real XLSX cells and sizing without adding a reader dependency."""
-    namespace = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
-    with ZipFile(path) as archive:
-        workbook = ElementTree.fromstring(archive.read("xl/workbook.xml"))
-        sheets = workbook.findall("s:sheets/s:sheet", namespace)
-        assert [sheet.attrib["name"] for sheet in sheets] == ["FFT amplitudes"]
-        strings_xml = ElementTree.fromstring(archive.read("xl/sharedStrings.xml"))
-        strings = ["".join(item.itertext()) for item in strings_xml]
-        worksheet = ElementTree.fromstring(archive.read("xl/worksheets/sheet1.xml"))
-
-    cells = {}
-    for cell in worksheet.findall("s:sheetData/s:row/s:c", namespace):
-        assert cell.find("s:f", namespace) is None
-        raw_value = cell.find("s:v", namespace).text
-        if cell.attrib.get("t") == "s":
-            value = strings[int(raw_value)]
-        else:
-            assert cell.attrib.get("t") in (None, "n")
-            value = float(raw_value)
-        cells[cell.attrib["r"]] = value
-    widths = {}
-    for column in worksheet.findall("s:cols/s:col", namespace):
-        assert column.attrib["customWidth"] == "1"
-        for index in range(int(column.attrib["min"]), int(column.attrib["max"]) + 1):
-            widths[index] = float(column.attrib["width"])
-    assert set(widths) == {1, 2}
-    assert all(reference.startswith(("A", "B")) for reference in cells)
-    return cells, widths
 
 
 def test_saved_fft_round_trip_recovers_events_participants_and_electrodes(tmp_path):
@@ -258,12 +224,11 @@ def test_saved_roi_averages_channels_within_participant_before_group(tmp_path):
     assert group.contributing_participant_ids == ("P01", "P02")
     assert group.used_channels == ("C3", "C4")
     assert participant.participant_count == 1
-    contributions = roi_participant_source_dataframe(group, "Central ROI")
-    membership = contributions.groupby("participant_id").first()
-    assert membership.loc["P01", "contributing_electrodes"] == "C3;C4"
-    assert membership.loc["P01", "contributing_electrode_count"] == 2
-    assert membership.loc["P02", "contributing_electrodes"] == "C3"
-    assert membership.loc["P02", "contributing_electrode_count"] == 1
+    contributions = {item.participant_id: item for item in group.participant_contributions}
+    assert contributions["P01"].used_channels == ("C3", "C4")
+    assert contributions["P02"].used_channels == ("C3",)
+    np.testing.assert_array_equal(contributions["P01"].amplitude_uv, [3.0, 6.0, 9.0])
+    np.testing.assert_array_equal(contributions["P02"].amplitude_uv, [10.0, 20.0, 30.0])
 
 
 def test_saved_scalp_map_uses_nearest_bin_and_reports_electrode_counts(tmp_path):
@@ -541,7 +506,9 @@ def test_saved_fft_grid_must_match_sampling_and_window_provenance(
 
 
 @pytest.mark.parametrize("participant_id", [None, "P02"])
-def test_saved_roi_and_scalp_outputs_include_exact_source_data(tmp_path, participant_id):
+def test_saved_roi_and_scalp_outputs_are_flat_pngs_and_preserve_previous_results(
+    tmp_path, participant_id,
+):
     channels = {
         "Fp1": [1, 2.123456789012345, 3],
         "Fp2": [2, 3, 4],
@@ -562,6 +529,11 @@ def test_saved_roi_and_scalp_outputs_include_exact_source_data(tmp_path, partici
     )
     original_source = source_csv.read_bytes()
     dataset = load_saved_fft_dataset(run_folder)
+    output_folder = run_folder / "saved_fft_plots"
+    old_folder = output_folder / "previous_plot"
+    old_folder.mkdir(parents=True)
+    old_data = old_folder / "old_data.csv"
+    old_data.write_bytes(b"previous source export")
 
     roi_result = create_saved_roi_outputs(
         dataset,
@@ -569,6 +541,7 @@ def test_saved_roi_and_scalp_outputs_include_exact_source_data(tmp_path, partici
         trigger_code=11,
         channels=("C3", "C4"),
         roi_name="Central ROI",
+        participant_id=participant_id,
     )
     scalp_result = create_saved_scalp_outputs(
         dataset,
@@ -578,34 +551,41 @@ def test_saved_roi_and_scalp_outputs_include_exact_source_data(tmp_path, partici
         participant_id=participant_id,
     )
 
+    first_images = {}
     for result in (roi_result, scalp_result):
-        assert result["plot_path"].endswith(".png")
-        assert (run_folder / "saved_fft_plots") in Path(result["plot_path"]).parents
-    assert roi_result["source_csv"].endswith("_data.csv")
-    roi_source = pd.read_csv(roi_result["source_csv"])
-    assert not roi_source.empty
-    assert {
-        "fpvs_reference_commit", "epoch_window_sec", "fft_crop_start_sec", "fft_crop_end_sec",
-    }.issubset(roi_source.columns)
-    participant_values = pd.read_csv(roi_result["participant_source_csv"])
-    assert set(participant_values.participant_id) == {"P01", "P02"}
-
-    assert "source_csv" not in scalp_result
-    workbook_path = Path(scalp_result["source_xlsx"])
-    assert workbook_path.name == f"{participant_id or 'group'}_cue_011_10_Hz_scalp_map_data.xlsx"
-    assert sorted(path.suffix for path in workbook_path.parent.iterdir()) == [".png", ".xlsx"]
-    cells, widths = read_scalp_workbook(str(workbook_path))
-    assert cells["A1"] == "Electrode"
-    assert cells["B1"] == "FFT amplitude (µV)"
-    assert len(cells) == 2 * (len(channels) + 1)
-    assert widths[1] >= 9.0  # Header is wider than Excel's default 8.43 characters.
-    assert widths[2] >= 18.0
-    assert [cells[f"A{index}"] for index in range(2, 10)] == list(channels)
-    expected = [values[1] + (5 if participant_id is None else 10) for values in channels.values()]
-    assert [cells[f"B{index}"] for index in range(2, 10)] == pytest.approx(expected, rel=1e-14)
-    assert all(isinstance(cells[f"B{index}"], float) for index in range(2, 10))
+        plot_path = Path(result["plot_path"])
+        assert plot_path.parent == output_folder
+        assert Path(result["output_folder"]) == output_folder
+        assert plot_path.suffix == ".png"
+        assert not {"source_csv", "participant_source_csv", "source_xlsx"} & result.keys()
+        first_images[plot_path] = plot_path.read_bytes()
+        assert first_images[plot_path].startswith(b"\x89PNG\r\n\x1a\n")
+    level = participant_id or "group"
+    assert Path(roi_result["plot_path"]).name == f"{level}_cue_011_Central ROI_fft_amplitude.png"
+    assert Path(scalp_result["plot_path"]).name == f"{level}_cue_011_10_Hz_scalp_map.png"
+    assert roi_result["participant_count"] == (2 if participant_id is None else 1)
+    assert roi_result["used_channels"] == ["C3", "C4"]
     assert scalp_result["requested_frequency_hz"] == 11.0
     assert scalp_result["actual_frequency_hz"] == 10.0
+
+    repeated_roi = create_saved_roi_outputs(
+        dataset, event_type="cue", trigger_code=11, channels=("C3", "C4"),
+        roi_name="Central ROI", participant_id=participant_id,
+    )
+    repeated_scalp = create_saved_scalp_outputs(
+        dataset, event_type="cue", trigger_code=11, frequency_hz=11.0,
+        participant_id=participant_id,
+    )
+    for original, repeated in ((roi_result, repeated_roi), (scalp_result, repeated_scalp)):
+        first = Path(original["plot_path"])
+        second = Path(repeated["plot_path"])
+        assert second == first.with_stem(first.stem + " (2)")
+        assert first.read_bytes() == first_images[first]
+        assert second.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    new_entries = set(output_folder.iterdir()) - {old_folder}
+    assert len(new_entries) == 4
+    assert all(path.is_file() and path.suffix == ".png" for path in new_entries)
+    assert old_data.read_bytes() == b"previous source export"
     assert source_csv.read_bytes() == original_source
 
 
@@ -632,17 +612,14 @@ def test_saved_roi_stimulation_override_changes_only_png_marker(tmp_path, monkey
         stimulation_hz=26.0,
     )
 
-    for result_key in ("source_csv", "participant_source_csv"):
-        assert Path(original[result_key]).read_bytes() == Path(overridden[result_key]).read_bytes()
-    source = pd.read_csv(overridden["source_csv"])
-    assert source.target_hz.tolist() == [10.0, 10.0, 10.0]
-    np.testing.assert_array_equal(source.fft_amplitude_uv, [3.0, 6.0, 9.0])
+    assert original["plot_path"] != overridden["plot_path"]
+    assert original["output_folder"] == overridden["output_folder"]
     for figure, expected_frequency in zip(figures, [10.0, 26.0]):
         axes = figure.axes[0]
         marker = next(line for line in axes.lines if line.get_label() == "TENS Unit Stimulation Frequency")
         assert list(marker.get_xdata()) == [expected_frequency, expected_frequency]
         assert marker.get_linestyle() == "--"
-        np.testing.assert_array_equal(axes.lines[0].get_ydata(), source.fft_amplitude_uv)
+        np.testing.assert_array_equal(axes.lines[0].get_ydata(), [3.0, 6.0, 9.0])
     assert len(figures) == 2
     assert dataset.events[0].target_hz == 10.0
     assert source_csv.read_bytes() == original_source
@@ -672,7 +649,7 @@ def test_saved_scalp_plot_requires_four_mapped_electrodes(tmp_path):
             trigger_code=11,
             frequency_hz=10.0,
         )
-    assert not list((run_folder / "saved_fft_plots").glob("plot_*"))
+    assert not list((run_folder / "saved_fft_plots").iterdir())
 
 
 def test_saved_scalp_plot_omits_unmapped_electrodes_and_records_them(tmp_path):
@@ -701,10 +678,9 @@ def test_saved_scalp_plot_omits_unmapped_electrodes_and_records_them(tmp_path):
     )
 
     assert result["omitted_channels"] == ["Unknown"]
-    cells, _ = read_scalp_workbook(result["source_xlsx"])
-    assert len(cells) == 12
-    assert cells["A6"] == "Unknown"
-    assert cells["B6"] == 6.0
+    assert result["participant_count_min"] == 1
+    assert result["participant_count_max"] == 1
+    assert list((run_folder / "saved_fft_plots").iterdir()) == [Path(result["plot_path"])]
 
 
 def test_saved_scalp_plot_uses_the_montage_recorded_in_the_csv(tmp_path):
@@ -734,37 +710,11 @@ def test_saved_scalp_plot_uses_the_montage_recorded_in_the_csv(tmp_path):
             trigger_code=11,
             frequency_hz=10.0,
         )
-    assert not list((run_folder / "saved_fft_plots").glob("plot_*"))
+    assert not list((run_folder / "saved_fft_plots").iterdir())
 
 
-def test_failed_roi_render_removes_partial_output_folder(
-    tmp_path,
-    monkeypatch,
-):
-    import sssep_batch.analysis.saved_outputs as saved_outputs
-
-    run_folder, _ = write_saved_dataset(
-        tmp_path, (make_record("P01", {"C3": [1, 2, 3]}),)
-    )
-    dataset = load_saved_fft_dataset(run_folder)
-
-    def fail_render(*_args, **_kwargs):
-        raise RuntimeError("synthetic render failure")
-
-    monkeypatch.setattr(saved_outputs, "plot_saved_roi_spectrum", fail_render)
-
-    with pytest.raises(RuntimeError, match="synthetic render failure"):
-        create_saved_roi_outputs(
-            dataset,
-            event_type="cue",
-            trigger_code=11,
-            channels=("C3",),
-            roi_name="C3",
-        )
-    assert not list((run_folder / "saved_fft_plots").glob("plot_*"))
-
-
-def test_failed_scalp_workbook_removes_png_and_partial_workbook(tmp_path, monkeypatch):
+@pytest.mark.parametrize("kind", ["roi", "scalp"])
+def test_failed_plot_removes_only_its_reserved_png(tmp_path, monkeypatch, kind):
     import sssep_batch.analysis.saved_outputs as saved_outputs
 
     run_folder, source_csv = write_saved_dataset(
@@ -776,27 +726,41 @@ def test_failed_scalp_workbook_removes_png_and_partial_workbook(tmp_path, monkey
     )
     original_source = source_csv.read_bytes()
     dataset = load_saved_fft_dataset(run_folder)
-    old_folder = run_folder / "saved_fft_plots" / "previous_success"
+    output_folder = run_folder / "saved_fft_plots"
+    old_folder = output_folder / "previous_success"
     old_folder.mkdir(parents=True)
-    previous_png = old_folder / "keep.png"
+    previous_csv = old_folder / "keep.csv"
+    previous_csv.write_bytes(b"previous source export")
+    stem = "group_cue_011_C3_fft_amplitude" if kind == "roi" else "group_cue_011_10_Hz_scalp_map"
+    previous_png = output_folder / f"{stem}.png"
     previous_png.write_bytes(b"previous successful output")
     attempts = []
 
-    def fail_workbook(_values, output_path):
-        output_path = Path(output_path)
-        assert len(list(output_path.parent.glob("*.png"))) == 1
-        output_path.write_bytes(b"partial workbook")
+    def fail_render(*args, **_kwargs):
+        output_path = Path(args[2] if kind == "roi" else args[1])
+        assert output_path == output_folder / f"{stem} (2).png"
+        assert output_path.exists()
+        assert output_path.read_bytes() == b""
+        output_path.write_bytes(b"partial PNG")
         attempts.append(output_path)
-        raise OSError("synthetic workbook failure")
+        raise OSError("synthetic render failure")
 
-    monkeypatch.setattr(saved_outputs, "_write_scalp_workbook", fail_workbook)
-    with pytest.raises(OSError, match="synthetic workbook failure"):
-        create_saved_scalp_outputs(
-            dataset, event_type="cue", trigger_code=11, frequency_hz=10.0,
-        )
+    plot_function = "plot_saved_roi_spectrum" if kind == "roi" else "plot_saved_scalp_map"
+    monkeypatch.setattr(saved_outputs, plot_function, fail_render)
+    with pytest.raises(OSError, match="synthetic render failure"):
+        if kind == "roi":
+            create_saved_roi_outputs(
+                dataset, event_type="cue", trigger_code=11, channels=("C3",), roi_name="C3",
+            )
+        else:
+            create_saved_scalp_outputs(
+                dataset, event_type="cue", trigger_code=11, frequency_hz=10.0,
+            )
     assert len(attempts) == 1
-    assert not attempts[0].parent.exists()
+    assert not attempts[0].exists()
+    assert set(output_folder.iterdir()) == {previous_png, old_folder}
     assert previous_png.read_bytes() == b"previous successful output"
+    assert previous_csv.read_bytes() == b"previous source export"
     assert source_csv.read_bytes() == original_source
 
 

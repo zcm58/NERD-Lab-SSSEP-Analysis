@@ -553,7 +553,7 @@ class SavedPlotsPanel(QWidget):
         self.plot_worker.start()
 
     def _plot_finished(self, result: dict[str, object]) -> None:
-        """Show the generated plot and source-data location."""
+        """Show the generated plot location."""
 
         self.plot_output_folder = str(result["output_folder"])
         if result.get("kind") == "scalp":
@@ -576,7 +576,7 @@ class SavedPlotsPanel(QWidget):
             self.status_label.setText(
                 f"Scalp map created at the nearest FFT bin: requested "
                 f"{requested:g} Hz, plotted {actual:g} Hz ({count_text}). "
-                "Electrode names and FFT amplitudes were saved in Excel beside the PNG."
+                "PNG saved in saved_fft_plots."
                 f"{omitted_text}"
             )
         else:
@@ -584,7 +584,7 @@ class SavedPlotsPanel(QWidget):
             channels = ", ".join(result["used_channels"])
             self.status_label.setText(
                 f"FFT plot created from {participant_count} participant(s) using "
-                f"{channels}. The exact plotted curve was saved beside the PNG."
+                f"{channels}. PNG saved in saved_fft_plots."
             )
 
     def _plot_failed(self, exc: Exception) -> None:

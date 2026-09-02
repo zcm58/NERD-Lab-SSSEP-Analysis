@@ -35,8 +35,7 @@ both conditions' fixed codes; match the duration and count to your recordings.
 
 Use one `.bdf` file per participant in an analysis batch. Each run saves one
 consolidated participant FFT CSV and one group FFT CSV, both readable in Excel.
-Scalp-map exports save a separate two-column Excel workbook: electrode and FFT
-amplitude, with column widths fitted automatically.
+Later plot exports save only PNG images directly in `saved_fft_plots`.
 `participant_fft_amplitudes.csv` is the reusable source for later plots.
 It keeps the pipeline version and settings needed to validate a later reload.
 **Generate FFT Plots** loads the selected results automatically. The TENS

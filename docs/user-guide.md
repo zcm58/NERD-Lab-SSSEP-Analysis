@@ -111,11 +111,11 @@ created by this workflow. If an older run reports missing provenance columns,
 process its original BDF files once with the current version before plotting.
 Older folders whose names begin with `run_` can still be loaded.
 
-Each action creates `<selected run>/saved_fft_plots/plot_...`. Click **View New
-Plot** to open the newest folder. Electrode/ROI plots include the PNG and CSV
-source values, including each participant's curve and contributing electrodes.
-Scalp maps include the PNG and an Excel workbook with only **Electrode** in
-column A and **FFT amplitude (µV)** in column B. Column widths fit automatically.
+Each action saves a PNG directly in `<selected run>/saved_fft_plots`. Click
+**View New Plot** to open that folder. Repeated filenames get ` (2)`, ` (3)`,
+and so on; earlier plots are preserved. No extra CSV/Excel files or per-plot
+subfolders are created. Keep the original participant and group FFT CSVs for
+future plotting. Older plot folders and exports remain untouched.
 If one selected ROI electrode is missing for a participant, the remaining
 selected electrodes are averaged; that participant is omitted only when none
 remain. The group curve gives each contributing participant equal weight.
@@ -124,7 +124,7 @@ Scalp maps use the nearest saved FFT bin and show the actual bin in the status
 message. Missing participant/electrode values are omitted, so the participant
 count can differ by electrode; the original `group_fft_amplitudes.csv` retains
 these counts. Labels with no montage coordinates are listed in the status
-message and left off the map, but their values remain in the workbook. No
+message and left off the map; their values remain in the original FFT CSVs. No
 missing value is replaced with zero.
 
 Hemisphere comparisons and statistics remain outside this package.

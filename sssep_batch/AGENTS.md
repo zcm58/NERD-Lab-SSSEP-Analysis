@@ -125,13 +125,13 @@ The package is organized around these boundaries:
   participant identity for within-participant ROI means and equal-participant
   group aggregation, plus the schema version, FPVS reference, montage, actual
   sampling rate, extracted epoch duration, crop durations, FFT analysis-window
-  duration, and plot-frequency range. ROI source exports retain each
-  participant's contributing electrodes and curve. Scalp maps keep variable
+  duration, and plot-frequency range. ROI calculations retain each participant's
+  contributing electrodes and curve in memory. Scalp maps keep variable
   electrode Ns visible, omit labels without montage coordinates, and never
-  replace missing channels with zero. Scalp-map Excel exports contain only
-  electrode names and numeric FFT amplitudes (µV), with fitted column widths.
-  Retain finite unmapped electrode values in the workbook and report omissions
-  in the GUI; canonical CSVs keep all provenance and participant counts.
+  replace missing channels with zero. Save later PNGs directly in `saved_fft_plots`:
+  no CSV/Excel copies or per-plot folders. Reserve unique filenames with numbered
+  suffixes and remove only the failed attempt's PNG. Preserve older outputs.
+  Canonical CSVs keep all values, provenance, and participant counts.
 - Save one participant and one group selected-electrode PNG per usable cue.
 
 ### `events/`

@@ -73,13 +73,12 @@ def test_saved_fft_view_loads_results_and_runs_plot_off_ui_thread(tmp_path):
                 assert kwargs["stimulation_hz"] == 10.0
                 started.set()
                 assert release.wait(10), "GUI did not release saved plot worker"
-                output_folder = run_folder / "saved_fft_plots" / "plot_test"
+                output_folder = run_folder / "saved_fft_plots"
                 output_folder.mkdir(parents=True)
                 return {
                     "kind": "roi",
                     "output_folder": str(output_folder),
                     "plot_path": str(output_folder / "plot.png"),
-                    "source_csv": str(output_folder / "plot_data.csv"),
                     "participant_count": 1,
                     "used_channels": ["C3", "C4"],
                 }
@@ -187,7 +186,7 @@ def test_saved_fft_view_loads_results_and_runs_plot_off_ui_thread(tmp_path):
                 assert panel.view_button.isEnabled()
                 assert "using C3, C4" in panel.status_label.text()
                 panel._view_plot()
-                assert opened == [str(run_folder / "saved_fft_plots" / "plot_test")]
+                assert opened == [str(run_folder / "saved_fft_plots")]
                 assert not messages
                 assert window.close(), "Stopped saved plot worker prevented close"
                 observed.add("closed")

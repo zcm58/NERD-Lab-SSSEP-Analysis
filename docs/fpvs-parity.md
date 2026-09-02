@@ -189,12 +189,11 @@ active epochs is reported as failed.
   maps are downstream displays: they do not alter preprocessing or FFT values.
   Later ROI group curves average electrodes within participant first. A scalp
   map uses the nearest saved FFT bin, reports that actual bin, and does not fill
-  missing electrodes with zero. ROI source data retain participant-specific
-  electrode membership. Each scalp map exports a two-column `.xlsx` workbook
-  containing electrode names and numeric FFT amplitudes in µV, with fitted
-  column widths. Per-electrode participant counts remain in the canonical
-  group CSV; the GUI reports labels omitted for missing montage coordinates.
-  Those labels' finite FFT values remain in the workbook.
+  missing electrodes with zero. Later plot exports save only PNGs directly in
+  `saved_fft_plots`, with numbered filenames for repeated plots. No per-plot
+  CSV/Excel copies or subfolders are created. The canonical FFT CSVs retain
+  all values, provenance, and per-electrode participant counts; the GUI reports
+  labels omitted for missing montage coordinates.
 - New summary fields use explicit `*_amplitude_uv` names. Amplitude ratios use
   `20 * log10(ratio)`. Missing active/baseline measurements remain unavailable.
 - Old power and Welch outputs are retired. Do not combine them with the new

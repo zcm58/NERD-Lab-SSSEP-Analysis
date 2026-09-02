@@ -134,9 +134,10 @@ authorized:
   Later ROIs average electrodes within participant before equal-participant
   group averaging. Scalp maps use finite available electrodes at the nearest
   saved FFT bin. Keep per-electrode participant counts in the canonical group
-  CSV. Each scalp-map `.xlsx` contains only electrode names and numeric FFT
-  amplitudes (µV), with automatically fitted columns; report unmapped electrodes
-  in the GUI without removing their finite values from the workbook.
+  CSV. Save later plots as PNGs directly in `saved_fft_plots`, without per-plot
+  CSV/Excel files or subfolders. Add numbered suffixes rather than overwriting;
+  on failure remove only the newly reserved PNG. Preserve earlier exports.
+  Report unmapped electrodes in the GUI; keep their values in the canonical CSVs.
 - Keep file-level parallelism in `batch.py`. Parallelism is across files, not
   inside a single file.
 - Keep native thread limits at `1` per worker to avoid oversubscription during
