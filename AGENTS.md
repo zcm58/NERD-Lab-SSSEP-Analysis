@@ -143,6 +143,9 @@ authorized:
 - Keep native thread limits at `1` per worker to avoid oversubscription during
   parallel batch runs.
 - Create one participant and one group selected-electrode plot per usable cue.
+- Name FFT PNGs `Condition_ROI_FFT_Amplitude.png` using the full trigger label
+  and ROI/electrode name, with underscores for spaces. Reserve unique numbered
+  paths; keep participant/group identity in titles and scalp-map names unchanged.
 - Default the TENS frequency to 26 Hz without overwriting saved preferences.
   FFT plots mark the selected frequency with a dashed vertical line labeled
   `TENS Unit Stimulation Frequency`; saved-plot marker overrides never change

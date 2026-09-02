@@ -8,7 +8,7 @@ import traceback
 from pathlib import Path
 
 from sssep_batch.analysis.metrics import add_baseline_comparison, extract_target_metrics
-from sssep_batch.analysis.plotting import plot_spectrum
+from sssep_batch.analysis.plotting import fft_plot_stem, plot_spectrum, reserve_plot_path
 from sssep_batch.analysis.protocol import default_analysis_protocol
 from sssep_batch.analysis.spectra import (
     compute_sssep_fft_from_averaged_epochs,
@@ -22,7 +22,7 @@ from sssep_batch.config import (
 from sssep_batch.events.epochs import extract_epochs_for_code
 from sssep_batch.events.status import find_status_events, parse_trigger_label
 from sssep_batch.loading import load_bdf
-from sssep_batch.logging_utils import ensure_folder, make_file_log_func
+from sssep_batch.logging_utils import make_file_log_func
 from sssep_batch.models import AnalysisProtocol, ParticipantSpectrum
 from sssep_batch.outputs import write_error_report, write_processing_report, write_summary_csv
 from sssep_batch.preprocess.bad_channels import detect_and_interpolate_bad_channels_by_kurtosis
@@ -269,13 +269,15 @@ def process_one_bdf(
                 )
             )
             if SAVE_PLOTS and plot_channel_available:
+                plot_path = None
                 try:
-                    ensure_folder(plots_dir)
-                    output_stem = f"{file_stem}_cue_{code:03d}_fft_amplitude"
+                    plot_path = reserve_plot_path(
+                        plots_dir, fft_plot_stem(label, plot_channel)
+                    )
                     plot_spectrum(
                         active=spectrum, baseline=baseline_fft,
                         title=f"{file_stem} - Trigger code {code} {label} - FFT amplitude",
-                        outpath=plots_dir / f"{output_stem}.png", target_hz=target_hz,
+                        outpath=plot_path, target_hz=target_hz,
                         channel_names=fft_channels, plot_channel=plot_channel,
                         active_label=f"Trigger code average ({n_epochs} epochs)",
                         baseline_label=(
@@ -289,6 +291,14 @@ def process_one_bdf(
                         f"WARNING: Participant plot skipped for trigger {code} "
                         f"({label}) after a plotting error: {message}"
                     )
+                    if plot_path is not None:
+                        try:
+                            plot_path.unlink(missing_ok=True)
+                        except OSError as cleanup_exc:
+                            log_func(
+                                f"WARNING: Could not remove incomplete participant plot "
+                                f"{plot_path}: {cleanup_exc}"
+                            )
                 else:
                     plotted += 1
 

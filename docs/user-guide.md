@@ -133,7 +133,11 @@ process its original BDF files once with the current version before plotting.
 Older folders whose names begin with `run_` can still be loaded.
 
 Each ROI and condition saves a separate FFT PNG directly in
-`<selected run>/saved_fft_plots`. With **All conditions**, three ROIs normally
+`<selected run>/saved_fft_plots`. FFT filenames use
+`Condition_ROI_FFT_Amplitude.png`, for example
+`BothHands_Left_Hand_Central_ROI_FFT_Amplitude.png`. Spaces become underscores;
+the full condition name distinguishes the two right-hand prompts. Group or
+participant identity remains in each plot's title. With **All conditions**, three ROIs normally
 create 12 FFT plots: one per ROI for trigger codes 11, 12, 21, and 22. Scalp maps
 use the whole scalp and still create only one map per trigger code, regardless
 of the ROI list. All conditions excludes baselines and conditions missing from
@@ -149,7 +153,8 @@ selected electrodes are averaged; that participant is omitted only when none
 remain. The group curve gives each contributing participant equal weight.
 
 Scalp maps use the nearest saved FFT bin and show the actual bin in the results
-box. Missing participant/electrode values are omitted, so the participant
+box. Their filenames keep the participant/group, trigger code, frequency, and
+`scalp_map` suffix. Missing participant/electrode values are omitted, so the participant
 count can differ by electrode; the original `group_fft_amplitudes.csv` retains
 these counts. Labels with no montage coordinates are listed in the results
 box and left off the map; their values remain in the original FFT CSVs. No

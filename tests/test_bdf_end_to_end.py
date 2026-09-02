@@ -236,7 +236,7 @@ def test_real_batch_workers_write_consolidated_group_outputs_and_keep_reruns_sep
     )
     for result in first["results"]:
         assert "_participant_spectra" not in result
-        plots = sorted(Path(result["output_folder"]).glob("plots/*_cue_*_fft_amplitude.png"))
+        plots = sorted(Path(result["output_folder"]).glob("plots/*_FFT_Amplitude.png"))
         assert len(plots) == len(known["active_counts"])
         for plot in plots:
             with Image.open(plot) as image:
@@ -254,7 +254,9 @@ def test_real_batch_workers_write_consolidated_group_outputs_and_keep_reruns_sep
     assert first["group_plot_count"] == len(known["active_counts"])
     assert first["group_plot_skipped_trigger_codes"] == []
     assert sorted(first["group_plot_files"]) == sorted(
-        str(group_plots_folder / f"group_cue_{code:03d}_fft_amplitude.png")
+        str(group_plots_folder / (
+            f"{config.TRIGGER_LABELS[code].replace(' ', '_')}_{config.PLOT_CHANNEL}_FFT_Amplitude.png"
+        ))
         for code in config.ACTIVE_EVENT_CODES
     )
 
@@ -332,7 +334,7 @@ def test_real_batch_workers_write_consolidated_group_outputs_and_keep_reruns_sep
     assert saved_scalp.actual_frequency_hz == 10.0
     assert saved_scalp.participant_counts == (2,) * len(saved_scalp.channel_names)
 
-    group_plots = sorted(group_plots_folder.glob("group_cue_*_fft_amplitude.png"))
+    group_plots = sorted(group_plots_folder.glob("*_FFT_Amplitude.png"))
     assert len(group_plots) == len(known["active_counts"])
     for plot in group_plots:
         with Image.open(plot) as image:

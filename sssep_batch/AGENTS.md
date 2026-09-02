@@ -146,6 +146,9 @@ The package is organized around these boundaries:
   suffixes and remove only the failed attempt's PNG. Preserve older outputs.
   Canonical CSVs keep all values, provenance, and participant counts.
 - Save one participant and one group selected-electrode PNG per usable cue.
+  FFT filenames use full condition label + ROI/electrode + `FFT_Amplitude`,
+  with underscores for spaces. Shared plot helpers reserve numbered PNG paths;
+  failed renders remove only their own reserved file. Scalp names stay unchanged.
 
 ### `events/`
 

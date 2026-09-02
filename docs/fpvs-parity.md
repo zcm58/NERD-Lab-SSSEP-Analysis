@@ -180,8 +180,10 @@ active epochs is reported as failed.
   plot instead uses a cue-matched baseline cohort and omits the baseline line
   if any cue contributor lacks matching selected-electrode data.
 - Each participant folder contains one selected-electrode amplitude PNG per
-  usable cue under `plots/`. `group_plots/` contains one
-  `group_cue_###_fft_amplitude.png` per usable cue. If the selected electrode
+  usable cue under `plots/`. `group_plots/` contains the group equivalents.
+  FFT PNGs use `Condition_ROI_FFT_Amplitude.png`, with the full condition label
+  and selected electrode as the ROI; spaces become underscores and repeated
+  names receive numbered suffixes. If the selected electrode
   is unavailable, only the affected plot is skipped; spectra and participant
   counts remain available.
 - **View > Generate FFT Plots** reloads `participant_fft_amplitudes.csv` after the

@@ -724,7 +724,9 @@ def run_batch(
                 logger.info(f"Group FFT table saved to: {group_fft_path}")
 
             if SAVE_PLOTS:
-                from sssep_batch.analysis.plotting import plot_spectrum
+                from sssep_batch.analysis.plotting import (
+                    fft_plot_stem, plot_spectrum, reserve_plot_path,
+                )
 
                 groups_by_event = {
                     (group.event_type, group.trigger_code): group for group in groups
@@ -819,10 +821,12 @@ def run_batch(
                         baseline_label = (
                             f"Gap/Break group mean (matched N={cue_count})"
                         )
-                    plot_path = group_plots_path / (
-                        f"group_cue_{trigger.code:03d}_fft_amplitude.png"
-                    )
+                    plot_path = None
                     try:
+                        plot_path = reserve_plot_path(
+                            group_plots_path,
+                            fft_plot_stem(trigger.label, selected_plot_channel),
+                        )
                         plot_spectrum(
                             active=cue_spectrum,
                             baseline=baseline_spectrum,
@@ -847,14 +851,15 @@ def run_batch(
                             f"{message}\n\n{traceback.format_exc()}"
                         )
                         logger.error(message)
-                        try:
-                            plot_path.unlink(missing_ok=True)
-                        except OSError as cleanup_exc:
-                            logger.error(
-                                "Could not remove incomplete group plot %s: %s",
-                                plot_path,
-                                cleanup_exc,
-                            )
+                        if plot_path is not None:
+                            try:
+                                plot_path.unlink(missing_ok=True)
+                            except OSError as cleanup_exc:
+                                logger.error(
+                                    "Could not remove incomplete group plot %s: %s",
+                                    plot_path,
+                                    cleanup_exc,
+                                )
                         continue
                     group_plot_files.append(str(plot_path))
 

@@ -561,7 +561,7 @@ def test_saved_roi_and_scalp_outputs_are_flat_pngs_and_preserve_previous_results
         first_images[plot_path] = plot_path.read_bytes()
         assert first_images[plot_path].startswith(b"\x89PNG\r\n\x1a\n")
     level = participant_id or "group"
-    assert Path(roi_result["plot_path"]).name == f"{level}_cue_011_Central ROI_fft_amplitude.png"
+    assert Path(roi_result["plot_path"]).name == "BothHands_Left_Hand_Central_ROI_FFT_Amplitude.png"
     assert Path(scalp_result["plot_path"]).name == f"{level}_cue_011_10_Hz_scalp_map.png"
     assert roi_result["participant_count"] == (2 if participant_id is None else 1)
     assert roi_result["used_channels"] == ["C3", "C4"]
@@ -587,6 +587,37 @@ def test_saved_roi_and_scalp_outputs_are_flat_pngs_and_preserve_previous_results
     assert all(path.is_file() and path.suffix == ".png" for path in new_entries)
     assert old_data.read_bytes() == b"previous source export"
     assert source_csv.read_bytes() == original_source
+
+
+def test_fft_filenames_distinguish_conditions_and_preserve_participant_exports(tmp_path):
+    records = tuple(
+        make_record(
+            participant, {"C3": [1, amplitude, 3]}, trigger_code=code,
+            trigger_label=label,
+        )
+        for participant, amplitude in (("P01", 2), ("P02", 6))
+        for code, label in ((12, "BothHands Right Hand"), (21, "HandAnkle Right Hand"))
+    )
+    run_folder, source = write_saved_dataset(tmp_path, records)
+    original_source = source.read_bytes()
+    dataset = load_saved_fft_dataset(run_folder)
+    images = {}
+    for index, participant in enumerate((None, "P01", "P02"), 1):
+        result = create_saved_roi_outputs(
+            dataset, event_type="cue", trigger_code=12, channels=("C3",),
+            roi_name="Central ROI", participant_id=participant,
+        )
+        path = Path(result["plot_path"])
+        suffix = "" if index == 1 else f" ({index})"
+        assert path.name == f"BothHands_Right_Hand_Central_ROI_FFT_Amplitude{suffix}.png"
+        images[path] = path.read_bytes()
+    other_condition = create_saved_roi_outputs(
+        dataset, event_type="cue", trigger_code=21, channels=("C3",),
+        roi_name="Central ROI",
+    )
+    assert Path(other_condition["plot_path"]).name == "HandAnkle_Right_Hand_Central_ROI_FFT_Amplitude.png"
+    assert all(path.read_bytes() == image for path, image in images.items())
+    assert source.read_bytes() == original_source
 
 
 def test_saved_roi_stimulation_override_changes_only_png_marker(tmp_path, monkeypatch):
@@ -731,7 +762,7 @@ def test_failed_plot_removes_only_its_reserved_png(tmp_path, monkeypatch, kind):
     old_folder.mkdir(parents=True)
     previous_csv = old_folder / "keep.csv"
     previous_csv.write_bytes(b"previous source export")
-    stem = "group_cue_011_C3_fft_amplitude" if kind == "roi" else "group_cue_011_10_Hz_scalp_map"
+    stem = "BothHands_Left_Hand_C3_FFT_Amplitude" if kind == "roi" else "group_cue_011_10_Hz_scalp_map"
     previous_png = output_folder / f"{stem}.png"
     previous_png.write_bytes(b"previous successful output")
     attempts = []

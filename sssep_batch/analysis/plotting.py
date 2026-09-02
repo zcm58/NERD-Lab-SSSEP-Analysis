@@ -16,6 +16,42 @@ from sssep_batch.config import FIXED_HZ_LINES, FMAX, FMIN
 from sssep_batch.models import Spectrum
 
 
+def safe_filename_stem(value: str) -> str:
+    """Return a Windows-safe, readable filename stem."""
+    invalid = '<>:"/\\|?*'
+    translated = "".join("_" if char in invalid or ord(char) < 32 else char for char in value)
+    stem = " ".join(translated.split()).strip(" .")
+    return stem or "saved_fft_plot"
+
+
+def fft_plot_stem(condition: str, roi_name: str) -> str:
+    """Name FFT plots by the complete condition and electrode or ROI."""
+    return "_".join(safe_filename_stem(
+        f"{condition.strip()}_{roi_name.strip()}_FFT_Amplitude"
+    ).split())
+
+
+def reserve_plot_path(folder: Path, stem: str) -> Path:
+    """Reserve one PNG without overwriting an earlier plot or another writer."""
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        index = 1
+        while True:
+            suffix = "" if index == 1 else f" ({index})"
+            path = folder / f"{safe_filename_stem(stem)}{suffix}.png"
+            try:
+                with path.open("xb"):
+                    pass
+                return path
+            except FileExistsError:
+                index += 1
+    except OSError as exc:
+        raise ValueError(
+            "Could not create a plot output file.\n\n"
+            f"Folder: {folder}\nSystem error: {exc}"
+        ) from exc
+
+
 def _channel_amplitude(
     spectrum: Spectrum,
     channel_names: list[str],

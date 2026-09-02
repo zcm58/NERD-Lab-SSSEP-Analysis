@@ -106,6 +106,9 @@ def test_pipeline_uses_fpvs_order_and_creates_one_plot_per_cue(monkeypatch, tmp_
     assert result["participant_plot_count"] == 4
     assert result["participant_plot_failures"] == 0
     assert plots[0]["plot_channel"] == "C4"
+    assert [plot["outpath"].name for plot in plots] == [
+        f"Condition_Site_{code}_C4_FFT_Amplitude.png" for code in (1, 2, 3, 4)
+    ]
     records = result["_participant_spectra"]
     assert len(records) == 5  # four cues plus one baseline stored once
     cue_records = [record for record in records if record.event_type == "cue"]
@@ -170,8 +173,9 @@ def test_plot_error_preserves_spectra_and_continues_later_cue_plots(
     attempted_codes = []
 
     def fail_first_plot(**kwargs):
-        code = int(Path(kwargs["outpath"]).stem.split("_cue_")[1].split("_")[0])
+        code = int(kwargs["title"].split("Trigger code ")[1].split()[0])
         attempted_codes.append(code)
+        Path(kwargs["outpath"]).write_bytes(f"trigger {code}".encode())
         if code == 1:
             raise OSError("synthetic PNG write failure")
 
@@ -188,6 +192,9 @@ def test_plot_error_preserves_spectra_and_continues_later_cue_plots(
     assert attempted_codes == [1, 2, 3, 4]
     assert result["participant_plot_count"] == 3
     assert result["participant_plot_failures"] == 1
+    assert sorted(path.name for path in (Path(result["output_folder"]) / "plots").iterdir()) == [
+        f"Condition_Site_{code}_C4_FFT_Amplitude.png" for code in (2, 3, 4)
+    ]
     records = result["_participant_spectra"]
     assert len(records) == 5
     assert [record.trigger_code for record in records if record.event_type == "cue"] == [
@@ -200,6 +207,40 @@ def test_plot_error_preserves_spectra_and_continues_later_cue_plots(
     assert "synthetic PNG write failure" in report
     assert "Created 3 participant amplitude plot(s)" in report
     assert "1 plot(s) failed" in report
+
+
+def test_duplicate_condition_names_preserve_plots_when_one_render_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(pipeline, "load_bdf", lambda *args: make_recording())
+    protocol = AnalysisProtocol(
+        active_triggers=tuple(AnalysisTrigger(code, "Same Condition", 10.0) for code in (1, 2, 3, 4)),
+        event_duration_sec=15.0,
+        expected_repetitions_per_trigger=1,
+        baseline_event_code=100,
+    )
+
+    def render(**kwargs):
+        code = int(kwargs["title"].split("Trigger code ")[1].split()[0])
+        path = kwargs["outpath"]
+        assert path.read_bytes() == b""
+        path.write_bytes(f"trigger {code}".encode())
+        if code == 2:
+            raise OSError("synthetic partial render")
+
+    monkeypatch.setattr(pipeline, "plot_spectrum", render)
+    result = pipeline.process_one_bdf(
+        "same_names.bdf", tmp_path, plot_channel="C4", analysis_protocol=protocol,
+    )
+
+    assert result["status"] == "success"
+    assert result["participant_plot_count"] == 3
+    assert result["participant_plot_failures"] == 1
+    plot_folder = Path(result["output_folder"]) / "plots"
+    assert {path.name: path.read_bytes() for path in plot_folder.iterdir()} == {
+        "Same_Condition_C4_FFT_Amplitude.png": b"trigger 1",
+        "Same_Condition_C4_FFT_Amplitude (2).png": b"trigger 3",
+        "Same_Condition_C4_FFT_Amplitude (3).png": b"trigger 4",
+    }
+    assert len(result["_participant_spectra"]) == 5
 
 
 def test_no_active_epochs_is_failed_with_stable_amplitude_schema(monkeypatch, tmp_path):

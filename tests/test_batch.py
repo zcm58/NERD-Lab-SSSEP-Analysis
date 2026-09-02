@@ -532,8 +532,50 @@ def test_group_plot_failure_does_not_stop_later_plots_or_hide_csv_success(
     assert Path(result["group_fft_csv"]).exists()
     assert Path(result["group_plots_folder"]).is_dir()
     assert Path(result["group_plot_files"][0]).name == (
-        "group_cue_012_fft_amplitude.png"
+        "BothHands_Right_Hand_Cz_FFT_Amplitude.png"
     )
+    assert list(Path(result["group_plots_folder"]).iterdir()) == [
+        Path(result["group_plot_files"][0])
+    ]
+
+
+def test_duplicate_group_condition_names_preserve_successes_after_partial_render(monkeypatch, tmp_path):
+    protocol = AnalysisProtocol(
+        active_triggers=tuple(AnalysisTrigger(code, "Same Condition", 10.0) for code in (11, 12, 21)),
+        event_duration_sec=15.0,
+        expected_repetitions_per_trigger=2,
+        baseline_event_code=100,
+    )
+    payloads = {
+        "P01.bdf": tuple(
+            _participant_record(
+                "P01", event_type="cue", trigger_code=code,
+                trigger_label="Same Condition", amplitude=float(code),
+            )
+            for code in (11, 12, 21)
+        )
+    }
+
+    def render(**kwargs):
+        code = int(kwargs["title"].split("Trigger code ")[1].split()[0])
+        path = kwargs["outpath"]
+        assert path.read_bytes() == b""
+        path.write_bytes(f"trigger {code}".encode())
+        if code == 12:
+            raise OSError("synthetic partial render")
+
+    result = _run_fake_spectrum_batch(monkeypatch, tmp_path, payloads, protocol, render)
+
+    assert result["status"] == "completed_with_failures"
+    assert result["group_plot_count"] == 2
+    assert result["group_plot_skipped_trigger_codes"] == [12]
+    plot_folder = Path(result["group_plots_folder"])
+    assert {path.name: path.read_bytes() for path in plot_folder.iterdir()} == {
+        "Same_Condition_Cz_FFT_Amplitude.png": b"trigger 11",
+        "Same_Condition_Cz_FFT_Amplitude (2).png": b"trigger 21",
+    }
+    assert Path(result["participant_fft_csv"]).exists()
+    assert Path(result["group_fft_csv"]).exists()
 
 
 def test_group_plot_baseline_uses_only_complete_matched_cue_participants(

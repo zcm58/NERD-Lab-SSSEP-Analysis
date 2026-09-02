@@ -37,7 +37,7 @@ PySide6 also presents the fullscreen participant task.
 | Writing later FFT and scalp-map PNGs | [analysis/saved_outputs.py](sssep_batch/analysis/saved_outputs.py) |
 | Event codes and durations passed into analysis | [analysis/protocol.py](sssep_batch/analysis/protocol.py) |
 | Existing summary values | [analysis/metrics.py](sssep_batch/analysis/metrics.py) |
-| Participant/group electrode or ROI graphs and scalp maps | [analysis/plotting.py](sssep_batch/analysis/plotting.py) |
+| FFT/scalp graphs, shared FFT filenames, and exclusive PNG path reservation | [analysis/plotting.py](sssep_batch/analysis/plotting.py) |
 | Analysis summary CSVs, reports, or error files | [outputs.py](sssep_batch/outputs.py) |
 
 [models.py](sssep_batch/models.py) contains analysis data containers.
@@ -88,6 +88,13 @@ suffixes for repeats; on failure remove only that attempt's PNG, never the
 shared folder or earlier outputs. The canonical FFT CSVs retain all amplitudes,
 provenance, and participant counts. Omission warnings remain in the GUI.
 Hemisphere comparisons and statistics remain external.
+
+All FFT spectrum PNGs use `Condition_ROI_FFT_Amplitude.png`. Use the full recorded
+trigger label and ROI name (selected electrode for processing plots); replace
+spaces with underscores and sanitize Windows-invalid characters. Shared helpers
+in `analysis/plotting.py` format names and exclusively reserve numbered paths.
+Keep participant/group identity in titles and existing processing folders.
+Scalp-map names retain their frequency, and old exports are not renamed.
 
 ## Keep these behaviors
 

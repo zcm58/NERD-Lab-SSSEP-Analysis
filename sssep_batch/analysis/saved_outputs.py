@@ -6,8 +6,11 @@ from pathlib import Path
 from typing import Iterable
 
 from sssep_batch.analysis.plotting import (
+    fft_plot_stem,
     plot_saved_roi_spectrum,
     plot_saved_scalp_map,
+    reserve_plot_path,
+    safe_filename_stem,
 )
 from sssep_batch.analysis.saved_fft import (
     SavedFftDataset,
@@ -19,35 +22,10 @@ from sssep_batch.analysis.saved_fft import (
 SAVED_PLOTS_FOLDERNAME = "saved_fft_plots"
 
 
-def safe_filename_stem(value: str) -> str:
-    """Return a Windows-safe, readable filename stem."""
-
-    invalid = '<>:"/\\|?*'
-    translated = "".join("_" if char in invalid or ord(char) < 32 else char for char in value)
-    stem = " ".join(translated.split()).strip(" .")
-    return stem or "saved_fft_plot"
-
-
 def create_saved_plot_path(dataset: SavedFftDataset, stem: str) -> Path:
     """Reserve a unique PNG directly in saved_fft_plots without overwriting files."""
     folder = dataset.source_csv.parent / SAVED_PLOTS_FOLDERNAME
-    try:
-        folder.mkdir(parents=True, exist_ok=True)
-        index = 1
-        while True:
-            suffix = "" if index == 1 else f" ({index})"
-            path = folder / f"{safe_filename_stem(stem)}{suffix}.png"
-            try:
-                with path.open("xb"):
-                    pass
-                return path
-            except FileExistsError:
-                index += 1
-    except OSError as exc:
-        raise ValueError(
-            "Could not create a saved plot beside the FFT data.\n\n"
-            f"Folder: {folder}\nSystem error: {exc}"
-        ) from exc
+    return reserve_plot_path(folder, stem)
 
 
 def create_saved_roi_outputs(
@@ -72,10 +50,7 @@ def create_saved_roi_outputs(
         channels=channels,
         participant_id=participant_id,
     )
-    level = participant_id or "group"
-    stem = safe_filename_stem(
-        f"{level}_{event_type}_{trigger_code:03d}_{name}_fft_amplitude"
-    )
+    stem = fft_plot_stem(spectrum.event.trigger_label, name)
     plot_path = create_saved_plot_path(dataset, stem)
     try:
         plot_saved_roi_spectrum(spectrum, name, plot_path, stimulation_hz=stimulation_hz)
