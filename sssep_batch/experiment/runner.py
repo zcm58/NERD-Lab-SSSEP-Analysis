@@ -19,7 +19,6 @@ from PySide6.QtGui import QSurfaceFormat
 from PySide6.QtOpenGL import QOpenGLWindow
 
 from .models import (
-    CUE_PROMPTS,
     CueEpoch,
     CuePresentationRecord,
     TaskRunResult,
@@ -72,7 +71,9 @@ class PresentationSurface(Protocol):
 
     def show_ready(self, text: str, on_visible: FrameCallback) -> None: ...
 
-    def present(self, text: str, on_visible: FrameCallback) -> None: ...
+    def present(
+        self, text: str, on_visible: FrameCallback, *, duration_sec: float | None = None
+    ) -> None: ...
 
     def schedule(self, delay_seconds: float, callback: FrameCallback) -> None: ...
 
@@ -133,6 +134,9 @@ class _QtCueWindow(QOpenGLWindow):
         self._allow_close = False
         self._error_reported = False
         self._scheduled_callback: FrameCallback | None = None
+        self._phase_duration_sec: float | None = None
+        self._countdown_deadline: float | None = None
+        self._countdown_seconds: int | None = None
 
         surface_format = self.format()
         surface_format.setSwapBehavior(QSurfaceFormat.SwapBehavior.DoubleBuffer)
@@ -152,6 +156,10 @@ class _QtCueWindow(QOpenGLWindow):
         self._epoch_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._epoch_timer.timeout.connect(self._scheduled_time_reached)
 
+        self._countdown_timer = QTimer(self)
+        self._countdown_timer.setInterval(100)
+        self._countdown_timer.timeout.connect(self._refresh_countdown)
+
     def show_ready(self, text: str, on_visible: FrameCallback) -> None:
         screen = QGuiApplication.primaryScreen()
         if screen is None:
@@ -161,7 +169,13 @@ class _QtCueWindow(QOpenGLWindow):
         self.showFullScreen()
         self.requestActivate()
 
-    def present(self, text: str, on_visible: FrameCallback) -> None:
+    def present(
+        self, text: str, on_visible: FrameCallback, *, duration_sec: float | None = None
+    ) -> None:
+        self._countdown_timer.stop()
+        self._phase_duration_sec = duration_sec
+        self._countdown_deadline = None
+        self._countdown_seconds = None if duration_sec is None else ceil(duration_sec)
         self._request_frame(text, on_visible)
 
     def schedule(self, delay_seconds: float, callback: FrameCallback) -> None:
@@ -173,6 +187,7 @@ class _QtCueWindow(QOpenGLWindow):
     def cancel_scheduled(self) -> None:
         self._epoch_timer.stop()
         self._scheduled_callback = None
+        self._countdown_timer.stop()
 
     def finish(self) -> None:
         self.cancel_scheduled()
@@ -197,14 +212,29 @@ class _QtCueWindow(QOpenGLWindow):
                 margin = max(40, int(self.width() * 0.08))
                 text_rect = QRect(
                     margin,
-                    0,
+                    int(self.height() * 0.15),
                     max(1, self.width() - (2 * margin)),
-                    self.height(),
+                    int(self.height() * 0.7),
                 )
                 painter.drawText(
                     text_rect,
                     int(Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap),
                     self._text,
+                )
+            if self._countdown_seconds is not None:
+                font = QFont("Arial")
+                font.setPixelSize(max(24, int(self.height() * 0.045)))
+                painter.setFont(font)
+                painter.setPen(QColor("white"))
+                painter.drawText(
+                    QRect(
+                        0,
+                        int(self.height() * 0.03),
+                        self.width(),
+                        int(self.height() * 0.09),
+                    ),
+                    int(Qt.AlignmentFlag.AlignCenter),
+                    f"{self._countdown_seconds} s",
                 )
         finally:
             painter.end()
@@ -238,8 +268,29 @@ class _QtCueWindow(QOpenGLWindow):
         callback = self._frame_gate.take_swapped_callback()
         if callback is None:
             return
+        onset = perf_counter()
         self._frame_watchdog.stop()
         self._run_callback(callback)
+        # Start after the callback so the cue marker remains its first action.
+        # Incidental countdown swaps have no callback and never send markers.
+        if (
+            self._phase_duration_sec is not None
+            and not self._allow_close
+            and not self._error_reported
+        ):
+            self._countdown_deadline = onset + self._phase_duration_sec
+            self._countdown_timer.start()
+            self._refresh_countdown()
+
+    def _refresh_countdown(self) -> None:
+        if self._countdown_deadline is None:
+            return
+        remaining = max(0, ceil(self._countdown_deadline - perf_counter()))
+        if remaining != self._countdown_seconds:
+            self._countdown_seconds = remaining
+            self.update()
+        if remaining == 0:
+            self._countdown_timer.stop()
 
     def _frame_timed_out(self) -> None:
         self._frame_gate.cancel()
@@ -353,7 +404,7 @@ class QtTaskRunner(QObject):
         if self._task_zero is None:
             reason = "Application shutdown requested before the task started."
         else:
-            reason = "Application shutdown requested during a cue epoch."
+            reason = "Application shutdown requested during the task."
         self._abort(reason)
 
     def _make_trigger_backend(self, settings: TaskSettings) -> TriggerBackend:
@@ -382,15 +433,16 @@ class QtTaskRunner(QObject):
         if self._task_zero is None:
             reason = "Escape pressed before the task started."
         else:
-            reason = "Escape pressed during a cue epoch."
+            reason = "Escape pressed during the task."
         self._abort(reason)
 
     def _request_next_cue(self) -> None:
         surface = self._require_surface()
         epoch = self._schedule[self._next_epoch_index]
         surface.present(
-            CUE_PROMPTS[epoch.cue],
+            epoch.prompt,
             lambda: self._cue_frame_swapped(epoch),
+            duration_sec=self._require_settings().epoch_duration_sec,
         )
 
     def _cue_frame_swapped(self, epoch: CueEpoch) -> None:
@@ -411,14 +463,6 @@ class QtTaskRunner(QObject):
         except SerialTriggerError as exc:
             trigger_error = exc
 
-        completed_previous = bool(self._records)
-        if completed_previous:
-            self._close_last_record(
-                self._records,
-                offset_time_sec=onset_time_sec,
-                completed=True,
-            )
-
         self._records.append(
             CuePresentationRecord(
                 epoch_index=epoch.epoch_index,
@@ -433,8 +477,6 @@ class QtTaskRunner(QObject):
             )
         )
         self._next_epoch_index += 1
-        if completed_previous:
-            self.progress_changed.emit(epoch.epoch_index, settings.total_epochs)
 
         if trigger_error is not None:
             self._abort(
@@ -450,9 +492,29 @@ class QtTaskRunner(QObject):
 
     def _cue_duration_reached(self) -> None:
         if self._next_epoch_index < len(self._schedule):
-            self._request_next_cue()
+            settings = self._require_settings()
+            self._require_surface().present(
+                settings.break_prompt,
+                self._break_frame_swapped,
+                duration_sec=settings.break_duration_sec,
+            )
             return
         self._require_surface().present("", self._terminal_frame_swapped)
+
+    def _break_frame_swapped(self) -> None:
+        settings = self._require_settings()
+        onset_time_sec = self._elapsed_seconds()
+        self._close_last_record(
+            self._records,
+            offset_time_sec=onset_time_sec,
+            completed=True,
+        )
+        self.progress_changed.emit(self._next_epoch_index, settings.total_epochs)
+        elapsed_since_onset = self._elapsed_seconds() - onset_time_sec
+        self._require_surface().schedule(
+            max(0.0, settings.break_duration_sec - elapsed_since_onset),
+            self._request_next_cue,
+        )
 
     def _terminal_frame_swapped(self) -> None:
         settings = self._require_settings()
@@ -651,6 +713,8 @@ def write_task_event_log(result: TaskRunResult, output_folder: Path) -> Path:
         "trigger_error",
         "run_aborted",
         "abort_reason",
+        "break_duration_sec",
+        "break_prompt",
     ]
     with output_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -688,6 +752,8 @@ def write_task_event_log(result: TaskRunResult, output_folder: Path) -> Path:
                     "trigger_error": "" if event is None else event.trigger_error,
                     "run_aborted": result.aborted,
                     "abort_reason": result.abort_reason,
+                    "break_duration_sec": result.settings.break_duration_sec,
+                    "break_prompt": result.settings.break_prompt,
                 }
             )
     return output_path

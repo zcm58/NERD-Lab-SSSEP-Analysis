@@ -133,8 +133,9 @@ The package is organized around these boundaries:
   runs. Confirmed test mode uses the simulated backend and must be logged.
 - Keep cue emission as the first external action in the matching
   `QOpenGLWindow.frameSwapped` callback for each newly drawn cue.
-- Align a Qt `PreciseTimer` deadline to each accepted cue swap, alternate cues,
-  and use the next onset or terminal black swap as the prior cue offset.
+- Freshly shuffle balanced cues and insert breaks between them. Align a Qt
+  `PreciseTimer` deadline and countdown to each accepted cue/break swap; close
+  cues on the following break swap or final black swap. Breaks send no markers.
 - BioSemi events are one raw byte, codes `1..255`, over fixed `COM3` at 115200
   baud by default.
 - Never continue silently after a serial or trigger failure. Preserve partial

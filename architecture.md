@@ -16,8 +16,8 @@ PySide6 also presents the fullscreen participant task.
 | Saved-results tab, its controls, or its background workers | [saved_plots_gui.py](sssep_batch/saved_plots_gui.py) |
 | Analysis defaults and advanced processing settings | [config.py](sssep_batch/config.py) |
 | Task settings and event records | [experiment/models.py](sssep_batch/experiment/models.py) |
-| Balanced alternating cue order | [experiment/schedule.py](sssep_batch/experiment/schedule.py) |
-| Fullscreen prompts, cue timing, or task CSV log | [experiment/runner.py](sssep_batch/experiment/runner.py) |
+| Balanced randomized cue order | [experiment/schedule.py](sssep_batch/experiment/schedule.py) |
+| Fullscreen prompts, breaks, countdowns, or task CSV log | [experiment/runner.py](sssep_batch/experiment/runner.py) |
 | Fixed COM3 connection or one-byte BioSemi markers | [experiment/triggers.py](sssep_batch/experiment/triggers.py) |
 | Finding BDF files, workers, or analysis run folders | [batch.py](sssep_batch/batch.py) |
 | The processing order for one BDF recording | [pipeline.py](sssep_batch/pipeline.py) |
@@ -50,8 +50,9 @@ ready screen and task CSV; it never opens COM3 or sends markers. After
 Space starts the task, a main-thread `QOpenGLWindow` draws each cue. Its
 matching `frameSwapped` callback immediately requests the cue's unique `1..255`
 marker through the selected backend after Qt completes that frame's buffer
-swap. A Qt `PreciseTimer` requests the next cue at the configured software deadline.
-Escape aborts. TENS control stays outside this program. See
+swap. A Qt `PreciseTimer` advances between cue and break screens at their
+configured deadlines; each shows a top-center countdown. Breaks and countdown
+redraws send no markers. Escape aborts. TENS control stays outside this program. See
 [task-protocol.md](docs/task-protocol.md) for the runtime contract.
 
 Recording analysis:
@@ -90,8 +91,10 @@ with zero. Hemisphere comparisons and statistics remain external.
   require explicit confirmation and must be recorded in the task CSV.
 - Request each cue's marker immediately from the callback for its matching Qt
   buffer swap.
-- Require an even epoch count and alternate the two cues from a randomized
-  starting cue.
+- Require an even epoch count and freshly shuffle equal numbers of both cues;
+  repeats are allowed. Insert a configurable break between cue epochs only.
+- Keep cue/break text editable without changing cue identities or marker codes.
+  Short breaks are not marked as code `100` baselines.
 - Pass the visible condition, duration, epoch count, and that condition's fixed
   cue codes into each analysis batch; do not fall back to unrelated settings.
 - Preserve the validated FPVS analysis method unless a change is authorized.

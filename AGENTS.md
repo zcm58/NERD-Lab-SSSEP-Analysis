@@ -30,11 +30,13 @@ amplitude scalp maps. Hemisphere comparisons and statistical analysis stay
 outside this package; existing ROI mean compatibility fields remain in exported
 CSVs/summaries.
 
-The participant runtime alternates its two balanced cues from a randomized
-starting cue, uses fixed codes `11`/`12` for both hands and `21`/`22` for hand
-and ankle, and presents back-to-back configurable-duration epochs. Keep all four
-code controls disabled in the GUI. Record any future timing, code, frequency,
-or counterbalancing change in `docs/task-protocol.md` before implementation.
+The participant runtime freshly shuffles equal numbers of its two cues for each
+run; repeats are allowed. Configurable breaks (10 seconds by default) separate
+cue epochs. Cue/break text is editable and each timed screen has a countdown.
+Breaks send no markers. Keep fixed codes `11`/`12` for both hands and `21`/`22`
+for hand and ankle, with all four code controls disabled in the GUI. Record any
+future timing, code, frequency, or counterbalancing change in
+`docs/task-protocol.md` before implementation.
 
 ## Repo Layout
 

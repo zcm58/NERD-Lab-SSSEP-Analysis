@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from collections.abc import Callable
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -18,6 +19,7 @@ from sssep_batch.experiment.runner import (
     TEST_MODE_READY_PROMPT,
     QtTaskRunner,
     _FrameCallbackGate,
+    _QtCueWindow,
 )
 from sssep_batch.experiment.triggers import SerialTriggerError
 
@@ -49,14 +51,19 @@ class _FakeSurface:
         self._visible_text: str | None = None
         self._scheduled_callback: Callable[[], None] | None = None
         self.scheduled_delay: float | None = None
+        self.presented_durations: list[float | None] = []
         self.finished = False
 
     def show_ready(self, text: str, on_visible: Callable[[], None]) -> None:
         self.events.append(("show_ready", text))
         self._queue_frame(text, on_visible)
 
-    def present(self, text: str, on_visible: Callable[[], None]) -> None:
+    def present(
+        self, text: str, on_visible: Callable[[], None], *,
+        duration_sec: float | None = None,
+    ) -> None:
         self.events.append(("present", text))
+        self.presented_durations.append(duration_sec)
         self._queue_frame(text, on_visible)
 
     def schedule(self, delay_seconds: float, callback: Callable[[], None]) -> None:
@@ -293,6 +300,16 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
 
     clock.advance(0.2)
     surface.fire_scheduled()
+    assert events[-1] == ("present", "Now let's take a short break.")
+    assert progress == [(0, 2)]
+    clock.advance(0.01)  # Cue remains visible until the break frame swaps.
+    surface.swap()
+    assert progress == [(0, 2), (1, 2)]
+    assert surface.scheduled_delay == pytest.approx(10.0)
+    assert sum(name == "send_prevalidated" for name, _ in events) == 1
+
+    clock.advance(10.0)
+    surface.fire_scheduled()
     surface.swap()
     assert surface.scheduled_delay == pytest.approx(0.2)
 
@@ -317,17 +334,20 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
     ]
     assert all(event.trigger_succeeded for event in result.events)
     assert [event.observed_duration_sec for event in result.events] == pytest.approx(
-        [0.2, 0.2]
+        [0.21, 0.2]
     )
+    assert result.events[1].cue_onset_time_sec == pytest.approx(10.31)
+    assert result.schedule[1].scheduled_onset_sec == pytest.approx(10.2)
     assert all(event.completed for event in result.events)
     assert progress == [(0, 2), (1, 2), (2, 2)]
 
     cue_prompts = {CUE_PROMPTS[epoch.cue] for epoch in result.schedule}
     assert {
         value for name, value in events if name == "present" and value
-    } == cue_prompts
+    } == cue_prompts | {"Now let's take a short break."}
     assert sum(name == "send_prevalidated" for name, _ in events) == 2
-    assert sum(name == "swap" for name, _ in events) == 4
+    assert sum(name == "swap" for name, _ in events) == 5
+    assert surface.presented_durations == [0.2, 10.0, 0.2, None]
     for send_index, (name, code) in enumerate(events):
         if name != "send_prevalidated":
             continue
@@ -349,6 +369,8 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
     assert {row["total_epochs"] for row in rows} == {"2"}
     assert {row["test_mode"] for row in rows} == {"False"}
     assert {row["serial_port"] for row in rows} == {"COM3"}
+    assert {row["break_duration_sec"] for row in rows} == {"10.0"}
+    assert {row["break_prompt"] for row in rows} == {"Now let's take a short break."}
 
 
 def test_runner_test_mode_skips_com3_and_marks_the_ready_screen(
@@ -403,6 +425,138 @@ def test_runner_test_mode_skips_com3_and_marks_the_ready_screen(
     with results[0].log_path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     assert {row["test_mode"] for row in rows} == {"True"}
+
+
+@pytest.mark.parametrize("condition", list(TaskCondition))
+def test_custom_prompts_and_breaks_preserve_every_cue_marker(tmp_path, condition):
+    settings = replace(
+        _settings(tmp_path),
+        condition=condition,
+        total_epochs=6,
+        break_duration_sec=0.7,
+        left_hand_prompt="Attend to your left hand",
+        right_hand_prompt="Attend to your right hand",
+        right_ankle_prompt="Attend to your right ankle",
+        break_prompt="Rest now, please.",
+    )
+    _, factory, clock, events, results, failures, progress, _ = _start_runner(settings)
+    surface = factory.surface
+    surface.swap()
+    surface.press_space()
+    surface.swap()
+    for index in range(settings.total_epochs):
+        clock.advance(settings.epoch_duration_sec)
+        surface.fire_scheduled()
+        surface.swap()
+        if index < settings.total_epochs - 1:
+            assert surface.scheduled_delay == pytest.approx(0.7)
+            assert progress[-1] == (index + 1, settings.total_epochs)
+            clock.advance(settings.break_duration_sec)
+            surface.fire_scheduled()
+            surface.swap()
+
+    assert failures == []
+    result = results[0]
+    assert result.completed_epochs == 6
+    expected_prompts = []
+    for index, epoch in enumerate(result.schedule):
+        if index:
+            expected_prompts.append(settings.break_prompt)
+        expected_prompts.append(settings.prompt_for(epoch.cue))
+    expected_prompts.append("")
+    assert [text for name, text in events if name == "present"] == expected_prompts
+    assert any(a.cue == b.cue for a, b in zip(result.schedule, result.schedule[1:]))
+    assert [code for name, code in events if name == "send_prevalidated"] == [
+        settings.trigger_codes.code_for(condition, epoch.cue) for epoch in result.schedule
+    ]
+    assert all(event.completed for event in result.events)
+    assert [event.observed_duration_sec for event in result.events] == pytest.approx([0.2] * 6)
+    with result.log_path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert [row["prompt"] for row in rows] == [epoch.prompt for epoch in result.schedule]
+    assert {row["break_prompt"] for row in rows} == {"Rest now, please."}
+    assert {row["break_duration_sec"] for row in rows} == {"0.7"}
+
+
+@pytest.mark.parametrize("stop_method", ["press_escape", "request_stop"])
+def test_aborting_break_preserves_completed_cue_and_sends_no_later_marker(
+    tmp_path, stop_method,
+):
+    runner, factory, clock, events, results, failures, progress, _ = _start_runner(
+        _settings(tmp_path)
+    )
+    surface = factory.surface
+    surface.swap()
+    surface.press_space()
+    surface.swap()
+    clock.advance(0.2)
+    surface.fire_scheduled()
+    surface.swap()
+    clock.advance(3.0)
+    getattr(surface if stop_method == "press_escape" else runner, stop_method)()
+
+    assert failures == []
+    assert surface.finished
+    assert surface.scheduled_delay is None
+    assert progress == [(0, 2), (1, 2)]
+    result = results[0]
+    assert result.aborted
+    assert result.completed_epochs == 1
+    assert len(result.events) == 1
+    assert result.events[0].observed_duration_sec == pytest.approx(0.2)
+    assert sum(name == "send_prevalidated" for name, _ in events) == 1
+    with result.log_path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert [row["completed"] for row in rows] == ["True", "False"]
+    assert rows[1]["cue_onset_time_sec"] == ""
+
+
+def test_countdown_uses_swap_deadline_and_redraws_do_not_repeat_trigger(monkeypatch):
+    clock = _FakeMonotonic()
+    monkeypatch.setattr("sssep_batch.experiment.runner.perf_counter", clock)
+    events = []
+    gate = _FrameCallbackGate()
+    surface = SimpleNamespace(
+        _frame_gate=gate,
+        _frame_watchdog=SimpleNamespace(stop=lambda: events.append("watchdog_stop")),
+        _countdown_timer=SimpleNamespace(
+            start=lambda: events.append("countdown_start"),
+            stop=lambda: events.append("countdown_stop"),
+        ),
+        _phase_duration_sec=15.0,
+        _countdown_deadline=None,
+        _countdown_seconds=15,
+        _allow_close=False,
+        _error_reported=False,
+        _run_callback=lambda callback: callback(),
+        update=lambda: events.append("redraw"),
+    )
+    surface._refresh_countdown = lambda: _QtCueWindow._refresh_countdown(surface)
+
+    def send_trigger():
+        events.append("trigger")
+        clock.advance(0.3)  # Slow serial request must not extend the countdown.
+
+    generation = gate.request(send_trigger)
+    _QtCueWindow._frame_swapped(surface)
+    assert events == []  # No matching paint yet.
+    gate.mark_painted(generation)
+    _QtCueWindow._frame_swapped(surface)
+    assert events.index("trigger") < events.index("countdown_start")
+    assert surface._countdown_deadline == 115.0
+    assert surface._countdown_seconds == 15
+
+    clock.advance(1.0)
+    surface._refresh_countdown()
+    assert surface._countdown_seconds == 14
+    _QtCueWindow._frame_swapped(surface)  # Countdown repaint's swap.
+    assert surface._countdown_deadline == 115.0
+    clock.advance(20.0)  # Late timer delivery clamps at zero instead of drifting.
+    surface._refresh_countdown()
+    assert surface._countdown_seconds == 0
+    assert events[-1] == "countdown_stop"
+    assert events.count("trigger") == 1
+    assert events.count("countdown_start") == 1
 
 
 def test_epoch_timer_compensates_for_trigger_callback_time(tmp_path) -> None:
@@ -535,7 +689,7 @@ def test_application_shutdown_during_cue_closes_it_and_suppresses_later_triggers
     assert len(results) == 1
     result = results[0]
     assert result.aborted is True
-    assert result.abort_reason == "Application shutdown requested during a cue epoch."
+    assert result.abort_reason == "Application shutdown requested during the task."
     assert len(result.events) == 1
     assert result.events[0].completed is False
     assert result.events[0].cue_offset_time_sec == pytest.approx(0.15)

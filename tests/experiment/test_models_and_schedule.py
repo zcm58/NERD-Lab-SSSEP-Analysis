@@ -6,6 +6,7 @@ import pytest
 
 from sssep_batch.config import BASELINE_EVENT_CODE, FMAX, FMIN
 from sssep_batch.experiment.models import (
+    CUE_PROMPTS,
     CueTarget,
     CueTriggerCodes,
     TaskCondition,
@@ -36,15 +37,48 @@ def test_task_settings_require_a_positive_even_epoch_count(total_epochs: object)
         )
 
 
-@pytest.mark.parametrize("duration", [0, -1.0, float("inf"), float("nan"), True])
-def test_task_settings_require_a_positive_finite_epoch_duration(duration: object) -> None:
-    with pytest.raises(ValueError, match="finite number"):
+@pytest.mark.parametrize("field", ["epoch_duration_sec", "break_duration_sec"])
+@pytest.mark.parametrize("duration", [0, -1.0, float("inf"), float("nan"), True, "1"])
+def test_task_settings_require_positive_finite_durations(
+    field: str, duration: object
+) -> None:
+    durations = {"epoch_duration_sec": 1.0, "break_duration_sec": 10.0}
+    durations[field] = duration
+    with pytest.raises(ValueError, match=f"{field} must be a finite number"):
         TaskSettings(
             condition=TaskCondition.BOTH_HANDS,
-            epoch_duration_sec=duration,  # type: ignore[arg-type]
             total_epochs=2,
             trigger_codes=_codes(),
+            **durations,
         )
+
+
+@pytest.mark.parametrize(
+    "field", ["left_hand_prompt", "right_hand_prompt", "right_ankle_prompt", "break_prompt"]
+)
+@pytest.mark.parametrize("prompt", ["", " \n\t ", None, 123])
+def test_task_settings_reject_blank_or_nontext_prompts(field: str, prompt: object) -> None:
+    with pytest.raises(ValueError, match=f"{field} must contain nonblank text"):
+        TaskSettings(
+            condition=TaskCondition.BOTH_HANDS,
+            epoch_duration_sec=1.0,
+            total_epochs=2,
+            trigger_codes=_codes(),
+            **{field: prompt},
+        )
+
+
+def test_task_defaults_use_ten_second_breaks_and_existing_cue_text() -> None:
+    settings = TaskSettings(
+        condition=TaskCondition.BOTH_HANDS,
+        epoch_duration_sec=15.0,
+        total_epochs=10,
+        trigger_codes=_codes(),
+    )
+
+    assert settings.break_duration_sec == 10.0
+    assert settings.break_prompt == "Now let's take a short break."
+    assert {cue: settings.prompt_for(cue) for cue in CueTarget} == CUE_PROMPTS
 
 
 def test_task_serial_port_is_fixed_to_com3() -> None:
@@ -131,6 +165,7 @@ def test_schedule_is_balanced_and_uses_only_the_selected_condition(
         total_epochs=10,
         trigger_codes=_codes(),
         random_seed=314,
+        break_duration_sec=0.75,
     )
 
     schedule = build_cue_schedule(settings)
@@ -141,12 +176,36 @@ def test_schedule_is_balanced_and_uses_only_the_selected_condition(
     assert {epoch.trigger_code for epoch in schedule} == expected_codes
     assert [epoch.epoch_index for epoch in schedule] == list(range(10))
     assert [epoch.scheduled_onset_sec for epoch in schedule] == [
-        index * 1.5 for index in range(10)
+        index * 2.25 for index in range(10)
     ]
-    assert all(
-        first.cue != second.cue
-        for first, second in zip(schedule, schedule[1:], strict=False)
+
+
+@pytest.mark.parametrize("condition", list(TaskCondition))
+def test_schedule_uses_custom_text_without_changing_cue_codes(
+    condition: TaskCondition,
+) -> None:
+    settings = TaskSettings(
+        condition=condition,
+        epoch_duration_sec=1.0,
+        total_epochs=2,
+        trigger_codes=_codes(),
+        left_hand_prompt="  Focus on your left hand  ",
+        right_hand_prompt="  Focus on your right hand  ",
+        right_ankle_prompt="  Focus on your ankle  ",
+        break_prompt="  Rest until the next cue.  ",
     )
+
+    schedule = build_cue_schedule(settings)
+    expected_prompts = {
+        CueTarget.LEFT_HAND: "Focus on your left hand",
+        CueTarget.RIGHT_HAND: "Focus on your right hand",
+        CueTarget.RIGHT_ANKLE: "Focus on your ankle",
+    }
+
+    assert settings.break_prompt == "Rest until the next cue."
+    for epoch in schedule:
+        assert epoch.prompt == expected_prompts[epoch.cue]
+        assert epoch.trigger_code == _codes().code_for(condition, epoch.cue)
 
 
 def test_schedule_seed_reproduces_the_exact_cue_order() -> None:
@@ -164,7 +223,7 @@ def test_schedule_seed_reproduces_the_exact_cue_order() -> None:
     assert [epoch.cue for epoch in first] == [epoch.cue for epoch in second]
 
 
-def test_schedule_randomizes_which_cue_starts_the_alternation() -> None:
+def test_schedule_randomizes_which_cue_starts() -> None:
     starting_cues = {
         build_cue_schedule(
             TaskSettings(
@@ -179,6 +238,31 @@ def test_schedule_randomizes_which_cue_starts_the_alternation() -> None:
     }
 
     assert starting_cues == {CueTarget.LEFT_HAND, CueTarget.RIGHT_HAND}
+
+
+def test_schedule_shuffles_all_epochs_and_allows_consecutive_repeats() -> None:
+    orders = {
+        tuple(
+            epoch.cue
+            for epoch in build_cue_schedule(
+                TaskSettings(
+                    condition=TaskCondition.BOTH_HANDS,
+                    epoch_duration_sec=1.0,
+                    total_epochs=10,
+                    trigger_codes=_codes(),
+                    random_seed=seed,
+                )
+            )
+        )
+        for seed in range(20)
+    }
+
+    assert len(orders) > 2
+    assert any(
+        first == second
+        for order in orders
+        for first, second in zip(order, order[1:], strict=False)
+    )
 
 
 def test_analysis_protocol_uses_the_selected_task_condition_and_timing() -> None:

@@ -20,8 +20,9 @@ Once set up, right-click [main.py](main.py) in PyCharm and choose **Run**. The
 launcher has three tabs:
 
 - **Run Participant Task** presents the cues, sends BioSemi markers through the
-  fixed `COM3` connection, and saves a task log. A confirmed test mode runs the
-  same screens without opening COM3 or sending markers.
+  fixed `COM3` connection, and saves a task log. Cues are balanced and shuffled,
+  with configurable breaks, editable text, and countdowns. A confirmed test
+  mode runs the same screens without opening COM3 or sending markers.
 - **Analyze Recordings** processes saved `.bdf` files and creates FFT results.
 - **Plot Saved FFT** reopens an earlier FFT CSV to make participant/group
   electrode or ROI plots and scalp maps without processing the BDF files again.

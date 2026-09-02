@@ -2,28 +2,36 @@
 
 This page records the task behavior that the software must preserve.
 
-- **Both hands:** cues alternate between thinking of the left hand and thinking
-  of the right hand; the starting cue is randomized.
-- **Right hand + right ankle:** cues alternate between thinking of the right
-  hand and thinking of the right ankle; the starting cue is randomized.
-- The exact fullscreen prompts are `Think of your left hand`, `Think of your
-  right hand`, and `Think of your right ankle`; each condition uses its two
-  relevant prompts.
+- **Both hands:** randomly ordered left-hand and right-hand cues.
+- **Right hand + right ankle:** randomly ordered right-hand and right-ankle cues.
+- Each run freshly shuffles equal numbers of its two cues. Consecutive repeats
+  are allowed; randomization does not guarantee a different order every time.
+- Default prompts are `Think of your left hand`, `Think of your right hand`,
+  and `Think of your right ankle`. The operator can edit these and the break
+  text in the GUI. Text changes do not change cue identities or marker codes.
 - The operator chooses the epoch duration and an even total epoch count. The
   default duration is 15 seconds.
+- A configurable break (10 seconds by default) separates every pair of cue
+  epochs, including repeated cues. No break precedes the first or follows the
+  last cue. The default text is `Now let's take a short break.`
+- A top-center countdown shows the seconds remaining in each cue and break,
+  aligned to the accepted onset swap. Countdown redraws send no markers.
 - After COM3 opens, PySide6 presents the ready frame. The task stops with an
   error if the requested OpenGL frame does not swap within five seconds.
 - An unchecked test-mode box is the default. If the operator checks it, the
   launcher asks `Are you sure you want to run the experiment in test mode?`
   **Yes** runs the same presentation without opening COM3 or sending markers;
   **No** returns to setup. The task CSV records `test_mode=True`.
-- A precise timer is aligned to each accepted cue-frame swap and requests the
-  next cue at the configured software deadline. The next accepted swap closes
-  the preceding cue in the event log, so a cue is never intentionally shortened.
+- A precise timer is aligned to each accepted cue or break swap. The break's
+  accepted swap closes the preceding cue in the event log; the next cue starts
+  after the break's deadline. Neither phase is intentionally shortened.
 - After the final cue duration, a black display-frame swap closes its event
   timestamp before the task window closes.
 - Each cue has a unique marker from `1` to `255`. Marker `0` is not a cue, and
   marker `100` remains reserved for the Gap/Break baseline.
+- These inter-epoch breaks send no marker, including `100`. The analysis still
+  requires a full cue-length baseline window; it must not treat a shorter
+  break plus part of the next cue as a baseline. Analysis behavior is unchanged.
 - Fixed markers are `11` for both-hands/left-hand, `12` for
   both-hands/right-hand, `21` for hand-and-ankle/right-hand, and `22` for
   hand-and-ankle/right-ankle. They are shown disabled and cannot be edited.
@@ -32,7 +40,8 @@ This page records the task behavior that the software must preserve.
   first external action in that handler.
 - `COM3` is fixed and is not editable in the launcher.
 - **Space** starts from the fullscreen ready screen; **Escape** aborts.
-- A CSV task log records the scheduled and presented epochs and trigger events.
+- A CSV task log records the scheduled and presented epochs and trigger events,
+  the actual cue text, and the configured break duration and text.
 - TENS stimulation is controlled externally.
 
 The analysis tab uses the condition, duration, epoch count, and fixed cue codes

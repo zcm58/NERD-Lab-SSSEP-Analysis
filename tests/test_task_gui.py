@@ -87,6 +87,15 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 assert all(spin.minimum() == spin.maximum() for spin in trigger_spins)
                 assert all(not spin.isEnabled() for spin in trigger_spins)
 
+            def prompt_controls(window):
+                return (
+                    window.break_duration_spin,
+                    window.left_hand_prompt_edit,
+                    window.right_hand_prompt_edit,
+                    window.right_ankle_prompt_edit,
+                    window.break_prompt_edit,
+                )
+
             @checked
             def start_probe():
                 window = next(w for w in QApplication.topLevelWidgets()
@@ -103,15 +112,35 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 assert not hasattr(window, "serial_port_edit")
                 assert window.total_epochs_spin.singleStep() == 2
                 assert window.total_epochs_spin.value() % 2 == 0
+                assert window.break_duration_spin.value() == 10.0
+                assert window.left_hand_prompt_edit.text() == "Think of your left hand"
+                assert window.right_hand_prompt_edit.text() == "Think of your right hand"
+                assert window.right_ankle_prompt_edit.text() == "Think of your right ankle"
+                assert window.break_prompt_edit.text() == "Now let's take a short break."
+                assert "fresh random order" in window.total_epochs_spin.toolTip()
+                for widget in (*prompt_controls(window), window.start_task_button):
+                    assert widget.isVisible()
+                    assert window.task_tab.rect().contains(widget.geometry())
                 assert not window.test_mode_checkbox.isChecked()
                 assert window.task_runner is None
                 assert_trigger_codes_locked(window)
 
                 window.condition_combo.setCurrentIndex(1)
                 window.epoch_duration_spin.setValue(2.5)
+                window.break_duration_spin.setValue(4.5)
                 window.total_epochs_spin.setValue(4)
                 window.task_log_edit.setText(str(log_folder))
                 window.stimulation_frequency_edit.setText("12.5")
+                window.left_hand_prompt_edit.setText("  Focus on your left hand.  ")
+                window.right_hand_prompt_edit.setText("Focus on your right hand.")
+                window.right_ankle_prompt_edit.setText("Focus on your right ankle.")
+                window.break_prompt_edit.setText(" ")
+                window._start_task()
+                assert not runners
+                assert not window.task_running
+                assert messages[-1][0] == "Task Settings Need Attention"
+                messages.clear()
+                window.break_prompt_edit.setText("Rest for a moment.")
                 analysis_protocol = window._analysis_protocol()
                 assert analysis_protocol.active_event_codes == (21, 22)
                 assert analysis_protocol.event_duration_sec == 2.5
@@ -131,11 +160,17 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 assert not window.start_task_button.isEnabled()
                 assert not window.tabs.isTabEnabled(1)
                 assert not window.tabs.isTabEnabled(2)
+                assert all(not widget.isEnabled() for widget in prompt_controls(window))
                 assert_trigger_codes_locked(window)
                 assert not window.close(), "Active participant task accepted close"
                 settings = settings_seen[0]
                 assert settings.condition is gui.TaskCondition.RIGHT_HAND_AND_ANKLE
                 assert settings.epoch_duration_sec == 2.5
+                assert settings.break_duration_sec == 4.5
+                assert settings.left_hand_prompt == "Focus on your left hand."
+                assert settings.right_hand_prompt == "Focus on your right hand."
+                assert settings.right_ankle_prompt == "Focus on your right ankle."
+                assert settings.break_prompt == "Rest for a moment."
                 assert settings.total_epochs == 4
                 assert settings.test_mode is False
                 assert settings.serial_port == "COM3"
@@ -152,6 +187,7 @@ def test_task_tab_runs_each_task_on_qt_main_thread(tmp_path):
                 assert window.start_task_button.isEnabled()
                 assert window.tabs.isTabEnabled(1)
                 assert window.tabs.isTabEnabled(2)
+                assert all(widget.isEnabled() for widget in prompt_controls(window))
                 assert_trigger_codes_locked(window)
                 assert "Task complete: 4 epoch(s)." in window.task_status_label.text()
                 window._start_task()

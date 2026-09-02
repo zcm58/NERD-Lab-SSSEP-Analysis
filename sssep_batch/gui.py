@@ -29,6 +29,12 @@ from sssep_batch.experiment import (
     TaskSettings,
     analysis_protocol_for_task,
 )
+from sssep_batch.experiment.models import (
+    CUE_PROMPTS,
+    DEFAULT_BREAK_DURATION_SEC,
+    DEFAULT_BREAK_PROMPT,
+    CueTarget,
+)
 from sssep_batch.models import AnalysisProtocol
 
 
@@ -227,10 +233,27 @@ def launch_gui() -> int:
             self.epoch_duration_spin.setSingleStep(0.5)
             self.epoch_duration_spin.setValue(EVENT_DURATION_SEC)
             self.epoch_duration_spin.setSuffix(" seconds")
+            self.break_duration_spin = QDoubleSpinBox()
+            self.break_duration_spin.setRange(0.1, 3600.0)
+            self.break_duration_spin.setDecimals(2)
+            self.break_duration_spin.setSingleStep(0.5)
+            self.break_duration_spin.setValue(DEFAULT_BREAK_DURATION_SEC)
+            self.break_duration_spin.setSuffix(" seconds")
+            self.break_duration_spin.setToolTip(
+                "A break appears between cue epochs, but not before or after the task."
+            )
             self.total_epochs_spin = QSpinBox()
             self.total_epochs_spin.setRange(2, 10000)
             self.total_epochs_spin.setSingleStep(2)
             self.total_epochs_spin.setValue(EXPECTED_REPETITIONS_PER_TRIGGER * 2)
+            self.total_epochs_spin.setToolTip(
+                "Each cue appears equally often. A fresh random order is chosen "
+                "for every task; the same cue may appear twice in a row."
+            )
+            self.left_hand_prompt_edit = QLineEdit(CUE_PROMPTS[CueTarget.LEFT_HAND])
+            self.right_hand_prompt_edit = QLineEdit(CUE_PROMPTS[CueTarget.RIGHT_HAND])
+            self.right_ankle_prompt_edit = QLineEdit(CUE_PROMPTS[CueTarget.RIGHT_ANKLE])
+            self.break_prompt_edit = QLineEdit(DEFAULT_BREAK_PROMPT)
             self.test_mode_checkbox = QCheckBox(
                 "Test mode (no BioSemi triggers)"
             )
@@ -314,7 +337,12 @@ def launch_gui() -> int:
             task_form = QFormLayout()
             task_form.addRow("Condition", self.condition_combo)
             task_form.addRow("Duration of each epoch", self.epoch_duration_spin)
+            task_form.addRow("Break between epochs", self.break_duration_spin)
             task_form.addRow("Total epochs (even)", self.total_epochs_spin)
+            task_form.addRow("Left hand text", self.left_hand_prompt_edit)
+            task_form.addRow("Right hand text", self.right_hand_prompt_edit)
+            task_form.addRow("Right ankle text", self.right_ankle_prompt_edit)
+            task_form.addRow("Break text", self.break_prompt_edit)
             task_form.addRow(self.test_mode_checkbox)
             task_form.addRow(
                 "Both hands: left hand trigger",
@@ -475,6 +503,11 @@ def launch_gui() -> int:
                 ),
                 output_folder=Path(log_folder),
                 test_mode=self.test_mode_checkbox.isChecked(),
+                break_duration_sec=self.break_duration_spin.value(),
+                left_hand_prompt=self.left_hand_prompt_edit.text(),
+                right_hand_prompt=self.right_hand_prompt_edit.text(),
+                right_ankle_prompt=self.right_ankle_prompt_edit.text(),
+                break_prompt=self.break_prompt_edit.text(),
             )
 
         def _analysis_protocol(self) -> AnalysisProtocol:
@@ -600,7 +633,12 @@ def launch_gui() -> int:
             for widget in (
                 self.condition_combo,
                 self.epoch_duration_spin,
+                self.break_duration_spin,
                 self.total_epochs_spin,
+                self.left_hand_prompt_edit,
+                self.right_hand_prompt_edit,
+                self.right_ankle_prompt_edit,
+                self.break_prompt_edit,
                 self.test_mode_checkbox,
                 self.task_log_edit,
                 self.task_log_browse_button,

@@ -38,6 +38,9 @@ CUE_PROMPTS: dict[CueTarget, str] = {
     CueTarget.RIGHT_ANKLE: "Think of your right ankle",
 }
 
+DEFAULT_BREAK_DURATION_SEC = 10.0
+DEFAULT_BREAK_PROMPT = "Now let's take a short break."
+
 ANALYSIS_CONDITION_LABELS: dict[TaskCondition, str] = {
     TaskCondition.BOTH_HANDS: "BothHands",
     TaskCondition.RIGHT_HAND_AND_ANKLE: "HandAnkle",
@@ -115,17 +118,25 @@ class TaskSettings:
     output_folder: Path | None = None
     random_seed: int | None = None
     test_mode: bool = False
+    break_duration_sec: float = DEFAULT_BREAK_DURATION_SEC
+    left_hand_prompt: str = CUE_PROMPTS[CueTarget.LEFT_HAND]
+    right_hand_prompt: str = CUE_PROMPTS[CueTarget.RIGHT_HAND]
+    right_ankle_prompt: str = CUE_PROMPTS[CueTarget.RIGHT_ANKLE]
+    break_prompt: str = DEFAULT_BREAK_PROMPT
 
     def __post_init__(self) -> None:
         if not isinstance(self.condition, TaskCondition):
             raise TypeError("condition must be a TaskCondition value.")
-        if (
-            not isinstance(self.epoch_duration_sec, (int, float))
-            or isinstance(self.epoch_duration_sec, bool)
-            or not isfinite(float(self.epoch_duration_sec))
-            or self.epoch_duration_sec <= 0
-        ):
-            raise ValueError("epoch_duration_sec must be a finite number greater than zero.")
+        for name in ("epoch_duration_sec", "break_duration_sec"):
+            duration = getattr(self, name)
+            if (
+                not isinstance(duration, (int, float))
+                or isinstance(duration, bool)
+                or not isfinite(float(duration))
+                or duration <= 0
+            ):
+                raise ValueError(f"{name} must be a finite number greater than zero.")
+            object.__setattr__(self, name, float(duration))
         if (
             not isinstance(self.total_epochs, int)
             or isinstance(self.total_epochs, bool)
@@ -141,10 +152,25 @@ class TaskSettings:
             raise TypeError("random_seed must be an integer or None.")
         if not isinstance(self.test_mode, bool):
             raise TypeError("test_mode must be True or False.")
+        for name in (
+            "left_hand_prompt", "right_hand_prompt", "right_ankle_prompt", "break_prompt"
+        ):
+            prompt = getattr(self, name)
+            if not isinstance(prompt, str) or not prompt.strip():
+                raise ValueError(f"{name} must contain nonblank text.")
+            object.__setattr__(self, name, prompt.strip())
 
-        object.__setattr__(self, "epoch_duration_sec", float(self.epoch_duration_sec))
         if self.output_folder is not None:
             object.__setattr__(self, "output_folder", Path(self.output_folder))
+
+    def prompt_for(self, cue: CueTarget) -> str:
+        """Return the operator's display text without changing the cue identity."""
+
+        return {
+            CueTarget.LEFT_HAND: self.left_hand_prompt,
+            CueTarget.RIGHT_HAND: self.right_hand_prompt,
+            CueTarget.RIGHT_ANKLE: self.right_ankle_prompt,
+        }[cue]
 
 
 @dataclass(frozen=True, slots=True)

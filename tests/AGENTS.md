@@ -26,9 +26,10 @@ Keep the default test suite lightweight:
   Channel/montage/reference behavior, scaled filtering before downsampling,
   bad-channel handling, and reference-compatible warning paths.
 - `experiment/`
-  Task validation, balanced alternating schedules, swap-timed cue onsets,
-  one-byte triggers, frame ordering, aborts, and task-event logs using fakes
-  rather than a real display or COM port.
+  Task validation, balanced randomized schedules, editable prompts, swap-timed
+  cues/breaks, countdowns, one-byte cue triggers, frame ordering, aborts, and
+  task-event logs using fakes rather than a real display or COM port. Breaks
+  and countdown redraws must not send markers.
 - `test_pipeline.py`
   High-signal orchestration behavior that can be tested with stubs.
 - `test_regression_external_bdf.py`

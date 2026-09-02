@@ -10,9 +10,10 @@ TENS stimulation is controlled separately. Set it up before starting the task.
 
 1. Open the **Run Participant Task** tab.
 2. Choose **Both hands** or **Right hand + right ankle**.
-3. Enter the length of each cue epoch in seconds. The default is 15 seconds.
+3. Set the cue duration (15 seconds by default) and break duration (10 seconds
+   by default). Edit the cue and break text if needed.
 4. Enter an **even** total number of epochs. Each cue will appear the same
-   number of times. The cues alternate; the first cue is randomized.
+   number of times in a freshly shuffled order. Consecutive repeats are allowed.
 5. For a normal run, connect and power the BioSemi trigger interface. The task
    always uses `COM3`; there is no port setting in the launcher.
    - To test only the fullscreen prompts, check **Test mode (no BioSemi
@@ -26,6 +27,10 @@ TENS stimulation is controlled separately. Set it up before starting the task.
 8. Click **Start Task**. Confirm that the BioSemi recording is running and is
    the one paired with this task log. Then press **Space** on the fullscreen
    ready screen.
+
+Breaks appear between cues, including repeated cues, but not before the first
+or after the last cue. The top-center timer counts down each cue and break.
+Breaks send no markers and do not supply a Gap/Break baseline for analysis.
 
 The marker write is requested immediately after Qt reports the cue frame's
 buffer swap. Confirm physical screen and BioSemi timing before data collection.
