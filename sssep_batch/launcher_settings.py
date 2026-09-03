@@ -16,7 +16,7 @@ SETTINGS_PATH = REPO_ROOT / ".sssep_gui_settings.json"
 _TASK_FIELDS = (
     "epoch_duration_sec", "epochs_per_condition", "break_duration_sec",
     "left_hand_prompt", "right_hand_prompt", "right_ankle_prompt", "break_prompt",
-    "output_folder", "test_mode",
+    "output_folder", "test_mode", "show_timer",
 )
 _LAUNCHER_FIELDS = (
     "plot_channel", "stimulation_hz", "remember_folders", "input_folder", "output_root",

@@ -67,6 +67,7 @@ def test_missing_settings_preserve_launcher_defaults(tmp_path):
     assert loaded == original
     assert loaded.stimulation_hz == 26.0
     assert loaded.plot_rois == {"Cz": ("Cz",)}
+    assert loaded.task.show_timer is True
 
 
 @pytest.mark.parametrize("frequency", [None, 12.5])
@@ -94,6 +95,7 @@ def test_launcher_preferences_round_trip_all_editable_fields(tmp_path):
             break_prompt="Please rest.\nThe next cue will appear shortly.",
             output_folder=tmp_path / "Task logs",
             test_mode=True,
+            show_timer=False,
         ),
         plot_channel="C4",
         plot_rois={"Hand ROI": ("C3", "C4", "External electrode"), "Midline": ("Cz",)},
@@ -113,6 +115,7 @@ def test_launcher_preferences_round_trip_all_editable_fields(tmp_path):
     assert loaded.task.serial_port == "COM3"
     assert loaded.task.trigger_codes == CueTriggerCodes(11, 12, 21, 22)
     assert loaded.task.random_seed is None
+    assert saved["task"]["show_timer"] is False
     assert saved["plot_rois"] == {
         "Hand ROI": ["C3", "C4", "External electrode"], "Midline": ["Cz"],
     }
@@ -193,6 +196,7 @@ def test_legacy_folder_file_seeds_task_log_folder(tmp_path):
     assert loaded.task.epoch_duration_sec == 15.0
     assert loaded.task.epochs_per_condition == 10
     assert loaded.task.test_mode is False
+    assert loaded.task.show_timer is True
 
 
 def test_missing_session_fields_keep_defaults_and_explicit_empty_log_stays_empty(tmp_path):
@@ -207,6 +211,7 @@ def test_missing_session_fields_keep_defaults_and_explicit_empty_log_stays_empty
     assert loaded.task.break_duration_sec == 4.5
     assert loaded.task.epoch_duration_sec == 15.0
     assert loaded.task.output_folder is None
+    assert loaded.task.show_timer is True
 
 
 def test_recording_folder_update_preserves_session_preferences(tmp_path):
@@ -234,6 +239,8 @@ def test_recording_folder_update_preserves_session_preferences(tmp_path):
     {"task": {"epochs_per_condition": 3}}, {"task": {"epoch_duration_sec": "15"}},
     {"task": {"break_duration_sec": 0}}, {"task": {"left_hand_prompt": "   "}},
     {"task": {"output_folder": 42}}, {"task": {"test_mode": 1}},
+    {"task": {"show_timer": 1}}, {"task": {"show_timer": "false"}},
+    {"task": {"show_timer": None}},
     {"plot_channel": None}, {"plot_channel": "missing"},
     {"stimulation_hz": True}, {"stimulation_hz": "10"}, {"stimulation_hz": 0},
     {"stimulation_hz": float("inf")}, {"remember_folders": 1},

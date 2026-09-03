@@ -120,6 +120,8 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert dialog.break_duration_spin.value() == 10.0
                 assert dialog.stimulation_frequency_edit.text() == "26"
                 assert not dialog.test_mode_checkbox.isChecked()
+                assert dialog.show_timer_checkbox.text() == "Show countdown timer"
+                assert dialog.show_timer_checkbox.isChecked()
                 assert [dialog.tabs.tabText(index) for index in range(dialog.tabs.count())] == [
                     "Session", "Participant text", "Analysis", "Regions of Interest"
                 ]
@@ -136,11 +138,13 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 dialog.epoch_duration_spin.setValue(30.0)
                 dialog.epochs_per_condition_spin.setValue(20)
                 dialog.left_hand_prompt_edit.setText("Unsaved prompt")
+                dialog.show_timer_checkbox.setChecked(False)
                 dialog.reject()
 
             @checked
             def save_settings():
                 dialog = QApplication.activeModalWidget()
+                assert dialog.show_timer_checkbox.isChecked(), "Cancel changed the timer preference"
                 assert "TENS Unit Stimulation Frequency (Hz)" in {
                     label.text() for label in dialog.findChildren(QLabel)
                 }
@@ -182,6 +186,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                     assert scroll.widget().width() == scroll.viewport().width()
                 dialog.epoch_duration_spin.setValue(15.0)
                 dialog.break_duration_spin.setValue(4.5)
+                dialog.show_timer_checkbox.setChecked(False)
                 dialog.epochs_per_condition_spin.setValue(4)
                 dialog.task_log_edit.setText(str(log_folder))
                 dialog.stimulation_frequency_edit.setText("12.5")
@@ -269,6 +274,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 window.settings_action.trigger()
                 assert window.session_settings is not original
                 assert window.session_settings.epochs_per_condition == 4
+                assert window.session_settings.show_timer is False
                 assert window.plot_channel == "C4"
                 assert list(window.plot_rois) == ["Central hands", "Left electrode"]
                 assert set(window.plot_rois["Central hands"]) == {"C3", "Cz", "C4"}
@@ -315,6 +321,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert settings.epochs_per_condition == 4
                 assert settings.total_epochs == 8
                 assert settings.test_mode is False
+                assert settings.show_timer is False
                 assert settings.serial_port == "COM3"
                 assert settings.output_folder == log_folder
                 assert settings.trigger_codes == gui.CueTriggerCodes(11, 12, 21, 22)
@@ -455,6 +462,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert gui.launch_gui() == 0
                 reopened = QApplication.instance()._sssep_launcher_window
                 assert reopened.session_settings == settings_seen[-1]
+                assert reopened.session_settings.show_timer is False
                 assert reopened.plot_channel == "C4"
                 assert reopened.stimulation_hz == 12.5
                 assert list(reopened.plot_rois) == ["Central hands", "Left electrode"]
@@ -465,6 +473,8 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert reopened.pages.currentIndex() == 0
                 def cancel_reopened():
                     dialog = QApplication.activeModalWidget()
+                    assert not dialog.show_timer_checkbox.isChecked()
+                    dialog.show_timer_checkbox.setChecked(True)
                     dialog.epochs_per_condition_spin.setValue(40)
                     dialog.break_prompt_edit.setText("Discard this")
                     while dialog.roi_list.count():

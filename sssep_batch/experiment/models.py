@@ -127,6 +127,7 @@ class TaskSettings:
     right_hand_prompt: str = CUE_PROMPTS[CueTarget.RIGHT_HAND]
     right_ankle_prompt: str = CUE_PROMPTS[CueTarget.RIGHT_ANKLE]
     break_prompt: str = DEFAULT_BREAK_PROMPT
+    show_timer: bool = True
 
     def __post_init__(self) -> None:
         for name in ("epoch_duration_sec", "break_duration_sec"):
@@ -156,6 +157,8 @@ class TaskSettings:
             raise TypeError("random_seed must be an integer or None.")
         if not isinstance(self.test_mode, bool):
             raise TypeError("test_mode must be True or False.")
+        if not isinstance(self.show_timer, bool):
+            raise TypeError("show_timer must be True or False.")
         for name in (
             "left_hand_prompt", "right_hand_prompt", "right_ankle_prompt", "break_prompt"
         ):
@@ -215,6 +218,10 @@ class CuePresentationRecord:
     completed: bool = False
     trigger_succeeded: bool = True
     trigger_error: str | None = None
+    condition_end_trigger_code: int | None = None
+    condition_end_trigger_time_sec: float | None = None
+    condition_end_trigger_succeeded: bool | None = None
+    condition_end_trigger_error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

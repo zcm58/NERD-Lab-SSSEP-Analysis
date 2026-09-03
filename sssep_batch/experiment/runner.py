@@ -32,6 +32,11 @@ READY_PROMPT = "Press Space when you are ready to begin.\n\nPress Escape to stop
 TEST_MODE_READY_PROMPT = (
     "TEST MODE: BioSemi triggers are disabled.\n\n" + READY_PROMPT
 )
+BEGIN_PROMPT = "The experiment is about to begin.."
+END_PROMPT = "Thank you for your time! The experiment is now over."
+BEGIN_DURATION_SEC = 5.0
+END_DURATION_SEC = 5.0
+CONDITION_END_TRIGGER_CODE = 100
 CONDITION_HANDOVER_PROMPT = (
     "Condition 1 complete.\n\n"
     "Before starting Condition 2, please remove the TENS unit electrodes from "
@@ -456,7 +461,14 @@ class QtTaskRunner(QObject):
         settings = self._require_settings()
         self._task_zero = self._monotonic()
         self.progress_changed.emit(0, settings.total_epochs)
-        self._request_next_cue()
+        self._require_surface().present(
+            BEGIN_PROMPT,
+            self._begin_frame_swapped,
+            duration_sec=self._countdown_duration(BEGIN_DURATION_SEC),
+        )
+
+    def _begin_frame_swapped(self) -> None:
+        self._require_surface().schedule(BEGIN_DURATION_SEC, self._request_next_cue)
 
     def _confirm_pressed(self) -> None:
         if not self._confirmation_visible or self._finished:
@@ -479,7 +491,9 @@ class QtTaskRunner(QObject):
         surface.present(
             epoch.prompt,
             lambda: self._cue_frame_swapped(epoch),
-            duration_sec=self._require_settings().epoch_duration_sec,
+            duration_sec=self._countdown_duration(
+                self._require_settings().epoch_duration_sec
+            ),
         )
 
     def _cue_frame_swapped(self, epoch: CueEpoch) -> None:
@@ -541,15 +555,18 @@ class QtTaskRunner(QObject):
             self._require_surface().present(
                 settings.break_prompt,
                 self._break_frame_swapped,
-                duration_sec=settings.break_duration_sec,
+                duration_sec=self._countdown_duration(settings.break_duration_sec),
             )
             return
-        self._require_surface().present("", self._terminal_frame_swapped)
+        self._require_surface().present(
+            END_PROMPT,
+            self._end_frame_swapped,
+            duration_sec=self._countdown_duration(END_DURATION_SEC),
+        )
 
     def _handover_frame_swapped(self) -> None:
-        self._close_last_record(
-            self._records, offset_time_sec=self._elapsed_seconds(), completed=True
-        )
+        if self._condition_end_frame_swapped() is None:
+            return
         self._handover_visible = True
         self.progress_changed.emit(
             self._next_epoch_index, self._require_settings().total_epochs
@@ -573,15 +590,56 @@ class QtTaskRunner(QObject):
             self._request_next_cue,
         )
 
-    def _terminal_frame_swapped(self) -> None:
+    def _end_frame_swapped(self) -> None:
+        onset_time_sec = self._condition_end_frame_swapped()
+        if onset_time_sec is None:
+            return
         settings = self._require_settings()
+        self.progress_changed.emit(settings.total_epochs, settings.total_epochs)
+        elapsed_since_onset = self._elapsed_seconds() - onset_time_sec
+        self._require_surface().schedule(
+            max(0.0, END_DURATION_SEC - elapsed_since_onset),
+            lambda: self._finish_result(aborted=False, abort_reason=None),
+        )
+
+    def _condition_end_frame_swapped(self) -> float | None:
+        """Mark the completed condition before logging, progress, or timers."""
+        if self._send_prevalidated_trigger is None:
+            raise RuntimeError("The BioSemi trigger backend was not prepared.")
+        record = self._records[-1]
+        onset_time_sec = self._elapsed_seconds()
+        trigger_error: SerialTriggerError | None = None
+        try:
+            self._send_prevalidated_trigger(
+                CONDITION_END_TRIGGER_CODE,
+                label=f"{record.condition.value}:condition_end",
+                time_s=onset_time_sec,
+                epoch_index=record.epoch_index,
+            )
+        except SerialTriggerError as exc:
+            trigger_error = exc
+
         self._close_last_record(
             self._records,
-            offset_time_sec=self._elapsed_seconds(),
+            offset_time_sec=onset_time_sec,
             completed=True,
         )
-        self.progress_changed.emit(settings.total_epochs, settings.total_epochs)
-        self._finish_result(aborted=False, abort_reason=None)
+        self._records[-1] = replace(
+            self._records[-1],
+            condition_end_trigger_code=CONDITION_END_TRIGGER_CODE,
+            condition_end_trigger_time_sec=onset_time_sec,
+            condition_end_trigger_succeeded=trigger_error is None,
+            condition_end_trigger_error=(
+                None if trigger_error is None else str(trigger_error)
+            ),
+        )
+        if trigger_error is not None:
+            self._abort(f"BioSemi condition-end trigger output failed: {trigger_error}")
+            return None
+        return onset_time_sec
+
+    def _countdown_duration(self, duration_sec: float) -> float | None:
+        return duration_sec if self._require_settings().show_timer else None
 
     def _abort(
         self,
@@ -775,6 +833,11 @@ def write_task_event_log(result: TaskRunResult, output_folder: Path) -> Path:
         "epochs_per_condition",
         "condition_epoch_number",
         "scheduled_onset_reference",
+        "show_timer",
+        "condition_end_trigger_code",
+        "condition_end_trigger_time_sec",
+        "condition_end_trigger_succeeded",
+        "condition_end_trigger_error",
     ]
     with output_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -819,6 +882,19 @@ def write_task_event_log(result: TaskRunResult, output_folder: Path) -> Path:
                         epoch.epoch_index % result.settings.epochs_per_condition + 1
                     ),
                     "scheduled_onset_reference": "condition_start",
+                    "show_timer": result.settings.show_timer,
+                    "condition_end_trigger_code": (
+                        "" if event is None else event.condition_end_trigger_code
+                    ),
+                    "condition_end_trigger_time_sec": (
+                        "" if event is None else event.condition_end_trigger_time_sec
+                    ),
+                    "condition_end_trigger_succeeded": (
+                        "" if event is None else event.condition_end_trigger_succeeded
+                    ),
+                    "condition_end_trigger_error": (
+                        "" if event is None else event.condition_end_trigger_error
+                    ),
                 }
             )
     return output_path

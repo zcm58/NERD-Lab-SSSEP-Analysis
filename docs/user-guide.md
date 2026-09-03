@@ -13,28 +13,33 @@ TENS stimulation is controlled separately. Set it up before starting the task.
 1. Open **File > Settings**. Choose a task log folder outside the project.
 2. Check the epoch duration (default 15 seconds), break duration (10 seconds),
    and **epochs per condition** (10, giving 20 overall). The count must be even.
-   Edit participant text if needed, then click **Save**. Saved settings return
+   Choose whether to **Show countdown timer** and edit participant text if needed,
+   then click **Save**. Saved settings return
    when you reopen the app; **Cancel** keeps your previous settings.
 3. Connect the BioSemi trigger interface on its fixed `COM3` port and start
    recording. For a practice run without BioSemi, enable **Test mode (no
    BioSemi triggers)** in Settings and confirm **Yes** when starting.
 4. Choose **View > SSSEP Task**, click **Start SSSEP Task**, then press **Space**
-   on the fullscreen ready screen.
+   on the fullscreen ready screen. A five-second message appears before the
+   first prompt starts.
 5. Complete **Condition 1: both hands**. When prompted, move the left-hand TENS
    electrodes to the **right ankle**. Press **Space**, then read the confirmation
    and press **Y** to begin **Condition 2: right hand + right ankle**.
+6. The final thank-you screen closes automatically after five seconds.
 
-Both conditions run every time, in that order. Each freshly shuffles equal
-numbers of its two participant prompts; consecutive repeats are allowed. The
+Both conditions run every time, in that order. Each randomizes equal numbers of
+its two participant prompts, with no more than two identical prompts in a row. The
 handover waits for the administrator and has no countdown.
 
 Trigger codes stay locked: `11`/`12` for both hands and `21`/`22` for hand/ankle.
+Code `100` is sent once when each condition ends and is recorded in the task log.
 Test mode sends no markers; choosing **No** at its warning returns home.
 Its checkbox is remembered, but every test run still asks for confirmation.
 
-Breaks appear between epochs within each condition. The top-center timer counts
-down each epoch and break.
-Breaks send no markers and do not supply a Gap/Break baseline for analysis.
+Breaks appear between epochs within each condition and send no markers.
+Hiding the countdown does not change durations. Condition-end code `100` does
+not guarantee a usable baseline: electrode handover or the short closing screen
+may not provide a clean, full-length analysis window.
 
 The trigger code write is requested immediately after the participant prompt
 frame's Qt buffer swap. Confirm physical screen and BioSemi timing before data collection.

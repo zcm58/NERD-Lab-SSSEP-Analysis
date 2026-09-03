@@ -5,8 +5,9 @@ This page records the task behavior that the software must preserve.
 - Every experiment runs **Condition 1: both hands** first (left-hand and
   right-hand cues), then **Condition 2: right hand + right ankle** (right-hand
   and right-ankle cues). The order is fixed and is not an operator setting.
-- Each condition freshly shuffles equal numbers of its two cues. Consecutive repeats
-  are allowed; randomization does not guarantee a different order every time.
+- Each condition freshly randomizes equal numbers of its two cues, allowing no
+  more than two identical cues in a row. A double repeat forces the other cue
+  next. Randomization does not guarantee a different order every time.
 - Default prompts are `Think of your left hand`, `Think of your right hand`,
   and `Think of your right ankle`. The operator can edit these and the break
   text under **File > Settings**. Text changes do not change cue identities or
@@ -21,16 +22,19 @@ This page records the task behavior that the software must preserve.
   `Condition 1 complete. Before starting Condition 2, please remove the TENS
   unit electrodes from the left hand and place them on the right ankle. When
   finished, press space to continue the experiment.` The accepted screen swap
-  closes the final Condition 1 epoch in the log.
+  closes the final Condition 1 epoch in the log and sends fixed code `100`.
 - A fresh **Space** press on that visible screen opens a second untimed screen:
   `By continuing, you are confirming that the TENS unit electrodes are properly
   secured on the right hand and right ankle. Press 'Y' to continue.` Only a fresh
   **Y** press after this screen is visible starts Condition 2. Early presses,
   held-key repeats, and additional Space presses cannot bypass confirmation.
-  Neither handover screen sends a marker or displays a countdown. Escape aborts
-  from either screen. The serial connection stays open across the handover.
-- A top-center countdown shows the seconds remaining in each cue and break,
-  aligned to the accepted onset swap. Countdown redraws send no markers.
+  Only the first handover frame sends code `100`; confirmation sends no marker.
+  Neither screen displays a countdown. Escape aborts from either screen. The
+  serial connection stays open across the handover.
+- **Show countdown timer** in File > Settings controls the top-center countdown
+  on timed screens. It defaults to on and persists across launches. Hiding the
+  timer does not change phase durations or marker timing. Countdown redraws send
+  no markers.
 - After COM3 opens, PySide6 presents the ready frame. The task stops with an
   error if the requested OpenGL frame does not swap within five seconds.
 - An unchecked test-mode box is the default. If the operator checks it, the
@@ -40,13 +44,26 @@ This page records the task behavior that the software must preserve.
 - A precise timer is aligned to each accepted cue or break swap. The break's
   accepted swap closes the preceding cue in the event log; the next cue starts
   after the break's deadline. Neither phase is intentionally shortened.
-- After the final cue duration, a black display-frame swap closes its event
-  timestamp before the task window closes.
+- After the initial ready-screen **Space**, show
+  `The experiment is about to begin..` for five seconds measured from its
+  accepted frame swap, then present the first randomized cue and its marker.
+  Early/held Space presses do not skip this delay. This delay runs only before
+  Condition 1; the existing Space-then-Y confirmation still starts Condition 2.
+- After the final cue duration, show
+  `Thank you for your time! The experiment is now over.` for five seconds before
+  closing. Its accepted frame swap closes the final cue and sends code `100`.
 - Each cue has a unique marker from `1` to `255`. Marker `0` is not a cue, and
-  marker `100` remains reserved for the Gap/Break baseline.
+  marker `100` remains reserved for the Gap/Break/condition-end marker.
+- Send code `100` exactly once at each completed condition boundary, as the first
+  external action in that boundary frame's swap callback. Log the request time,
+  code, success, and any failure on the condition's final epoch row. Abort visibly
+  if this send fails. No completion marker is sent for a prematurely aborted cue.
 - These inter-epoch breaks send no marker, including `100`. The analysis still
   requires a full cue-length baseline window; it must not treat a shorter
-  break plus part of the next cue as a baseline. Analysis behavior is unchanged.
+  break plus part of the next cue as a baseline. Analysis behavior is unchanged:
+  code `100` still identifies its baseline windows. A condition-end marker alone
+  does not guarantee a full, artifact-free baseline afterward, especially during
+  electrode handover or the five-second closing screen.
 - Fixed markers are `11` for both-hands/left-hand, `12` for
   both-hands/right-hand, `21` for hand-and-ankle/right-hand, and `22` for
   hand-and-ankle/right-ankle. They are shown disabled and cannot be edited.
@@ -54,7 +71,8 @@ This page records the task behavior that the software must preserve.
   handler that matches the newly drawn cue frame. The serial request is the
   first external action in that handler.
 - `COM3` is fixed and is not editable in the launcher.
-- **Space** starts from the fullscreen ready screen; **Escape** aborts.
+- **Space** begins the five-second lead-in from the fullscreen ready screen;
+  **Escape** aborts.
 - A CSV task log records the scheduled and presented epochs and trigger events,
   the actual cue text, and the configured break duration and text. One file
   covers both conditions. `total_epochs` counts the whole experiment; additive
@@ -62,7 +80,9 @@ This page records the task behavior that the software must preserve.
   Planned `scheduled_onset_sec` values are relative to each condition's planned
   start, explicitly labeled by `scheduled_onset_reference=condition_start`.
   Actual cue/trigger/offset times remain relative to the experiment start and
-  include the operator's untimed handover pause.
+  include the five-second lead-in and the operator's untimed handover pause.
+  Additive `show_timer` and `condition_end_trigger_*` fields preserve the existing
+  one-row-per-epoch log structure while recording the new setting and markers.
 - TENS stimulation is controlled externally.
 
 The Process Data view uses both conditions' four fixed cue codes and the duration

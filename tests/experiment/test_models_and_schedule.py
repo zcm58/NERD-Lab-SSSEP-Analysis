@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from itertools import product
 
 import pytest
 
@@ -204,6 +205,101 @@ def test_schedule_seed_reproduces_the_exact_cue_order() -> None:
     second = build_cue_schedule(settings)
 
     assert first == second
+
+
+@pytest.mark.parametrize("epochs_per_condition", [2, 4, 6, 10, 20, 100, 1000, 10000])
+def test_schedule_limits_repeats_without_losing_balance(
+    epochs_per_condition: int,
+) -> None:
+    for seed in range(20):
+        schedule = build_cue_schedule(
+            TaskSettings(
+                epoch_duration_sec=1.0,
+                epochs_per_condition=epochs_per_condition,
+                trigger_codes=_codes(),
+                random_seed=seed,
+            )
+        )
+
+        for block_index, condition in enumerate(CONDITION_ORDER):
+            start = block_index * epochs_per_condition
+            block = schedule[start:start + epochs_per_condition]
+            cues = [epoch.cue for epoch in block]
+            assert all(epoch.condition == condition for epoch in block)
+            assert sorted(Counter(cues).values()) == [epochs_per_condition // 2] * 2
+            assert not any(
+                first == second == third
+                for first, second, third in zip(cues, cues[1:], cues[2:], strict=False)
+            )
+
+
+@pytest.mark.parametrize("epochs_per_condition", [2, 4, 6, 8, 10])
+def test_schedule_can_generate_every_valid_small_balanced_order(
+    monkeypatch, epochs_per_condition: int,
+) -> None:
+    from sssep_batch.experiment import schedule as schedule_module
+
+    valid_orders = [
+        order
+        for order in product((0, 1), repeat=epochs_per_condition)
+        if order.count(0) == epochs_per_condition // 2
+        and not any(
+            first == second == third
+            for first, second, third in zip(order, order[1:], order[2:], strict=False)
+        )
+    ]
+    settings = TaskSettings(
+        epoch_duration_sec=1.0,
+        epochs_per_condition=epochs_per_condition,
+        trigger_codes=_codes(),
+    )
+
+    for expected_order in valid_orders:
+        class ScriptedRandom:
+            choices_made = 0
+
+            def choice(self, choices):
+                position = self.choices_made % epochs_per_condition
+                prefix = expected_order[:position]
+                possible_next = {
+                    order[position] for order in valid_orders if order[:position] == prefix
+                }
+                assert set(choices) == possible_next
+                self.choices_made += 1
+                return expected_order[position]
+
+        rng = ScriptedRandom()
+        monkeypatch.setattr(schedule_module.random, "Random", lambda seed: rng)
+        schedule = build_cue_schedule(settings)
+
+        assert rng.choices_made == settings.total_epochs
+        assert [epoch.trigger_code for epoch in schedule] == [
+            *[11 + index for index in expected_order],
+            *[21 + index for index in expected_order],
+        ]
+
+
+def test_schedule_repeat_limit_resets_after_the_condition_handover(monkeypatch) -> None:
+    from sssep_batch.experiment import schedule as schedule_module
+
+    class ScriptedRandom:
+        choices = iter((0, 0, 1, 1, 0, 0, 1, 1))
+
+        def choice(self, available):
+            selected = next(self.choices)
+            assert selected in available
+            return selected
+
+    monkeypatch.setattr(schedule_module.random, "Random", lambda seed: ScriptedRandom())
+    schedule = build_cue_schedule(
+        TaskSettings(
+            epoch_duration_sec=1.0,
+            epochs_per_condition=4,
+            trigger_codes=_codes(),
+        )
+    )
+
+    assert [epoch.trigger_code for epoch in schedule] == [11, 11, 12, 12, 21, 21, 22, 22]
 
 
 @pytest.mark.parametrize(

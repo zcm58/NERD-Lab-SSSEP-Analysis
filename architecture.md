@@ -52,13 +52,16 @@ Participant task:
 Normal runs open the fixed `COM3` connection before participant screens. A
 checked and confirmed test mode uses a simulated backend and clearly marks the
 ready screen and task CSV; it never opens COM3 or sends markers. After
-Space starts the task, a main-thread `QOpenGLWindow` draws each cue. Both hands
+Space starts a five-second lead-in, a main-thread `QOpenGLWindow` draws each cue. Both hands
 run first, followed by hand/ankle after untimed Space-then-Y admin screens. Its
 matching `frameSwapped` callback immediately requests the cue's unique `1..255`
 marker through the selected backend after Qt completes that frame's buffer
 swap. A Qt `PreciseTimer` advances between cue and break screens at their
-configured deadlines; each shows a top-center countdown. Breaks and countdown
-redraws send no markers. Escape aborts. TENS control stays outside this program. See
+configured deadlines; Settings can hide the top-center countdown without changing
+timing. A final thank-you screen stays for five seconds. The first handover and
+thank-you swaps each send fixed code `100`; their final epoch rows record the
+send time and outcome. Ordinary breaks and countdown redraws send no markers.
+Escape aborts. TENS control stays outside this program. See
 [task-protocol.md](docs/task-protocol.md) for the runtime contract.
 
 Recording analysis:
@@ -167,12 +170,14 @@ Scalp-map names retain their frequency, and old exports are not renamed.
   require explicit confirmation and must be recorded in the task CSV.
 - Request each cue's marker immediately from the callback for its matching Qt
   buffer swap.
-- Require an even epoch count per condition and freshly shuffle balanced cues
-  within each block. Always run both hands then hand/ankle. Timed breaks only
+- Require an even epoch count per condition and freshly randomize balanced cues
+  within each block, with at most two identical cues in a row. Always run both
+  hands then hand/ankle. Timed breaks only
   separate cues within a block; the handover waits for Space and then Y on its
   separately visible confirmation screen. Held-key repeats cannot advance it.
 - Keep cue/break text editable without changing cue identities or marker codes.
-  Short breaks are not marked as code `100` baselines.
+  Short breaks are not marked as code `100` baselines. Condition-end screens
+  send `100`, but a marker alone does not establish a clean full baseline window.
 - Pass both conditions' four fixed cue codes, the configured duration, and half
   the per-condition epoch count as expected repetitions into each analysis
   batch; do not fall back to unrelated settings.

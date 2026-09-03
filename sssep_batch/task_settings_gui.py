@@ -80,6 +80,8 @@ class TaskSettingsDialog(QDialog):
         folder_row.addWidget(browse)
         self.test_mode_checkbox = QCheckBox("Test mode (no BioSemi triggers)")
         self.test_mode_checkbox.setChecked(settings.test_mode)
+        self.show_timer_checkbox = QCheckBox("Show countdown timer")
+        self.show_timer_checkbox.setChecked(settings.show_timer)
 
         session_card = SectionCard("Session settings")
         session_form = make_form()
@@ -88,6 +90,7 @@ class TaskSettingsDialog(QDialog):
         session_form.addRow("Epochs per condition (even)", self.epochs_per_condition_spin)
         session_form.addRow("Task log folder", folder_row)
         session_card.body.addLayout(session_form)
+        session_card.body.addWidget(self.show_timer_checkbox)
         session_card.body.addWidget(self.test_mode_checkbox)
         session_card.body.addWidget(hint_label(
             "Both hands always runs first, followed by right hand / right ankle. "
@@ -315,6 +318,7 @@ class TaskSettingsDialog(QDialog):
                 break_duration_sec=self.break_duration_spin.value(),
                 output_folder=Path(folder) if folder else None,
                 test_mode=self.test_mode_checkbox.isChecked(),
+                show_timer=self.show_timer_checkbox.isChecked(),
                 left_hand_prompt=self.left_hand_prompt_edit.text(),
                 right_hand_prompt=self.right_hand_prompt_edit.text(),
                 right_ankle_prompt=self.right_ankle_prompt_edit.text(),
