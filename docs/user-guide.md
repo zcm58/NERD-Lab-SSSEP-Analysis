@@ -114,8 +114,12 @@ scalp map. The BDF files are not processed again.
    (default 26 Hz). Click **Save** to apply and remember the ROI list and settings.
 4. Choose **Group average** or one participant. Select a trigger code for one
    plot, or **All conditions** for every available attention trigger code.
-5. Click **Create FFT Plot(s)** or **Create Scalp Map**. With All conditions
-   selected, these become **Create All FFT Plots** and **Create All Scalp Maps**.
+5. Click **Create FFT Plot(s)** for the selected ROI/event scope. For scalp
+   maps, **Create one paired-condition figure** starts checked when at least two
+   cues are available. Choose two different cues under **Condition A** and
+   **Condition B**, then click **Create Paired Scalp Map**. Uncheck that option
+   to create one selected scalp map or, with **All conditions**, one separate
+   scalp map per available cue.
 
 The selection map shows the nose at the top and the participant's left on the
 left. You can define ROIs before loading results. For separate C3 and C4 plots,
@@ -148,8 +152,13 @@ Each ROI and condition saves a separate FFT PNG directly in
 the full condition name distinguishes the two right-hand prompts. Group or
 participant identity remains in each plot's title. With **All conditions**, three ROIs normally
 create 12 FFT plots: one per ROI for trigger codes 11, 12, 21, and 22. Scalp maps
-use the whole scalp and still create only one map per trigger code, regardless
-of the ROI list. All conditions excludes baselines and conditions missing from
+use the whole scalp and never multiply by the ROI list. In paired mode, the two
+chosen cues appear on one PNG with a shared color scale so their amplitudes can
+be compared directly; condition values and available participant cohorts are
+aggregated separately and never pooled. For the usual study figures, first pair
+`BothHands Left Hand` with `BothHands Right Hand`, then pair `HandAnkle Right
+Hand` with `HandAnkle Right Ankle`. Unpaired **All conditions** retains one map
+per trigger code. All conditions excludes baselines and conditions missing from
 the selected participant.
 If one plot fails, the others continue. The results box identifies each ROI,
 trigger code, contributing participants, missing electrodes, and any failures.
@@ -162,8 +171,9 @@ selected electrodes are averaged; that participant is omitted only when none
 remain. The group curve gives each contributing participant equal weight.
 
 Scalp maps use the nearest saved FFT bin and show the actual bin in the results
-box. Their filenames keep the participant/group, trigger code, frequency, and
-`scalp_map` suffix. Missing participant/electrode values are omitted, so the participant
+box. Their filenames keep the participant/group, trigger code(s), actual
+FFT-bin frequency information, and `scalp_map` suffix. Missing
+participant/electrode values are omitted, so the participant
 count can differ by electrode; the original `group_fft_amplitudes.csv` retains
 these counts. Labels with no montage coordinates are listed in the results
 box and left off the map; their values remain in the original FFT CSVs. No

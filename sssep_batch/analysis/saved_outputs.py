@@ -7,6 +7,7 @@ from typing import Iterable
 
 from sssep_batch.analysis.plotting import (
     fft_plot_stem,
+    plot_saved_paired_scalp_maps,
     plot_saved_roi_spectrum,
     plot_saved_scalp_map,
     reserve_plot_path,
@@ -109,4 +110,77 @@ def create_saved_scalp_outputs(
         "participant_count_min": min(included_counts),
         "participant_count_max": max(included_counts),
         "omitted_channels": list(omitted_channels),
+    }
+
+
+def create_saved_paired_scalp_outputs(
+    dataset: SavedFftDataset,
+    *,
+    event_requests: Iterable[tuple[str, int, float]],
+    participant_id: str | None = None,
+) -> dict[str, object]:
+    """Create one two-panel scalp-map PNG with a shared amplitude scale."""
+
+    requests = tuple(event_requests)
+    if len(requests) != 2:
+        raise ValueError("Paired scalp maps require exactly two event requests.")
+    if any(event_type != "cue" for event_type, _code, _frequency in requests):
+        raise ValueError("Paired scalp maps support cue conditions only.")
+    event_keys = tuple(
+        (str(event_type), int(trigger_code))
+        for event_type, trigger_code, _frequency in requests
+    )
+    if len(set(event_keys)) != 2:
+        raise ValueError("Paired scalp maps require two distinct event requests.")
+
+    values = tuple(
+        saved_scalp_values(
+            dataset,
+            event_type=event_type,
+            trigger_code=trigger_code,
+            frequency_hz=frequency_hz,
+            participant_id=participant_id,
+        )
+        for event_type, trigger_code, frequency_hz in requests
+    )
+    level = participant_id or "group"
+    map_stems = "_and_".join(
+        f"{item.event.event_type}_{item.event.trigger_code:03d}_"
+        f"{item.actual_frequency_hz:g}_Hz"
+        for item in values
+    )
+    stem = safe_filename_stem(f"{level}_{map_stems}_scalp_map")
+    plot_path = create_saved_plot_path(dataset, stem)
+    try:
+        omitted_by_map = plot_saved_paired_scalp_maps(values, plot_path)
+    except Exception:
+        plot_path.unlink(missing_ok=True)
+        raise
+
+    maps: list[dict[str, object]] = []
+    for item, omitted_channels in zip(values, omitted_by_map):
+        omitted = set(omitted_channels)
+        included_counts = [
+            count
+            for channel, count in zip(item.channel_names, item.participant_counts)
+            if channel not in omitted
+        ]
+        maps.append(
+            {
+                "event_type": item.event.event_type,
+                "trigger_code": item.event.trigger_code,
+                "trigger_label": item.event.trigger_label,
+                "requested_frequency_hz": item.requested_frequency_hz,
+                "actual_frequency_hz": item.actual_frequency_hz,
+                "participant_count_min": min(included_counts),
+                "participant_count_max": max(included_counts),
+                "omitted_channels": list(omitted_channels),
+            }
+        )
+    return {
+        "kind": "scalp",
+        "layout": "paired",
+        "output_folder": str(plot_path.parent),
+        "plot_path": str(plot_path),
+        "maps": maps,
     }

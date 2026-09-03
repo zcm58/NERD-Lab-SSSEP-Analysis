@@ -18,6 +18,7 @@ from sssep_batch.analysis.saved_fft import (
     saved_scalp_values,
 )
 from sssep_batch.analysis.saved_outputs import (
+    create_saved_paired_scalp_outputs,
     create_saved_roi_outputs,
     create_saved_scalp_outputs,
 )
@@ -714,6 +715,172 @@ def test_saved_scalp_plot_omits_unmapped_electrodes_and_records_them(tmp_path):
     assert list((run_folder / "saved_fft_plots").iterdir()) == [Path(result["plot_path"])]
 
 
+def test_saved_paired_scalp_plot_uses_two_panels_with_one_shared_scale(
+    tmp_path, monkeypatch,
+):
+    import sssep_batch.analysis.plotting as plotting
+
+    first_channels = {
+        "Fp1": [1, 2, 3],
+        "Fp2": [2, 3, 4],
+        "C3": [3, 4, 5],
+        "C4": [4, 5, 6],
+        "Unknown": [5, 6, 7],
+    }
+    second_channels = {
+        "Fp1": [2, 8, 4],
+        "Fp2": [3, 9, 5],
+        "C3": [4, 10, 6],
+        "C4": [5, 11, 7],
+    }
+    run_folder, source_csv = write_saved_dataset(
+        tmp_path,
+        (
+            make_record("P01", first_channels),
+            make_record(
+                "P02",
+                {
+                    "Fp1": [1, 2, 3],
+                    "Fp2": [1, 2, 3],
+                    "C3": [1, 2, 3],
+                },
+            ),
+            make_record(
+                "P01",
+                second_channels,
+                trigger_code=12,
+                trigger_label="BothHands Right Hand",
+            ),
+        ),
+    )
+    original_source = source_csv.read_bytes()
+    dataset = load_saved_fft_dataset(run_folder)
+    original_topomap = plotting.mne.viz.plot_topomap
+    topomap_calls = []
+
+    def record_topomap(*args, **kwargs):
+        topomap_calls.append((np.asarray(args[0]).copy(), kwargs["vlim"], kwargs["axes"]))
+        return original_topomap(*args, **kwargs)
+
+    monkeypatch.setattr(plotting.mne.viz, "plot_topomap", record_topomap)
+    event_requests = (
+        ("cue", 11, 9.7),
+        ("cue", 12, 10.2),
+    )
+
+    result = create_saved_paired_scalp_outputs(
+        dataset,
+        event_requests=event_requests,
+    )
+
+    plot_path = Path(result["plot_path"])
+    assert plot_path.name == (
+        "group_cue_011_10_Hz_and_cue_012_10_Hz_scalp_map.png"
+    )
+    assert plot_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert result["kind"] == "scalp"
+    assert result["layout"] == "paired"
+    assert result["maps"] == [
+        {
+            "event_type": "cue",
+            "trigger_code": 11,
+            "trigger_label": "BothHands Left Hand",
+            "requested_frequency_hz": 9.7,
+            "actual_frequency_hz": 10.0,
+            "participant_count_min": 1,
+            "participant_count_max": 2,
+            "omitted_channels": ["Unknown"],
+        },
+        {
+            "event_type": "cue",
+            "trigger_code": 12,
+            "trigger_label": "BothHands Right Hand",
+            "requested_frequency_hz": 10.2,
+            "actual_frequency_hz": 10.0,
+            "participant_count_min": 1,
+            "participant_count_max": 1,
+            "omitted_channels": [],
+        },
+    ]
+    assert len(topomap_calls) == 2
+    assert topomap_calls[0][1] == topomap_calls[1][1] == (0.0, 11.0)
+    assert "BothHands Left Hand" in topomap_calls[0][2].get_title()
+    assert "BothHands Right Hand" in topomap_calls[1][2].get_title()
+    figure = topomap_calls[0][2].figure
+    np.testing.assert_allclose(figure.get_size_inches(), [6.5, 3.4])
+    assert len(figure.axes) == 3
+    assert figure.axes[2].get_ylabel() == "FFT amplitude (µV)"
+
+    repeated = create_saved_paired_scalp_outputs(
+        dataset,
+        event_requests=event_requests,
+    )
+    assert Path(repeated["plot_path"]) == plot_path.with_stem(plot_path.stem + " (2)")
+    assert plot_path.is_file()
+
+    participant = create_saved_paired_scalp_outputs(
+        dataset,
+        event_requests=event_requests,
+        participant_id="P01",
+    )
+    assert Path(participant["plot_path"]).name.startswith(
+        "P01_cue_011_10_Hz_and_cue_012_10_Hz_scalp_map"
+    )
+    assert source_csv.read_bytes() == original_source
+
+
+@pytest.mark.parametrize(
+    "event_requests",
+    [
+        (),
+        (("cue", 11, 10.0),),
+        (("cue", 11, 10.0), ("cue", 12, 10.0), ("cue", 21, 10.0)),
+    ],
+)
+def test_saved_paired_scalp_plot_requires_exactly_two_requests(
+    tmp_path, event_requests,
+):
+    run_folder, _ = write_saved_dataset(
+        tmp_path,
+        (make_record("P01", {"Fp1": [1, 2, 3]}),),
+    )
+    dataset = load_saved_fft_dataset(run_folder)
+
+    with pytest.raises(ValueError, match="exactly two event requests"):
+        create_saved_paired_scalp_outputs(
+            dataset,
+            event_requests=event_requests,
+        )
+
+
+def test_saved_paired_scalp_plot_requires_distinct_events(tmp_path):
+    run_folder, _ = write_saved_dataset(
+        tmp_path,
+        (make_record("P01", {"Fp1": [1, 2, 3]}),),
+    )
+    dataset = load_saved_fft_dataset(run_folder)
+
+    with pytest.raises(ValueError, match="two distinct event requests"):
+        create_saved_paired_scalp_outputs(
+            dataset,
+            event_requests=(("cue", 11, 10.0), ("cue", 11, 20.0)),
+        )
+
+
+def test_saved_paired_scalp_plot_rejects_noncue_events(tmp_path):
+    run_folder, _ = write_saved_dataset(
+        tmp_path,
+        (make_record("P01", {"Fp1": [1, 2, 3]}),),
+    )
+    dataset = load_saved_fft_dataset(run_folder)
+
+    with pytest.raises(ValueError, match="cue conditions only"):
+        create_saved_paired_scalp_outputs(
+            dataset,
+            event_requests=(("cue", 11, 10.0), ("baseline", 100, 10.0)),
+        )
+
+
 def test_saved_scalp_plot_uses_the_montage_recorded_in_the_csv(tmp_path):
     run_folder, source_csv = write_saved_dataset(
         tmp_path,
@@ -792,6 +959,56 @@ def test_failed_plot_removes_only_its_reserved_png(tmp_path, monkeypatch, kind):
     assert set(output_folder.iterdir()) == {previous_png, old_folder}
     assert previous_png.read_bytes() == b"previous successful output"
     assert previous_csv.read_bytes() == b"previous source export"
+    assert source_csv.read_bytes() == original_source
+
+
+def test_failed_paired_scalp_plot_removes_only_its_reserved_png(tmp_path, monkeypatch):
+    import sssep_batch.analysis.saved_outputs as saved_outputs
+
+    channels = {
+        "Fp1": [1, 2, 3],
+        "Fp2": [2, 3, 4],
+        "C3": [3, 4, 5],
+        "C4": [4, 5, 6],
+    }
+    run_folder, source_csv = write_saved_dataset(
+        tmp_path,
+        (
+            make_record("P01", channels),
+            make_record(
+                "P01",
+                channels,
+                trigger_code=12,
+                trigger_label="BothHands Right Hand",
+            ),
+        ),
+    )
+    original_source = source_csv.read_bytes()
+    dataset = load_saved_fft_dataset(run_folder)
+    output_folder = run_folder / "saved_fft_plots"
+    output_folder.mkdir()
+    stem = "group_cue_011_10_Hz_and_cue_012_10_Hz_scalp_map"
+    previous_png = output_folder / f"{stem}.png"
+    previous_png.write_bytes(b"previous successful output")
+    attempts = []
+
+    def fail_render(_values, output_path):
+        assert output_path == output_folder / f"{stem} (2).png"
+        output_path.write_bytes(b"partial PNG")
+        attempts.append(output_path)
+        raise OSError("synthetic paired render failure")
+
+    monkeypatch.setattr(saved_outputs, "plot_saved_paired_scalp_maps", fail_render)
+    with pytest.raises(OSError, match="synthetic paired render failure"):
+        create_saved_paired_scalp_outputs(
+            dataset,
+            event_requests=(("cue", 11, 10.0), ("cue", 12, 10.0)),
+        )
+
+    assert len(attempts) == 1
+    assert not attempts[0].exists()
+    assert list(output_folder.iterdir()) == [previous_png]
+    assert previous_png.read_bytes() == b"previous successful output"
     assert source_csv.read_bytes() == original_source
 
 

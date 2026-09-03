@@ -797,6 +797,7 @@ def test_scalp_maps_do_not_require_or_multiply_by_selected_rois(tmp_path):
         panel.set_plot_settings(plot_rois={}, stimulation_hz=26.0)
         panel._results_loaded(dataset)
         panel._refresh_controls(False)
+        panel.paired_figures_check.setChecked(False)
         panel.event_combo.setCurrentIndex(panel.event_combo.findData("all"))
         panel._start_plot("roi")
         assert panel.plot_worker is None
@@ -814,6 +815,145 @@ def test_scalp_maps_do_not_require_or_multiply_by_selected_rois(tmp_path):
         assert not worker.result["failures"]
         assert panel.plot_rois == {}
         assert panel.view_button.isEnabled()
+        panel.close()
+        print("SAVED_BATCH_OK")
+    ''')
+
+
+def test_paired_scalp_controls_create_one_figure_for_two_explicit_conditions(tmp_path):
+    _run_batch_plot_probe(tmp_path, "paired_scalp_figure", '''
+        messages = []
+        paired_started, paired_release = threading.Event(), threading.Event()
+
+        class MessageBox:
+            @staticmethod
+            def warning(parent, title, message):
+                messages.append((title, message))
+            critical = warning
+
+        def paired_scalp_outputs(dataset, *, event_requests, participant_id=None):
+            assert threading.current_thread() is not threading.main_thread()
+            assert dataset is saved_dataset
+            calls.append({
+                "event_requests": tuple(event_requests),
+                "participant_id": participant_id,
+            })
+            paired_started.set()
+            assert paired_release.wait(5), "GUI did not release paired scalp worker"
+            output_folder = source.parent / "saved_fft_plots"
+            output_folder.mkdir(exist_ok=True)
+            plot_path = output_folder / "paired_021_022_scalp_map.png"
+            plot_path.write_bytes(b"paired scalp figure")
+            labels = {21: "Condition 21", 22: "Condition 22"}
+            return {
+                "kind": "scalp",
+                "layout": "paired",
+                "output_folder": str(output_folder),
+                "plot_path": str(plot_path),
+                "maps": [
+                    {
+                        "event_type": event_type,
+                        "trigger_code": trigger_code,
+                        "trigger_label": labels[trigger_code],
+                        "requested_frequency_hz": frequency_hz,
+                        "actual_frequency_hz": frequency_hz,
+                        "participant_count_min": 1,
+                        "participant_count_max": 2,
+                        "omitted_channels": ["External"] if trigger_code == 22 else [],
+                    }
+                    for event_type, trigger_code, frequency_hz in event_requests
+                ],
+            }
+
+        saved_dataset = dataset
+        saved_gui.QMessageBox = MessageBox
+        saved_gui.create_saved_paired_scalp_outputs = paired_scalp_outputs
+        panel = saved_gui.SavedPlotsPanel()
+        panel.set_plot_settings(plot_rois={}, stimulation_hz=26.0)
+        panel._results_loaded(dataset)
+        panel._refresh_controls(False)
+        panel.show()
+        app.processEvents()
+
+        assert panel.paired_figures_check.isChecked()
+        assert panel.paired_figures_check.isEnabled()
+        assert not panel.paired_conditions_widget.isHidden()
+        available_a = [
+            panel.paired_condition_a_combo.itemData(index)
+            for index in range(panel.paired_condition_a_combo.count())
+        ]
+        available_b = [
+            panel.paired_condition_b_combo.itemData(index)
+            for index in range(panel.paired_condition_b_combo.count())
+        ]
+        assert available_a == available_b == [
+            ("cue", 11), ("cue", 12), ("cue", 21), ("cue", 22),
+        ]
+        assert panel.paired_condition_a_combo.currentData() == ("cue", 11)
+        assert panel.paired_condition_b_combo.currentData() == ("cue", 12)
+        assert panel.create_scalp_button.text() == "Create Paired Scalp Map"
+
+        panel.paired_condition_a_combo.setCurrentIndex(
+            available_a.index(("cue", 21))
+        )
+        panel.paired_condition_b_combo.setCurrentIndex(
+            available_b.index(("cue", 22))
+        )
+        panel._start_plot("scalp")
+        worker = panel.plot_worker
+        assert worker is not None, (
+            messages,
+            panel.status_label.text(),
+            panel._selected_paired_conditions(),
+        )
+        assert worker.request["kind"] == "scalp"
+        assert worker.request["layout"] == "paired"
+        assert worker.request["events"] == (("cue", 21), ("cue", 22))
+        wait_until(paired_started.is_set)
+        try:
+            assert not panel.paired_figures_check.isEnabled()
+            assert not panel.paired_condition_a_combo.isEnabled()
+            assert not panel.paired_condition_b_combo.isEnabled()
+        finally:
+            paired_release.set()
+        wait_until(lambda: panel.plot_worker is None)
+
+        assert calls == [{
+            "event_requests": (("cue", 21, 26.0), ("cue", 22, 26.0)),
+            "participant_id": None,
+        }]
+        assert worker.error is None
+        assert worker.result["requested_count"] == 1
+        assert len(worker.result["outputs"]) == 1
+        assert not worker.result["failures"]
+        assert "Created 1 of 1 paired scalp figure" in panel.status_label.text()
+        details = panel.plot_details.toPlainText()
+        assert "Trigger code 21: Condition 21" in details
+        assert "Trigger code 22: Condition 22" in details
+        assert "omitted electrodes without coordinates: External" in details
+        assert panel.view_button.isEnabled()
+
+        panel.paired_condition_b_combo.setCurrentIndex(
+            available_b.index(("cue", 21))
+        )
+        panel._start_plot("scalp")
+        assert panel.plot_worker is None
+        assert len(calls) == 1
+        assert messages and "two different" in messages[-1][1]
+
+        panel.paired_figures_check.setChecked(False)
+        panel.event_combo.setCurrentIndex(panel.event_combo.findData("all"))
+        assert panel.paired_conditions_widget.isHidden()
+        assert panel.create_scalp_button.text() == "Create All Scalp Maps"
+
+        panel.paired_figures_check.setChecked(True)
+        panel.level_combo.setCurrentIndex(panel.level_combo.findData("participant"))
+        panel.participant_combo.setCurrentIndex(panel.participant_combo.findData("P02"))
+        assert [
+            panel.paired_condition_a_combo.itemData(index)
+            for index in range(panel.paired_condition_a_combo.count())
+        ] == [("cue", 11), ("cue", 22)]
+        assert panel._paired_conditions_valid()
         panel.close()
         print("SAVED_BATCH_OK")
     ''')

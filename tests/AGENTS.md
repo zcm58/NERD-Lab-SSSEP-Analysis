@@ -19,7 +19,8 @@ Keep the default test suite lightweight:
   units, DC/Nyquist, equal-participant group means, missing-electrode counts,
   and consolidated participant/group tables.
   Saved-FFT tests also cover strict CSV reloading, participant-first later ROI
-  means, nearest-bin scalp values, and plotted-value exports.
+  means, nearest-bin scalp values, paired-map shared scaling, and plotted-value
+  exports.
 - `events/`
   Trigger parsing, intended-event filtering, and epoch extraction behavior.
 - `preprocess/`
@@ -44,7 +45,8 @@ Keep the default test suite lightweight:
   Saved-result loading and post-processing worker lifecycle in an isolated GUI
   subprocess, including all-condition/all-ROI batches, separate singleton ROIs,
   per-ROI partial failures, participant event filtering, scalp-map counts
-  independent of ROIs, and persistent Settings-driven ROI/frequency choices.
+  independent of ROIs, paired Condition A/B selection, and persistent
+  Settings-driven ROI/frequency choices.
 - `test_roi_selection_gui.py`
   Interactive BioSemi map, preset membership, custom electrode selection,
   missing-channel display, saved ROI reuse, and dialog validation in an isolated

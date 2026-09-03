@@ -194,10 +194,14 @@ active epochs is reported as failed.
   maps are downstream displays: they do not alter preprocessing or FFT values.
   Later ROI group curves average electrodes within participant first. A scalp
   map uses the nearest saved FFT bin, reports that actual bin, and does not fill
-  missing electrodes with zero. Later plot exports save only PNGs directly in
+  missing electrodes with zero. The paired option adopts the FPVS Scalp Maps
+  two-column/shared-scale comparison pattern: two explicitly selected SSSEP cue
+  conditions can be rendered side by side with one shared amplitude scale. Their
+  values and participant cohorts remain separate. SSSEP retains its own PNG-only,
+  numbered-output contract. Later plot exports save only PNGs directly in
   `saved_fft_plots`, with numbered filenames for repeated plots. No per-plot
-  CSV/Excel copies or subfolders are created. The canonical FFT CSVs retain
-  all values, provenance, and per-electrode participant counts; the GUI reports
+  CSV/Excel copies or subfolders are created. The canonical FFT CSVs retain all
+  values, provenance, and per-electrode participant counts; the GUI reports
   labels omitted for missing montage coordinates.
 - New summary fields use explicit `*_amplitude_uv` names. Amplitude ratios use
   `20 * log10(ratio)`. Missing active/baseline measurements remain unavailable.

@@ -9,6 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -23,11 +24,13 @@ from PySide6.QtWidgets import (
 
 from sssep_batch.analysis.saved_fft import (
     PARTICIPANT_FFT_FILENAME,
+    SavedEvent,
     SavedFftDataset,
     load_saved_fft_dataset,
     saved_scalp_frequency_bounds,
 )
 from sssep_batch.analysis.saved_outputs import (
+    create_saved_paired_scalp_outputs,
     create_saved_roi_outputs,
     create_saved_scalp_outputs,
 )
@@ -108,6 +111,7 @@ class SavedPlotWorker(QThread):
             available = {name.casefold(): name for name in self.dataset.channel_names}
             missing, rois = {}, {}
             kind = self.request["kind"]
+            layout = self.request.get("layout", "individual")
             if kind == "roi":
                 for roi_name, requested in self.request["rois"].items():
                     rois[roi_name] = tuple(dict.fromkeys(
@@ -120,10 +124,69 @@ class SavedPlotWorker(QThread):
                 if not rois:
                     raise ValueError("Add at least one ROI in File > Settings before creating FFT plots.")
             elif kind == "scalp":
+                if layout not in ("individual", "paired"):
+                    raise ValueError(f"Unknown scalp-map layout: {layout!r}")
                 # A scalp map uses all available electrodes, once per event.
                 rois = {None: ()}
             else:
                 raise ValueError(f"Unknown saved plot kind: {kind!r}")
+
+            if kind == "scalp" and layout == "paired":
+                if (
+                    len(events) != 2
+                    or len(set(events)) != 2
+                    or any(event_type != "cue" for event_type, _trigger_code in events)
+                ):
+                    raise ValueError(
+                        "A paired scalp figure requires two different attention trigger codes."
+                    )
+                selected_events = [
+                    next(item for item in self.dataset.events if (
+                        item.event_type, item.trigger_code
+                    ) == key)
+                    for key in events
+                ]
+                label = " / ".join(event.display_name for event in selected_events)
+                self.progress.emit(f"Creating plot 1/1: {label}...")
+                try:
+                    event_requests = []
+                    for event in selected_events:
+                        frequency = self.request.get("stimulation_hz")
+                        if frequency is None:
+                            frequency = event.target_hz
+                        if frequency is None:
+                            raise ValueError(
+                                "Set TENS Unit Stimulation Frequency in File > Settings "
+                                "before creating a paired scalp figure."
+                            )
+                        lower, upper = saved_scalp_frequency_bounds(self.dataset)
+                        if not isfinite(frequency) or not lower <= frequency <= upper:
+                            raise ValueError(
+                                f"TENS Unit Stimulation Frequency must be between {lower:g} "
+                                f"and {upper:g} Hz for these results. Change it in File > Settings."
+                            )
+                        event_requests.append((
+                            event.event_type,
+                            event.trigger_code,
+                            frequency,
+                        ))
+                    outputs.append(create_saved_paired_scalp_outputs(
+                        self.dataset,
+                        event_requests=tuple(event_requests),
+                        participant_id=self.request.get("participant_id"),
+                    ))
+                except Exception as exc:
+                    failures.append(f"{label}: {str(exc) or type(exc).__name__}")
+                self.result = dict(
+                    kind=kind,
+                    layout=layout,
+                    outputs=outputs,
+                    failures=failures,
+                    requested_count=1,
+                    missing_channels=missing,
+                )
+                return
+
             requested_count = len(events) * len(rois)
             for index, ((event_type, trigger_code), (roi_name, channels)) in enumerate(
                 product(events, rois.items()), 1
@@ -166,7 +229,7 @@ class SavedPlotWorker(QThread):
                 except Exception as exc:
                     failures.append(f"{label}: {str(exc) or type(exc).__name__}")
             self.result = dict(
-                kind=kind, outputs=outputs, failures=failures,
+                kind=kind, layout=layout, outputs=outputs, failures=failures,
                 requested_count=requested_count, missing_channels=missing,
             )
         except Exception as exc:
@@ -195,6 +258,21 @@ class SavedPlotsPanel(QWidget):
         self.level_combo.addItem("Individual participant", "participant")
         self.participant_combo = QComboBox()
         self.event_combo = QComboBox()
+        self.paired_figures_check = QCheckBox("Create one paired-condition figure")
+        self.paired_figures_check.setChecked(True)
+        self.paired_figures_check.setToolTip(
+            "Export only one side-by-side scalp figure for Condition A and "
+            "Condition B, using a shared color scale."
+        )
+        self.paired_conditions_widget = QWidget()
+        self.paired_condition_a_combo = QComboBox()
+        self.paired_condition_a_combo.setToolTip(
+            "Select the first attention trigger for the paired scalp figure."
+        )
+        self.paired_condition_b_combo = QComboBox()
+        self.paired_condition_b_combo.setToolTip(
+            "Select the second attention trigger for the paired scalp figure."
+        )
         self.plot_rois = {PLOT_CHANNEL: (PLOT_CHANNEL,)}
         self.stimulation_hz = STIMULATION_FREQUENCY_HZ
         self.plot_settings_label = hint_label("")
@@ -249,10 +327,30 @@ class SavedPlotsPanel(QWidget):
             field.addWidget(control)
             selection_row.addLayout(field, stretch)
         selection_card.body.addLayout(selection_row)
+
+        paired_layout = QVBoxLayout(self.paired_conditions_widget)
+        paired_layout.setContentsMargins(0, 0, 0, 0)
+        paired_layout.setSpacing(6)
+        paired_selectors = QHBoxLayout()
+        paired_selectors.setSpacing(12)
+        for label, control in (
+            ("Condition A", self.paired_condition_a_combo),
+            ("Condition B", self.paired_condition_b_combo),
+        ):
+            field = QVBoxLayout()
+            field.setSpacing(6)
+            field.addWidget(QLabel(label))
+            field.addWidget(control)
+            paired_selectors.addLayout(field, 1)
+        paired_layout.addLayout(paired_selectors)
+        selection_card.body.addWidget(self.paired_figures_check)
+        selection_card.body.addWidget(self.paired_conditions_widget)
         selection_card.body.addWidget(self.plot_settings_label)
         selection_card.body.addWidget(hint_label(
             "Change Regions of Interest and stimulation frequency in File > Settings. "
-            "FFT plots are separate for every listed ROI and selected trigger code."
+            "FFT plots are separate for every listed ROI and selected trigger code. "
+            "Trigger code / event controls FFT and unpaired scalp maps; Condition A "
+            "and Condition B control the paired scalp map, which shares one color scale."
         ))
         selection_card.body.addWidget(self.plot_details)
         body.addWidget(selection_card)
@@ -276,6 +374,9 @@ class SavedPlotsPanel(QWidget):
         self.level_combo.currentIndexChanged.connect(self._level_changed)
         self.participant_combo.currentIndexChanged.connect(self._participant_changed)
         self.event_combo.currentIndexChanged.connect(self._event_changed)
+        self.paired_figures_check.toggled.connect(self._on_paired_figures_toggled)
+        self.paired_condition_a_combo.currentIndexChanged.connect(self._event_changed)
+        self.paired_condition_b_combo.currentIndexChanged.connect(self._event_changed)
         self.create_roi_button.clicked.connect(lambda: self._start_plot("roi"))
         self.create_scalp_button.clicked.connect(lambda: self._start_plot("scalp"))
         self.view_button.clicked.connect(self._view_plot)
@@ -320,6 +421,8 @@ class SavedPlotsPanel(QWidget):
         self.plot_details.hide()
         self.participant_combo.clear()
         self.event_combo.clear()
+        self.paired_condition_a_combo.clear()
+        self.paired_condition_b_combo.clear()
 
     def is_busy(self) -> bool:
         """Return whether saved FFT loading or plotting is still active."""
@@ -472,7 +575,89 @@ class SavedPlotsPanel(QWidget):
         elif self.event_combo.count() > 1 and self.event_combo.itemData(0) == "all":
             self.event_combo.setCurrentIndex(1)
         self.event_combo.blockSignals(False)
+        self._sync_paired_condition_selectors(tuple(
+            event for event in self.dataset.events
+            if event.event_type == "cue"
+            and (event.event_type, event.trigger_code) in available
+        ))
         self._event_changed()
+
+    def _sync_paired_condition_selectors(self, events: tuple[SavedEvent, ...]) -> None:
+        """Populate paired scalp selectors from cues available at the current level."""
+
+        previous_a = self.paired_condition_a_combo.currentData()
+        previous_b = self.paired_condition_b_combo.currentData()
+        for combo in (self.paired_condition_a_combo, self.paired_condition_b_combo):
+            combo.blockSignals(True)
+            combo.clear()
+            for event in events:
+                combo.addItem(
+                    event.display_name,
+                    (event.event_type, event.trigger_code),
+                )
+        try:
+            first_index = next((
+                index for index in range(self.paired_condition_a_combo.count())
+                if self.paired_condition_a_combo.itemData(index) == previous_a
+            ), -1)
+            self.paired_condition_a_combo.setCurrentIndex(
+                first_index if first_index >= 0 else (0 if events else -1)
+            )
+            second_index = next((
+                index for index in range(self.paired_condition_b_combo.count())
+                if self.paired_condition_b_combo.itemData(index) == previous_b
+            ), -1)
+            if (
+                second_index < 0
+                or self.paired_condition_b_combo.itemData(second_index)
+                == self.paired_condition_a_combo.currentData()
+            ):
+                second_index = 1 if len(events) > 1 else (0 if events else -1)
+            self.paired_condition_b_combo.setCurrentIndex(second_index)
+        finally:
+            self.paired_condition_a_combo.blockSignals(False)
+            self.paired_condition_b_combo.blockSignals(False)
+        if len(events) < 2 and self.paired_figures_check.isChecked():
+            self.paired_figures_check.setChecked(False)
+        self._update_paired_controls_state()
+
+    def _selected_paired_conditions(self) -> tuple[tuple[str, int], ...]:
+        """Return the two trigger identities requested for a paired scalp figure."""
+
+        selected = (
+            self.paired_condition_a_combo.currentData(),
+            self.paired_condition_b_combo.currentData(),
+        )
+        if all(isinstance(item, tuple) and len(item) == 2 for item in selected):
+            return selected
+        return ()
+
+    def _paired_conditions_valid(self) -> bool:
+        """Return whether two different attention triggers are selected."""
+
+        selected = self._selected_paired_conditions()
+        return bool(
+            len(selected) == 2
+            and selected[0] != selected[1]
+            and all(event_type == "cue" for event_type, _trigger_code in selected)
+        )
+
+    def _on_paired_figures_toggled(self, _checked: bool) -> None:
+        self._update_paired_controls_state()
+        self._event_changed()
+
+    def _update_paired_controls_state(self, working: bool | None = None) -> None:
+        """Show paired selectors only when the checked option can be used."""
+
+        loaded = self.dataset is not None
+        available = self.paired_condition_a_combo.count() >= 2
+        if working is None:
+            working = self.is_busy()
+        self.paired_figures_check.setEnabled(loaded and available and not working)
+        checked = self.paired_figures_check.isChecked()
+        self.paired_conditions_widget.setVisible(checked and available)
+        for combo in (self.paired_condition_a_combo, self.paired_condition_b_combo):
+            combo.setEnabled(loaded and available and checked and not working)
 
     def _event_changed(self) -> None:
         """Make each action's single-condition or all-condition scope explicit."""
@@ -481,7 +666,11 @@ class SavedPlotsPanel(QWidget):
             "Create All FFT Plots" if all_conditions else
             "Create FFT Plots" if len(self.plot_rois) > 1 else "Create FFT Plot"
         )
-        self.create_scalp_button.setText("Create All Scalp Maps" if all_conditions else "Create Scalp Map")
+        self.create_scalp_button.setText(
+            "Create Paired Scalp Map"
+            if self.paired_figures_check.isChecked()
+            else "Create All Scalp Maps" if all_conditions else "Create Scalp Map"
+        )
 
     def _update_plot_settings_summary(self) -> None:
         frequency = "Saved per-condition frequency" if self.stimulation_hz is None else f"{self.stimulation_hz:g} Hz"
@@ -509,7 +698,15 @@ class SavedPlotsPanel(QWidget):
             )
             return
         selected_event = self.event_combo.currentData()
-        if selected_event != "all" and (
+        paired_scalp = kind == "scalp" and self.paired_figures_check.isChecked()
+        if paired_scalp:
+            if not self._paired_conditions_valid():
+                self._warn(
+                    "Paired Scalp Figure Needs Attention",
+                    "Select two different attention trigger codes for Condition A and Condition B.",
+                )
+                return
+        elif selected_event != "all" and (
             not isinstance(selected_event, tuple) or len(selected_event) != 2
         ):
             self._warn("Saved Results Need Attention", "Choose a trigger code before plotting.")
@@ -521,7 +718,7 @@ class SavedPlotsPanel(QWidget):
             if not participant_id:
                 self._warn("Saved Results Need Attention", "Choose a participant before plotting.")
                 return
-        events = (
+        events = self._selected_paired_conditions() if paired_scalp else (
             tuple(self.event_combo.itemData(index) for index in range(self.event_combo.count())
                   if isinstance(self.event_combo.itemData(index), tuple)
                   and self.event_combo.itemData(index)[0] == "cue")
@@ -535,6 +732,7 @@ class SavedPlotsPanel(QWidget):
             "events": events,
             "participant_id": participant_id,
             "stimulation_hz": self.stimulation_hz,
+            "layout": "paired" if paired_scalp else "individual",
         }
         if kind == "roi":
             if not self.plot_rois:
@@ -546,7 +744,11 @@ class SavedPlotsPanel(QWidget):
             request["rois"] = dict(self.plot_rois)
             working_message = f"Creating {len(events) * len(self.plot_rois)} FFT plot(s)..."
         elif kind == "scalp":
-            working_message = "Creating the saved FFT scalp map..."
+            working_message = (
+                "Creating one paired scalp figure..."
+                if paired_scalp
+                else f"Creating {len(events)} saved FFT scalp map(s)..."
+            )
         else:
             raise ValueError(f"Unknown saved plot kind: {kind!r}")
 
@@ -566,7 +768,11 @@ class SavedPlotsPanel(QWidget):
         outputs = result["outputs"]
         failures = result["failures"]
         self.plot_output_folder = str(outputs[0]["output_folder"]) if outputs else ""
-        kind = "scalp map(s)" if result["kind"] == "scalp" else "FFT plot(s)"
+        paired_scalp = result["kind"] == "scalp" and result.get("layout") == "paired"
+        kind = (
+            "paired scalp figure(s)" if paired_scalp else
+            "scalp map(s)" if result["kind"] == "scalp" else "FFT plot(s)"
+        )
         summary = f"Created {len(outputs)} of {result['requested_count']} {kind}."
         if outputs:
             summary += " PNGs saved in saved_fft_plots."
@@ -574,6 +780,30 @@ class SavedPlotsPanel(QWidget):
             summary += f" {len(failures)} failed."
         details = []
         for output in outputs:
+            if paired_scalp:
+                maps = output.get("maps", ())
+                details.append(
+                    "Paired scalp figure: "
+                    + " / ".join(
+                        f"Trigger code {item['trigger_code']}: {item['trigger_label']}"
+                        for item in maps
+                    )
+                    + "."
+                )
+                for item in maps:
+                    label = f"Trigger code {item['trigger_code']}"
+                    details.append(
+                        f"{label}: requested {item['requested_frequency_hz']:g} Hz, "
+                        f"plotted {item['actual_frequency_hz']:g} Hz; "
+                        f"electrode N={item['participant_count_min']}–"
+                        f"{item['participant_count_max']}."
+                    )
+                    if item.get("omitted_channels"):
+                        details.append(
+                            f"{label}: omitted electrodes without coordinates: "
+                            f"{', '.join(item['omitted_channels'])}."
+                        )
+                continue
             label = f"Trigger code {output['trigger_code']}" if output["event_type"] == "cue" else "Baseline"
             if result["kind"] == "scalp":
                 details.append(
@@ -651,6 +881,7 @@ class SavedPlotsPanel(QWidget):
             and not working
             and self.level_combo.currentData() == "participant"
         )
+        self._update_paired_controls_state(working)
         self.view_button.setEnabled(not working and bool(self.plot_output_folder))
 
     def _view_plot(self) -> None:

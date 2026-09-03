@@ -30,7 +30,8 @@ launcher opens the task home. Use **View** to switch workflows:
   electrode or ROI plots and scalp maps without processing the BDF files again.
   Define separate electrodes or ROIs through **File > Settings > Regions of
   Interest**. Choose one condition or plot all conditions for every listed ROI
-  in one click.
+  in one click. Scalp maps can also place two explicitly selected conditions
+  side by side on one figure with a shared amplitude scale.
 
 Edit session settings, participant text, and analysis options under **File >
 Settings**. Click **Save** to keep changes after closing the app. The default

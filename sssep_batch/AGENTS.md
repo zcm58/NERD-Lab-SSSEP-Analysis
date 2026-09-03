@@ -17,8 +17,10 @@ The package is organized around these boundaries:
   Per-file stage order only.
 - `saved_plots_gui.py`
   Saved-result/data selectors and background load/plot workers. All conditions
-  renders separate FFT PNGs per ROI/event and one scalp map per event, retaining
-  successes and reporting failures in the scrollable results box.
+  renders separate FFT PNGs per ROI/event. Scalp maps support separate event
+  figures and an explicit paired-condition figure with a shared amplitude
+  scale, retaining successes and reporting failures in the scrollable results
+  box.
 - `roi_selection_gui.py`
   Modal BioSemi64 diagram and named electrode/ROI selection. Use ROI applies
   the draft; Cancel preserves the prior selection. Presets and schematic

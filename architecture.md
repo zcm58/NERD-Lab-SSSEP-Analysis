@@ -86,7 +86,9 @@ Later ROI means average electrodes within participant before the equal-weight
 group mean, retaining participant contributions in memory. Scalp maps use finite
 electrodes with coordinates in the
 saved `standard_1005` montage; missing or unmapped electrodes are not replaced
-with zero. Saved plots are PNGs directly in `saved_fft_plots`, without per-plot
+with zero. Two explicitly selected cue conditions can share one side-by-side
+figure and one amplitude color scale without pooling their data or participant
+cohorts. Saved plots are PNGs directly in `saved_fft_plots`, without per-plot
 CSV/Excel copies or subfolders. Reserve filenames exclusively and add numbered
 suffixes for repeats; on failure remove only that attempt's PNG, never the
 shared folder or earlier outputs. The canonical FFT CSVs retain all amplitudes,
@@ -149,9 +151,13 @@ Scalp-map names retain their frequency, and old exports are not renamed.
   its ROI/frequency summary is read-only. File > Settings is their editor.
   Source changes do not reset these preferences. All conditions creates separate
   FFT PNGs for each named ROI and available attention trigger code at the selected
-  group/participant level, excluding baselines. Scalp maps run once per event,
-  independent of the ROI list. One retained worker renders sequentially, reports
-  progress, and keeps successful plots when another fails. Show the complete
+  group/participant level, excluding baselines. Scalp maps are independent of
+  the ROI list. Paired-condition mode is the default and creates one two-map
+  figure from distinct Condition A/B cue selections with a shared scale, with
+  handled failures removing that figure's partial PNG. Turning it off retains
+  the single-event and All conditions cue-map behavior. One retained worker
+  renders sequentially, reports progress, and keeps successful plots when
+  another fails. Show the complete
   failure report only after releasing the worker. Keep the footer summary short
   and all per-plot details in the scrollable results box. Settings and window
   close remain blocked for the whole batch. Report missing configured electrodes

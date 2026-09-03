@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Iterable
 
 import matplotlib
 
@@ -203,8 +204,10 @@ def _saved_plot_montage(montage_name: str):
         ) from exc
 
 
-def plot_saved_scalp_map(values: ScalpMapValues, outpath: Path) -> tuple[str, ...]:
-    """Save one FFT-amplitude scalp map and return labels without coordinates."""
+def _mapped_saved_scalp_data(
+    values: ScalpMapValues,
+) -> tuple[mne.Info, np.ndarray, tuple[int, ...], tuple[str, ...]]:
+    """Map saved electrode values onto their recorded montage."""
 
     montage = _saved_plot_montage(values.provenance.montage_name)
     montage_lookup = {name.casefold(): name for name in montage.ch_names}
@@ -235,21 +238,62 @@ def plot_saved_scalp_map(values: ScalpMapValues, outpath: Path) -> tuple[str, ..
 
     info = mne.create_info(mapped_names, sfreq=100.0, ch_types="eeg")
     info.set_montage(montage)
-    amplitude_array = np.asarray(mapped_values, dtype=np.float64)
-    upper_limit = float(np.max(amplitude_array))
-    if upper_limit <= 0:
-        upper_limit = 1.0
+    return (
+        info,
+        np.asarray(mapped_values, dtype=np.float64),
+        tuple(mapped_counts),
+        tuple(unmapped),
+    )
+
+
+def _saved_scalp_title(values: ScalpMapValues, mapped_counts: Iterable[int]) -> str:
+    """Return the existing participant/group title for one scalp-map panel."""
+
+    counts = tuple(mapped_counts)
     if values.participant_id is not None:
         level = f"Participant {values.participant_id}"
     else:
-        count_min = min(mapped_counts)
-        count_max = max(mapped_counts)
+        count_min = min(counts)
+        count_max = max(counts)
         count_text = (
             f"N={count_min}"
             if count_min == count_max
             else f"electrode N={count_min}–{count_max}"
         )
         level = f"Group average ({count_text})"
+    return (
+        f"{level} - {values.event.trigger_label}\n"
+        f"FFT amplitude at {values.actual_frequency_hz:g} Hz"
+    )
+
+
+def _paired_saved_scalp_title(
+    values: ScalpMapValues,
+    mapped_counts: Iterable[int],
+) -> str:
+    """Return a compact condition heading for one paired-map column."""
+
+    frequency = f"{values.actual_frequency_hz:g} Hz"
+    if values.participant_id is not None:
+        return f"{values.event.trigger_label}\n{frequency}"
+    counts = tuple(mapped_counts)
+    count_min = min(counts)
+    count_max = max(counts)
+    count_text = (
+        f"N={count_min}"
+        if count_min == count_max
+        else f"electrode N={count_min}–{count_max}"
+    )
+    return f"{values.event.trigger_label}\n{frequency}; {count_text}"
+
+
+def plot_saved_scalp_map(values: ScalpMapValues, outpath: Path) -> tuple[str, ...]:
+    """Save one FFT-amplitude scalp map and return labels without coordinates."""
+
+    info, amplitude_array, mapped_counts, unmapped = _mapped_saved_scalp_data(values)
+    upper_limit = float(np.max(amplitude_array))
+    if upper_limit <= 0:
+        upper_limit = 1.0
 
     figure, axes = plt.subplots(figsize=(7, 6))
     try:
@@ -263,14 +307,67 @@ def plot_saved_scalp_map(values: ScalpMapValues, outpath: Path) -> tuple[str, ..
             cmap="viridis",
             vlim=(0.0, upper_limit),
         )
-        axes.set_title(
-            f"{level} - {values.event.trigger_label}\n"
-            f"FFT amplitude at {values.actual_frequency_hz:g} Hz"
-        )
+        axes.set_title(_saved_scalp_title(values, mapped_counts))
         colorbar = figure.colorbar(image, ax=axes, shrink=0.82)
         colorbar.set_label("FFT amplitude (µV)")
         figure.tight_layout()
         figure.savefig(outpath, dpi=300)
     finally:
         plt.close(figure)
-    return tuple(unmapped)
+    return unmapped
+
+
+def plot_saved_paired_scalp_maps(
+    values: Iterable[ScalpMapValues],
+    outpath: Path,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Save two comparable scalp maps with one shared amplitude scale."""
+
+    panels = tuple(values)
+    if len(panels) != 2:
+        raise ValueError("A paired scalp-map figure requires exactly two maps.")
+    event_keys = {
+        (panel.event.event_type, panel.event.trigger_code) for panel in panels
+    }
+    if len(event_keys) != 2:
+        raise ValueError("A paired scalp-map figure requires two distinct events.")
+
+    prepared = tuple(_mapped_saved_scalp_data(panel) for panel in panels)
+    upper_limit = max(
+        float(np.max(amplitudes))
+        for _info, amplitudes, _counts, _unmapped in prepared
+    )
+    if upper_limit <= 0:
+        upper_limit = 1.0
+
+    figure, axes = plt.subplots(1, 2, figsize=(6.5, 3.4))
+    try:
+        image = None
+        for panel, axes_item, (info, amplitudes, counts, _unmapped) in zip(
+            panels,
+            axes,
+            prepared,
+        ):
+            image, _ = mne.viz.plot_topomap(
+                amplitudes,
+                info,
+                axes=axes_item,
+                show=False,
+                sensors=True,
+                contours=6,
+                cmap="viridis",
+                vlim=(0.0, upper_limit),
+            )
+            axes_item.set_title(_paired_saved_scalp_title(panel, counts), fontsize=9)
+        level = (
+            f"Participant {panels[0].participant_id}"
+            if panels[0].participant_id is not None
+            else "Group average"
+        )
+        figure.suptitle(f"{level} — FFT amplitude scalp maps", fontsize=11)
+        colorbar = figure.colorbar(image, ax=list(axes), shrink=0.82)
+        colorbar.set_label("FFT amplitude (µV)")
+        figure.savefig(outpath, dpi=300, bbox_inches="tight")
+    finally:
+        plt.close(figure)
+    return (prepared[0][3], prepared[1][3])

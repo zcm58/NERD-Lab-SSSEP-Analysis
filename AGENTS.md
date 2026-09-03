@@ -166,7 +166,11 @@ authorized:
   Regions of Interest editor belongs in Settings and supports separate named
   entries containing one or more electrodes. All conditions creates one FFT
   PNG per ROI and available attention trigger code for the selected participant
-  or group. Scalp maps run once per trigger code, independent of ROI count.
+  or group. Scalp maps are independent of ROI count. Preserve single-event and
+  All conditions cue-map export, and provide an explicit two-condition paired
+  mode that publishes one side-by-side PNG with a shared amplitude color scale.
+  A paired export is all-or-nothing for handled failures: do not leave a
+  one-panel or partially written comparison.
   Continue after individual failures and report each result in the results box.
 - Keep each batch in a newly created, unique run subfolder. Preserve previous
   runs and the GUI's parent-root saved setting.
