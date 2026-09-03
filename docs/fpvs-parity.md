@@ -147,10 +147,13 @@ supplied to the FFT. These experiment-specific choices remain:
   BioSemi name list. Smaller or unfamiliar sets keep their actual labels.
   SSSEP deliberately does not copy FPVS's fallback that relabels an unfamiliar
   64-channel set with default names.
-- Local amplitude SNR and Gap/Break comparisons occur after the FFT. They are
-  not FPVS's neighboring-bin SNR, BCA, or Z-score exports. Existing summary
-  values and CSV mean columns use the configured ROI, with actual contributing
-  channels recorded. PNGs display one electrode selected in the launcher.
+- When a protocol supplies a separately measured baseline, local amplitude SNR
+  and Gap/Break comparisons occur after the FFT. The current participant task
+  treats code `100` as an epoch-end/break delimiter and disables that baseline
+  FFT. These comparisons are not FPVS's neighboring-bin SNR, BCA, or Z-score
+  exports. Existing summary values and CSV mean columns use the configured ROI,
+  with actual contributing channels recorded. PNGs display one electrode selected
+  in the launcher.
 - Each BDF is treated as one participant. A batch must therefore contain one
   BDF per participant. Group spectra average participant amplitude spectra
   equally and remain downstream of the FPVS parity boundary.

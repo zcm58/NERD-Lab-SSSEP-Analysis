@@ -82,6 +82,7 @@ class AnalysisProtocol:
     expected_repetitions_per_trigger: int
     baseline_event_code: int
     baseline_label: str = "Gap/Break"
+    analyze_baseline: bool = True
 
     def __post_init__(self) -> None:
         if not self.active_triggers or not all(
@@ -115,6 +116,8 @@ class AnalysisProtocol:
             )
         if not isinstance(self.baseline_label, str) or not self.baseline_label.strip():
             raise ValueError("baseline_label must be non-empty.")
+        if not isinstance(self.analyze_baseline, bool):
+            raise TypeError("analyze_baseline must be True or False.")
         object.__setattr__(self, "event_duration_sec", float(self.event_duration_sec))
         object.__setattr__(self, "baseline_label", self.baseline_label.strip())
 

@@ -38,12 +38,12 @@ randomize balanced cues within each condition (default 10 epochs each), with
 at most two identical cues in a row. Timed
 breaks (default 10 seconds) separate cues within a condition. Between conditions,
 wait for Space on the electrode handover screen, then a fresh Y on its visible
-confirmation screen. Send fixed code `100` on the first handover frame; neither
-screen has a countdown and confirmation sends no marker. Initial ready-screen
-Space starts a five-second lead-in. After the final cue, send `100` on the
-thank-you screen's first frame and close after five seconds. Ordinary breaks
-stay unmarked. The persistent Show countdown timer setting defaults to on and
-changes visibility only. Log condition-end sends on their final epoch rows.
+confirmation screen. End every completed attention epoch with fixed code `100`
+on the first following break, handover, or thank-you frame; confirmation sends
+no marker. Neither admin screen has a countdown. Initial ready-screen Space
+starts a five-second lead-in. Close five seconds after the thank-you screen.
+The persistent Show countdown timer setting defaults to on and changes visibility
+only. Log every epoch-end send on its attention epoch row.
 Cue/break text is editable in File > Settings. Save preferences across launches
 in ignored `.sssep_gui_settings.json`; never save hardware codes or random seeds.
 The home shows only its title, Start SSSEP Task button, and settings hint. Use
@@ -131,7 +131,9 @@ authorized:
   mean fields remain compatibility outputs and report their actual channels.
 - Carry both conditions' fixed cue codes, the configured duration, and expected
   repetitions into the batch through `AnalysisProtocol`. Never analyze task
-  recordings with unrelated event settings.
+  recordings with unrelated event settings. Task protocol code `100` ends each
+  attention epoch and starts a variable break/handover/closing interval; retain
+  it in the Status-event audit but do not calculate a baseline FFT from it.
 - Keep full per-electrode nonnegative-frequency amplitudes and method metadata
   in the root-run `participant_fft_amplitudes.csv` and
   `group_fft_amplitudes.csv`. These are consolidated CSVs, not Excel workbooks.

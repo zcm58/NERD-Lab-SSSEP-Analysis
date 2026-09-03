@@ -2,7 +2,7 @@
 
 BioSemi recordings store trigger codes in a special stimulus channel named
 `Status`. This module extracts those events after preprocessing, keeps only the
-active trigger codes and the Gap/Break baseline code, and writes a small audit
+active trigger codes and the configured baseline/delimiter code, and writes a small audit
 CSV so users can see which raw trigger codes were present.
 """
 

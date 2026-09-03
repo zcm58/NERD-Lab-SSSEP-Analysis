@@ -101,7 +101,9 @@ The package is organized around these boundaries:
   summaries and CSV mean columns.
 - Use the `AnalysisProtocol` supplied by the launcher for both conditions'
   four fixed codes and labels, epoch duration, expected counts, and
-  optional stimulation frequency.
+  optional stimulation frequency. That task protocol keeps code `100` in event
+  auditing as an epoch-end/break delimiter and disables baseline FFT calculation
+  for its variable following intervals.
 - Local SSSEP amplitude SNR and Gap/Break comparisons are downstream summaries,
   not a claim of parity with FPVS's neighboring-bin SNR method.
 - `process_one_bdf()` writes durable per-file reports and should keep its final
@@ -167,11 +169,13 @@ The package is organized around these boundaries:
   waits for Space on the visible handover screen, then Y on a separate visible
   confirmation screen; ignore held-key repeats. Send `100` on the first handover
   swap, none on confirmation. Initial Space starts a five-second lead-in; the
-  final thank-you screen sends `100` once on its first swap and closes after
-  five seconds. Log each condition-end send on its final epoch row.
+  final thank-you screen closes after five seconds. End every completed attention
+  epoch by sending `100` on the first following break, handover, or thank-you
+  swap. Log each epoch-end send on that attention epoch's row.
   Align a Qt `PreciseTimer` deadline to each accepted timed-screen swap; close
-  cues on the following break, handover, or thank-you swap. Ordinary breaks send
-  no markers. The persistent countdown toggle controls visibility, not timing.
+  cues on the following break, handover, or thank-you swap. Confirmation and
+  countdown redraws send no markers. The persistent countdown toggle controls
+  visibility, not timing.
 - BioSemi events are one raw byte, codes `1..255`, over fixed `COM3` at 115200
   baud by default.
 - Never continue silently after a serial or trigger failure. Preserve partial

@@ -204,7 +204,7 @@ class CueEpoch:
 
 @dataclass(frozen=True, slots=True)
 class CuePresentationRecord:
-    """Observed cue and trigger timing from one presentation flip."""
+    """Observed cue and boundary-trigger timing for one attention epoch."""
 
     epoch_index: int
     condition: TaskCondition
@@ -218,10 +218,10 @@ class CuePresentationRecord:
     completed: bool = False
     trigger_succeeded: bool = True
     trigger_error: str | None = None
-    condition_end_trigger_code: int | None = None
-    condition_end_trigger_time_sec: float | None = None
-    condition_end_trigger_succeeded: bool | None = None
-    condition_end_trigger_error: str | None = None
+    epoch_end_trigger_code: int | None = None
+    epoch_end_trigger_time_sec: float | None = None
+    epoch_end_trigger_succeeded: bool | None = None
+    epoch_end_trigger_error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,4 +273,5 @@ def analysis_protocol_for_task(
         expected_repetitions_per_trigger=validated.epochs_per_condition // 2,
         baseline_event_code=BASELINE_EVENT_CODE,
         baseline_label=TRIGGER_LABELS[BASELINE_EVENT_CODE],
+        analyze_baseline=False,
     )

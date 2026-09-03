@@ -32,14 +32,17 @@ its two participant prompts, with no more than two identical prompts in a row. T
 handover waits for the administrator and has no countdown.
 
 Trigger codes stay locked: `11`/`12` for both hands and `21`/`22` for hand/ankle.
-Code `100` is sent once when each condition ends and is recorded in the task log.
+Every attention epoch begins with its cue code and ends with code `100`; both are
+recorded in the task log.
 Test mode sends no markers; choosing **No** at its warning returns home.
 Its checkbox is remembered, but every test run still asks for confirmation.
 
-Breaks appear between epochs within each condition and send no markers.
-Hiding the countdown does not change durations. Condition-end code `100` does
-not guarantee a usable baseline: electrode handover or the short closing screen
-may not provide a clean, full-length analysis window.
+Breaks appear between epochs within each condition. Code `100` is synchronized
+with the first visible break, handover, or closing frame. The next cue code ends
+an ordinary break. Hiding the countdown does not change durations. A marked
+handover or closing interval is not automatically a clean analysis baseline.
+Process Data lists code `100` in the detected-event audit but excludes these
+variable intervals from FFT baseline calculations.
 
 The trigger code write is requested immediately after the participant prompt
 frame's Qt buffer swap. Confirm physical screen and BioSemi timing before data collection.
@@ -91,8 +94,9 @@ data.
 If the selected electrode is unusable for one participant, that participant's
 PNG is skipped and that participant does not contribute to the group curve for
 that electrode. The group CSV reports how many participants contributed. A
-Gap/Break baseline uses the same participants as the displayed trigger code's
-spectrum and is omitted when a matching baseline is unavailable.
+For a legacy protocol with a separately measured, full-length Gap/Break baseline,
+the overlay uses the same participants as the displayed trigger code's spectrum.
+The current task's code-`100` intervals are delimiters and are not baseline FFTs.
 
 ## Plot saved FFT results
 

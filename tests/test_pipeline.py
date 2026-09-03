@@ -1,5 +1,6 @@
 """Integration checks for the actual preprocessing/FFT orchestration."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import mne
@@ -8,6 +9,7 @@ import pandas as pd
 import pytest
 
 import sssep_batch.pipeline as pipeline
+from sssep_batch.experiment.models import CueTriggerCodes, analysis_protocol_for_task
 from sssep_batch.models import AnalysisProtocol, AnalysisTrigger
 
 
@@ -23,7 +25,7 @@ def task_protocol() -> AnalysisProtocol:
     )
 
 
-def make_recording(*, active=True):
+def make_recording(*, active=True, active_codes=(1, 2, 3, 4)):
     """Small continuous recording; the first trial must survive old FIR edges."""
     names = mne.channels.make_standard_montage("biosemi64").ch_names + ["EXG1", "EXG2", "Status"]
     sfreq = 256
@@ -31,7 +33,7 @@ def make_recording(*, active=True):
     data = rng.normal(0, 1e-6, (len(names), sfreq * 80))
     data[-1] = 0
     if active:
-        for code, seconds in enumerate((1, 12, 24, 36), start=1):
+        for code, seconds in zip(active_codes, (1, 12, 24, 36), strict=True):
             data[-1, seconds * sfreq:seconds * sfreq + 4] = code
     data[-1, 55 * sfreq:55 * sfreq + 4] = 100
     return mne.io.RawArray(
@@ -128,6 +130,83 @@ def test_pipeline_uses_fpvs_order_and_creates_one_plot_per_cue(monkeypatch, tmp_
     assert "one per usable trigger code" in (
         Path(result["output_folder"]) / "synthetic_processing_report.txt"
     ).read_text()
+
+
+def test_task_protocol_audits_epoch_end_markers_without_using_a_baseline_fft(
+    monkeypatch, tmp_path,
+):
+    protocol = analysis_protocol_for_task(
+        epoch_duration_sec=15.0,
+        epochs_per_condition=2,
+        trigger_codes=CueTriggerCodes(11, 12, 21, 22),
+        target_hz=10.0,
+    )
+    assert protocol.analyze_baseline is False
+
+    monkeypatch.setattr(
+        pipeline,
+        "load_bdf",
+        lambda *_args, **_kwargs: make_recording(active_codes=(11, 12, 21, 22)),
+    )
+    monkeypatch.setattr(pipeline, "SAVE_PLOTS", False)
+    fft_calls = []
+    original_compute_fft = pipeline.compute_sssep_fft_from_averaged_epochs
+
+    def tracked_compute_fft(epochs, *args, **kwargs):
+        fft_calls.append(epochs.copy())
+        return original_compute_fft(epochs, *args, **kwargs)
+
+    monkeypatch.setattr(
+        pipeline,
+        "compute_sssep_fft_from_averaged_epochs",
+        tracked_compute_fft,
+    )
+
+    without_baseline = pipeline.process_one_bdf(
+        "task_recording.bdf",
+        tmp_path / "without_baseline",
+        analysis_protocol=protocol,
+    )
+    assert without_baseline["status"] == "success", without_baseline
+    assert len(fft_calls) == 4
+    assert {record.event_type for record in without_baseline["_participant_spectra"]} == {
+        "cue"
+    }
+    detected = pd.read_csv(
+        Path(without_baseline["output_folder"]) / "detected_status_events.csv"
+    )
+    assert 100 in set(detected["trigger_code"])
+    summary = pd.read_csv(without_baseline["summary_csv"])
+    assert (summary["baseline_usable_epochs"] == 0).all()
+    assert summary["sssep_fft_active_vs_baseline_amplitude_ratio"].isna().all()
+    report = (
+        Path(without_baseline["output_folder"])
+        / "task_recording_processing_report.txt"
+    ).read_text(encoding="utf-8")
+    assert "epoch-end/break delimiter" in report
+    assert "baseline FFT calculation is disabled" in report
+
+    with_baseline = pipeline.process_one_bdf(
+        "task_recording.bdf",
+        tmp_path / "with_baseline",
+        analysis_protocol=replace(protocol, analyze_baseline=True),
+    )
+    assert with_baseline["status"] == "success", with_baseline
+    assert len(fft_calls) == 9
+    enabled_records = with_baseline["_participant_spectra"]
+    assert [record.event_type for record in enabled_records].count("baseline") == 1
+    disabled_cues = {
+        record.trigger_code: record.spectrum.amplitude_uv
+        for record in without_baseline["_participant_spectra"]
+    }
+    enabled_cues = {
+        record.trigger_code: record.spectrum.amplitude_uv
+        for record in enabled_records
+        if record.event_type == "cue"
+    }
+    assert disabled_cues.keys() == enabled_cues.keys()
+    for code in disabled_cues:
+        np.testing.assert_array_equal(disabled_cues[code], enabled_cues[code])
 
 
 def test_missing_plot_electrode_skips_pngs_without_suppressing_fft_spectra(

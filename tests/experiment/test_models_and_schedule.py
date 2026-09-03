@@ -17,6 +17,7 @@ from sssep_batch.experiment.models import (
 )
 from sssep_batch.experiment.schedule import build_cue_schedule
 from sssep_batch.experiment.triggers import BIOSEMI_SERIAL_PORT
+from sssep_batch.models import AnalysisProtocol, AnalysisTrigger
 
 
 def _codes() -> CueTriggerCodes:
@@ -388,6 +389,7 @@ def test_analysis_protocol_uses_both_conditions_and_per_cue_counts() -> None:
     assert protocol.active_event_codes == (11, 12, 21, 22)
     assert protocol.event_duration_sec == 3.25
     assert protocol.expected_repetitions_per_trigger == 4
+    assert protocol.analyze_baseline is False
     assert [trigger.label for trigger in protocol.active_triggers] == [
         "BothHands Left Hand",
         "BothHands Right Hand",
@@ -422,6 +424,17 @@ def test_analysis_protocol_matches_both_shuffled_conditions(seed: int) -> None:
     assert set(observed_counts) == {11, 12, 21, 22}
     assert protocol.baseline_event_code == BASELINE_EVENT_CODE
     assert BASELINE_EVENT_CODE not in observed_counts
+
+
+def test_analysis_protocol_requires_a_boolean_baseline_setting() -> None:
+    with pytest.raises(TypeError, match="analyze_baseline must be True or False"):
+        AnalysisProtocol(
+            active_triggers=(AnalysisTrigger(11, "BothHands Left Hand"),),
+            event_duration_sec=15.0,
+            expected_repetitions_per_trigger=1,
+            baseline_event_code=BASELINE_EVENT_CODE,
+            analyze_baseline=1,
+        )
 
 
 @pytest.mark.parametrize("target_hz", [FMIN - 0.01, FMAX + 0.01])

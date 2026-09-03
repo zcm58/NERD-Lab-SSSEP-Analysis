@@ -24,18 +24,19 @@ This package runs the participant cue task. TENS is controlled externally.
   balanced cues within each block; at most two identical cues may appear in a row.
 - Show editable cue/break text and an optional top-center countdown, controlled
   by persistent `show_timer` (default true). Hiding it must not change timing.
-  Add breaks only
-  between cue epochs; never send a marker for a break or countdown redraw.
+  Add breaks only between cue epochs. Send `100` once on the first break frame
+  to end its preceding cue; countdown redraws send no markers.
 - Align a Qt `PreciseTimer` deadline to each accepted cue/break swap. Close each
   cue on the following break, handover, or thank-you screen swap.
 - Between conditions, wait for Space on the visible electrode handover screen,
   then a fresh Y on its separately visible confirmation. Neither admin screen
-  has a timer. Send code `100` once on the first handover swap; confirmation
-  sends no marker. Escape still aborts; held-key repeats cannot advance.
+  has a timer. The first handover swap sends code `100` to end its preceding cue;
+  confirmation sends no marker. Escape still aborts; held-key repeats cannot advance.
 - Initial ready-screen Space starts a five-second lead-in, then the first cue.
   Show the final thank-you screen for five seconds before closing; its first
-  swap sends code `100` once. The marker must precede logging/progress/timers.
-  Log condition-end code/time/success/error on the final epoch row and abort
+  swap sends code `100` once to end the final cue. Every epoch-end marker must
+  precede logging/progress/timers. Log epoch-end code/time/success/error on its
+  attention epoch row and abort
   after failure. Do not send completion markers for prematurely aborted cues.
 - Log planned onsets relative to each condition, explicitly label their
   timebase, and retain actual times relative to the whole experiment start.

@@ -42,7 +42,9 @@ OUTPUT_ROOT = ""
 # conditions' codes so presentation and analysis stay synchronized.
 ACTIVE_EVENT_CODES = [11, 12, 21, 22]
 
-# Trigger used for the separately measured Gap/Break baseline.
+# Reserved code for Gap/Break handling. The participant task sends it as each
+# epoch-end/break-onset delimiter and disables baseline FFT calculation. Legacy
+# protocols with a separately measured, full-length baseline may still analyze it.
 # Keep its label in TRIGGER_LABELS; it does not need a stimulation frequency.
 BASELINE_EVENT_CODE = 100
 

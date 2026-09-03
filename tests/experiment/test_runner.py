@@ -383,16 +383,27 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
     surface.fire_scheduled()
     assert events[-1] == ("present", "Now let's take a short break.")
     assert progress == [(0, 4)]
+    assert [code for name, code in events if name == "send_prevalidated"] == [
+        runner._schedule[0].trigger_code
+    ]
     clock.advance(0.01)  # Cue remains visible until the break frame swaps.
     surface.swap()
     assert progress == [(0, 4), (1, 4)]
     assert surface.scheduled_delay == pytest.approx(10.0)
-    assert sum(name == "send_prevalidated" for name, _ in events) == 1
+    assert [code for name, code in events if name == "send_prevalidated"] == [
+        runner._schedule[0].trigger_code,
+        100,
+    ]
 
     clock.advance(10.0)
     surface.fire_scheduled()
     surface.swap()
     assert surface.scheduled_delay == pytest.approx(15.0)
+    assert [code for name, code in events if name == "send_prevalidated"] == [
+        runner._schedule[0].trigger_code,
+        100,
+        runner._schedule[1].trigger_code,
+    ]
 
     clock.advance(15.0)
     surface.fire_scheduled()
@@ -410,7 +421,12 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
     clock.advance(60.0)
     surface.press_confirm()
     assert surface._visible_callback is None
-    assert sum(name == "send_prevalidated" for name, _ in events) == 3
+    assert [code for name, code in events if name == "send_prevalidated"] == [
+        runner._schedule[0].trigger_code,
+        100,
+        runner._schedule[1].trigger_code,
+        100,
+    ]
     surface.press_space()
     assert surface._visible_text == CONDITION_CONFIRM_PROMPT
     surface.press_space()
@@ -426,7 +442,7 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
     surface.press_confirm()
     surface.press_space()
     assert surface._visible_text == next_prompt
-    assert sum(name == "send_prevalidated" for name, _ in events) == 3
+    assert sum(name == "send_prevalidated" for name, _ in events) == 4
     clock.advance(0.03)
     surface.swap()
     assert surface.scheduled_delay == pytest.approx(15.0)
@@ -489,8 +505,10 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
         "Now let's take a short break.", CONDITION_HANDOVER_PROMPT, CONDITION_CONFIRM_PROMPT,
         BEGIN_PROMPT, END_PROMPT,
     }
-    assert sorted(code for name, code in events if name == "send_prevalidated") == [
-        11, 12, 21, 22, 100, 100,
+    assert [code for name, code in events if name == "send_prevalidated"] == [
+        code
+        for epoch in result.schedule
+        for code in (epoch.trigger_code, 100)
     ]
     assert sum(name == "connect" for name, _ in events) == 1
     assert sum(name == "backend_closed" for name, _ in events) == 1
@@ -528,23 +546,16 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
     assert {row["serial_port"] for row in rows} == {"COM3"}
     assert {row["break_duration_sec"] for row in rows} == {"10.0"}
     assert {row["break_prompt"] for row in rows} == {"Now let's take a short break."}
-    assert [row["condition_end_trigger_code"] for row in rows] == ["", "100", "", "100"]
-    assert [row["condition_end_trigger_succeeded"] for row in rows] == [
-        "", "True", "", "True",
-    ]
-    assert all(row["condition_end_trigger_error"] == "" for row in rows)
+    assert [row["epoch_end_trigger_code"] for row in rows] == ["100"] * 4
+    assert [row["epoch_end_trigger_succeeded"] for row in rows] == ["True"] * 4
+    assert all(row["epoch_end_trigger_error"] == "" for row in rows)
     for index, event in enumerate(result.events):
-        if index in (1, 3):
-            assert event.condition_end_trigger_code == 100
-            assert event.condition_end_trigger_succeeded is True
-            assert event.condition_end_trigger_time_sec == pytest.approx(event.cue_offset_time_sec)
-            assert float(rows[index]["condition_end_trigger_time_sec"]) == pytest.approx(
-                event.cue_offset_time_sec
-            )
-        else:
-            assert event.condition_end_trigger_code is None
-            assert event.condition_end_trigger_time_sec is None
-            assert event.condition_end_trigger_succeeded is None
+        assert event.epoch_end_trigger_code == 100
+        assert event.epoch_end_trigger_succeeded is True
+        assert event.epoch_end_trigger_time_sec == pytest.approx(event.cue_offset_time_sec)
+        assert float(rows[index]["epoch_end_trigger_time_sec"]) == pytest.approx(
+            event.cue_offset_time_sec
+        )
 
 
 def test_runner_test_mode_skips_com3_and_marks_the_ready_screen(
@@ -650,10 +661,14 @@ def test_custom_prompts_and_breaks_preserve_every_cue_marker(tmp_path, show_time
     expected_prompts.append(END_PROMPT)
     assert [text for name, text in events if name == "present"] == expected_prompts
     assert any(a.cue == b.cue for a, b in zip(result.schedule, result.schedule[1:]))
-    assert [code for name, code in events if name == "send_prevalidated" and code != 100] == [
-        settings.trigger_codes.code_for(epoch.condition, epoch.cue) for epoch in result.schedule
+    assert [code for name, code in events if name == "send_prevalidated"] == [
+        code
+        for epoch in result.schedule
+        for code in (
+            settings.trigger_codes.code_for(epoch.condition, epoch.cue),
+            100,
+        )
     ]
-    assert sum(name == "send_prevalidated" and code == 100 for name, code in events) == 2
     if show_timer:
         assert surface.presented_durations.count(0.2) == 12
         assert surface.presented_durations.count(0.7) == 10
@@ -697,7 +712,11 @@ def test_aborting_break_preserves_completed_cue_and_sends_no_later_marker(
     assert result.completed_epochs == 1
     assert len(result.events) == 1
     assert result.events[0].observed_duration_sec == pytest.approx(0.2)
-    assert sum(name == "send_prevalidated" for name, _ in events) == 1
+    assert [code for name, code in events if name == "send_prevalidated"] == [
+        result.schedule[0].trigger_code,
+        100,
+    ]
+    assert result.events[0].epoch_end_trigger_succeeded is True
     with result.log_path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     assert [row["completed"] for row in rows] == ["True", "False", "False", "False"]
@@ -732,7 +751,11 @@ def test_aborting_handover_preserves_condition_one_and_suppresses_condition_two(
     assert result.completed_epochs == 2
     assert len(result.events) == 2
     assert [event.observed_duration_sec for event in result.events] == pytest.approx([0.2, 0.2])
-    assert sorted(code for name, code in events if name == "send_prevalidated") == [11, 12, 100]
+    assert [code for name, code in events if name == "send_prevalidated"] == [
+        code
+        for epoch in result.schedule[:2]
+        for code in (epoch.trigger_code, 100)
+    ]
     assert sum(name == "backend_closed" for name, _ in events) == 1
     with result.log_path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
@@ -766,7 +789,9 @@ def test_handover_presentation_failure_keeps_completed_condition_in_partial_log(
     assert "Partial task log:" in str(failures[0])
     assert surface.finished
     assert surface.scheduled_delay is None
-    assert sorted(code for name, code in events if name == "send_prevalidated") == [11, 12, 100]
+    assert [code for name, code in events if name == "send_prevalidated"] == [
+        11, 100, 12, 100,
+    ]
     assert sum(name == "backend_closed" for name, _ in events) == 1
     logs = list(tmp_path.glob("sssep_task_events_*.csv"))
     assert len(logs) == 1
@@ -807,12 +832,17 @@ def test_held_y_before_confirmation_cannot_start_condition_two(tmp_path):
     send_y(repeat=True)  # Holding that key must not accept the now-visible screen.
     assert surface._visible_callback is None
     assert surface.scheduled_delay is None
-    assert sum(name == "send_prevalidated" for name, _ in events) == 3
+    assert [code for name, code in events if name == "send_prevalidated"] == [
+        runner._schedule[0].trigger_code,
+        100,
+        runner._schedule[1].trigger_code,
+        100,
+    ]
     send_y()  # A fresh press after visibility starts the next cue.
     assert surface._visible_callback is not None
-    assert sum(name == "send_prevalidated" for name, _ in events) == 3
-    surface.swap()
     assert sum(name == "send_prevalidated" for name, _ in events) == 4
+    surface.swap()
+    assert sum(name == "send_prevalidated" for name, _ in events) == 5
     runner.request_stop()
 
 
@@ -1245,16 +1275,23 @@ def test_aborting_preparation_or_end_screen_stops_timers_and_preserves_markers(
         assert sends_before_abort == []
     else:
         assert result.completed_epochs == (4 if visible else 3)
-        assert sum(code == 100 for _, code in sends_before_abort) == (2 if visible else 1)
+        assert sum(code == 100 for _, code in sends_before_abort) == (4 if visible else 3)
         if visible:
             assert result.events[-1].observed_duration_sec == pytest.approx(0.2)
         else:
-            assert result.events[-1].condition_end_trigger_code is None
+            assert result.events[-1].epoch_end_trigger_code is None
 
 
-@pytest.mark.parametrize("failed_condition", [1, 2])
-def test_condition_end_marker_failure_aborts_and_keeps_completed_epochs(
-    tmp_path, failed_condition,
+@pytest.mark.parametrize(
+    ("failed_epoch", "boundary_prompt"),
+    [
+        (1, "Now let's take a short break."),
+        (2, CONDITION_HANDOVER_PROMPT),
+        (4, END_PROMPT),
+    ],
+)
+def test_epoch_end_marker_failure_aborts_at_each_boundary(
+    tmp_path, failed_epoch, boundary_prompt,
 ):
     class FailingEndBackend(_FakeBackend):
         end_count = 0
@@ -1262,16 +1299,23 @@ def test_condition_end_marker_failure_aborts_and_keeps_completed_epochs(
         def send_prevalidated_trigger(self, code, **kwargs):
             if code == 100:
                 self.end_count += 1
-                if self.end_count == failed_condition:
+                if self.end_count == failed_epoch:
                     self.events.append(("send_prevalidated_failed", code))
-                    raise SerialTriggerError("condition-end write failed")
+                    raise SerialTriggerError("epoch-end write failed")
             super().send_prevalidated_trigger(code, **kwargs)
 
     _, factory, clock, events, results, failures, _, done = _start_runner(
         _settings(tmp_path), backend=FailingEndBackend([])
     )
     surface = factory.surface
-    if failed_condition == 1:
+    if failed_epoch == 1:
+        _start_first_cue(surface, clock)
+        clock.advance(0.2)
+        surface.fire_scheduled()
+        assert events[-1] == ("present", boundary_prompt)
+        assert not any(code == 100 for name, code in events if name.startswith("send"))
+        surface.swap()
+    elif failed_epoch == 2:
         _show_handover(surface, clock)
     else:
         _request_end_screen(surface, clock)
@@ -1283,33 +1327,36 @@ def test_condition_end_marker_failure_aborts_and_keeps_completed_epochs(
     assert surface.scheduled_delay is None
     result = results[0]
     assert result.aborted
-    assert "condition-end write failed" in result.abort_reason
-    assert result.completed_epochs == failed_condition * 2
+    assert "epoch-end write failed" in result.abort_reason
+    assert result.completed_epochs == failed_epoch
+    assert len(result.events) == failed_epoch
     last = result.events[-1]
     assert last.completed
     assert last.trigger_succeeded
-    assert last.condition_end_trigger_code == 100
-    assert last.condition_end_trigger_succeeded is False
-    assert last.condition_end_trigger_error == "condition-end write failed"
-    assert last.condition_end_trigger_time_sec == pytest.approx(last.cue_offset_time_sec)
+    assert last.epoch_end_trigger_code == 100
+    assert last.epoch_end_trigger_succeeded is False
+    assert last.epoch_end_trigger_error == "epoch-end write failed"
+    assert last.epoch_end_trigger_time_sec == pytest.approx(last.cue_offset_time_sec)
     assert last.observed_duration_sec == pytest.approx(0.2)
     assert events.count(("send_prevalidated_failed", 100)) == 1
+    assert events.count(("send_prevalidated", 100)) == failed_epoch - 1
     assert sum(name == "backend_closed" for name, _ in events) == 1
     failed_index = events.index(("send_prevalidated_failed", 100))
-    assert events[failed_index - 1] == (
-        "swap", CONDITION_HANDOVER_PROMPT if failed_condition == 1 else END_PROMPT,
-    )
+    assert events[failed_index - 1] == ("swap", boundary_prompt)
     assert not any(name.startswith("send") for name, _ in events[failed_index + 1:])
     with result.log_path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
-    row = rows[failed_condition * 2 - 1]
+    row = rows[failed_epoch - 1]
     assert row["completed"] == "True"
     assert row["trigger_succeeded"] == "True"
-    assert row["condition_end_trigger_code"] == "100"
-    assert row["condition_end_trigger_succeeded"] == "False"
-    assert row["condition_end_trigger_error"] == "condition-end write failed"
-    assert float(row["condition_end_trigger_time_sec"]) == pytest.approx(last.cue_offset_time_sec)
-    assert all(row["condition_end_trigger_code"] == "" for row in rows[failed_condition * 2:])
+    assert row["epoch_end_trigger_code"] == "100"
+    assert row["epoch_end_trigger_succeeded"] == "False"
+    assert row["epoch_end_trigger_error"] == "epoch-end write failed"
+    assert float(row["epoch_end_trigger_time_sec"]) == pytest.approx(
+        last.cue_offset_time_sec
+    )
+    assert all(row["cue_onset_time_sec"] == "" for row in rows[failed_epoch:])
+    assert all(row["epoch_end_trigger_code"] == "" for row in rows[failed_epoch:])
 
 
 def test_end_screen_timer_compensates_for_marker_callback_time(tmp_path):
@@ -1334,4 +1381,4 @@ def test_end_screen_timer_compensates_for_marker_callback_time(tmp_path):
     assert failures == []
     assert results[0].completed_epochs == 4
     assert results[0].events[-1].observed_duration_sec == pytest.approx(0.2)
-    assert events.count(("send_prevalidated", 100)) == 2
+    assert events.count(("send_prevalidated", 100)) == 4

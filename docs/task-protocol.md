@@ -17,18 +17,20 @@ This page records the task behavior that the software must preserve.
 - A configurable break (10 seconds by default) separates every pair of cue
   epochs within each condition, including repeated cues. No timed break precedes
   the first or follows the last cue of a condition. The default text is
-  `Now let's take a short break.`
+  `Now let's take a short break.` Its accepted frame swap ends the preceding
+  attention epoch and sends fixed code `100`.
 - After Condition 1's last full epoch, an untimed screen replaces its cue:
   `Condition 1 complete. Before starting Condition 2, please remove the TENS
   unit electrodes from the left hand and place them on the right ankle. When
   finished, press space to continue the experiment.` The accepted screen swap
-  closes the final Condition 1 epoch in the log and sends fixed code `100`.
+  closes the final Condition 1 epoch in the log and sends its fixed code `100`.
 - A fresh **Space** press on that visible screen opens a second untimed screen:
   `By continuing, you are confirming that the TENS unit electrodes are properly
   secured on the right hand and right ankle. Press 'Y' to continue.` Only a fresh
   **Y** press after this screen is visible starts Condition 2. Early presses,
   held-key repeats, and additional Space presses cannot bypass confirmation.
-  Only the first handover frame sends code `100`; confirmation sends no marker.
+  The handover frame sends the final attention epoch's code `100`; confirmation
+  sends no marker.
   Neither screen displays a countdown. Escape aborts from either screen. The
   serial connection stays open across the handover.
 - **Show countdown timer** in File > Settings controls the top-center countdown
@@ -53,17 +55,21 @@ This page records the task behavior that the software must preserve.
   `Thank you for your time! The experiment is now over.` for five seconds before
   closing. Its accepted frame swap closes the final cue and sends code `100`.
 - Each cue has a unique marker from `1` to `255`. Marker `0` is not a cue, and
-  marker `100` remains reserved for the Gap/Break/condition-end marker.
-- Send code `100` exactly once at each completed condition boundary, as the first
-  external action in that boundary frame's swap callback. Log the request time,
-  code, success, and any failure on the condition's final epoch row. Abort visibly
-  if this send fails. No completion marker is sent for a prematurely aborted cue.
-- These inter-epoch breaks send no marker, including `100`. The analysis still
-  requires a full cue-length baseline window; it must not treat a shorter
-  break plus part of the next cue as a baseline. Analysis behavior is unchanged:
-  code `100` still identifies its baseline windows. A condition-end marker alone
-  does not guarantee a full, artifact-free baseline afterward, especially during
-  electrode handover or the five-second closing screen.
+  marker `100` remains reserved for the epoch-end/break-onset marker.
+- Send code `100` exactly once at the end of every completed attention epoch,
+  as the first external action in the accepted swap callback for the following
+  break, handover, or thank-you screen. Log its request time, code, success, and
+  any failure on that epoch's row. Abort visibly if this send fails. No end marker
+  is sent for a prematurely aborted cue.
+- In the recorded marker stream, an attention interval starts with `11`, `12`,
+  `21`, or `22` and ends with `100`. An inter-epoch break starts at `100` and
+  ends at the next attention onset marker. The handover and closing intervals
+  also start with `100`, but have no following attention onset in the same block.
+- Process Data retains every `100` in its Status-event audit, but does not use
+  these variable break, handover, or closing intervals as FFT baselines. At the
+  10-second break default, extracting the same 15-second window used for an
+  attention epoch would include five seconds from outside that break. Attention
+  FFTs remain fixed windows from `11`, `12`, `21`, and `22` onsets.
 - Fixed markers are `11` for both-hands/left-hand, `12` for
   both-hands/right-hand, `21` for hand-and-ankle/right-hand, and `22` for
   hand-and-ankle/right-ankle. They are shown disabled and cannot be edited.
@@ -81,7 +87,7 @@ This page records the task behavior that the software must preserve.
   start, explicitly labeled by `scheduled_onset_reference=condition_start`.
   Actual cue/trigger/offset times remain relative to the experiment start and
   include the five-second lead-in and the operator's untimed handover pause.
-  Additive `show_timer` and `condition_end_trigger_*` fields preserve the existing
+  Additive `show_timer` and `epoch_end_trigger_*` fields preserve the existing
   one-row-per-epoch log structure while recording the new setting and markers.
 - TENS stimulation is controlled externally.
 

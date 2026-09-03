@@ -58,9 +58,10 @@ matching `frameSwapped` callback immediately requests the cue's unique `1..255`
 marker through the selected backend after Qt completes that frame's buffer
 swap. A Qt `PreciseTimer` advances between cue and break screens at their
 configured deadlines; Settings can hide the top-center countdown without changing
-timing. A final thank-you screen stays for five seconds. The first handover and
-thank-you swaps each send fixed code `100`; their final epoch rows record the
-send time and outcome. Ordinary breaks and countdown redraws send no markers.
+timing. A final thank-you screen stays for five seconds. Every completed attention
+epoch ends with fixed code `100` on the first following break, handover, or
+thank-you swap; its epoch row records the send time and outcome. Confirmation
+and countdown redraws send no markers.
 Escape aborts. TENS control stays outside this program. See
 [task-protocol.md](docs/task-protocol.md) for the runtime contract.
 
@@ -176,11 +177,14 @@ Scalp-map names retain their frequency, and old exports are not renamed.
   separate cues within a block; the handover waits for Space and then Y on its
   separately visible confirmation screen. Held-key repeats cannot advance it.
 - Keep cue/break text editable without changing cue identities or marker codes.
-  Short breaks are not marked as code `100` baselines. Condition-end screens
-  send `100`, but a marker alone does not establish a clean full baseline window.
+  Code `100` ends an attention interval and starts its following break, handover,
+  or closing interval. Do not assume every such interval is a clean, fixed-length
+  baseline suitable for FFT calculation.
 - Pass both conditions' four fixed cue codes, the configured duration, and half
   the per-condition epoch count as expected repetitions into each analysis
-  batch; do not fall back to unrelated settings.
+  batch; do not fall back to unrelated settings. Preserve code `100` in the raw
+  event audit as the epoch-end/break delimiter, but exclude it from baseline FFT
+  calculation for this task because those following intervals vary in duration.
 - Preserve the validated FPVS analysis method unless a change is authorized.
 - Require a complete configured epoch, then remove 2.5 seconds from its start
   and end before cue averaging and FFT calculation. This SSSEP analysis window

@@ -36,7 +36,7 @@ BEGIN_PROMPT = "The experiment is about to begin.."
 END_PROMPT = "Thank you for your time! The experiment is now over."
 BEGIN_DURATION_SEC = 5.0
 END_DURATION_SEC = 5.0
-CONDITION_END_TRIGGER_CODE = 100
+EPOCH_END_TRIGGER_CODE = 100
 CONDITION_HANDOVER_PROMPT = (
     "Condition 1 complete.\n\n"
     "Before starting Condition 2, please remove the TENS unit electrodes from "
@@ -565,7 +565,7 @@ class QtTaskRunner(QObject):
         )
 
     def _handover_frame_swapped(self) -> None:
-        if self._condition_end_frame_swapped() is None:
+        if self._epoch_end_frame_swapped() is None:
             return
         self._handover_visible = True
         self.progress_changed.emit(
@@ -576,13 +576,10 @@ class QtTaskRunner(QObject):
         self._confirmation_visible = True
 
     def _break_frame_swapped(self) -> None:
+        onset_time_sec = self._epoch_end_frame_swapped()
+        if onset_time_sec is None:
+            return
         settings = self._require_settings()
-        onset_time_sec = self._elapsed_seconds()
-        self._close_last_record(
-            self._records,
-            offset_time_sec=onset_time_sec,
-            completed=True,
-        )
         self.progress_changed.emit(self._next_epoch_index, settings.total_epochs)
         elapsed_since_onset = self._elapsed_seconds() - onset_time_sec
         self._require_surface().schedule(
@@ -591,7 +588,7 @@ class QtTaskRunner(QObject):
         )
 
     def _end_frame_swapped(self) -> None:
-        onset_time_sec = self._condition_end_frame_swapped()
+        onset_time_sec = self._epoch_end_frame_swapped()
         if onset_time_sec is None:
             return
         settings = self._require_settings()
@@ -602,8 +599,8 @@ class QtTaskRunner(QObject):
             lambda: self._finish_result(aborted=False, abort_reason=None),
         )
 
-    def _condition_end_frame_swapped(self) -> float | None:
-        """Mark the completed condition before logging, progress, or timers."""
+    def _epoch_end_frame_swapped(self) -> float | None:
+        """Mark the completed epoch before logging, progress, or timers."""
         if self._send_prevalidated_trigger is None:
             raise RuntimeError("The BioSemi trigger backend was not prepared.")
         record = self._records[-1]
@@ -611,8 +608,8 @@ class QtTaskRunner(QObject):
         trigger_error: SerialTriggerError | None = None
         try:
             self._send_prevalidated_trigger(
-                CONDITION_END_TRIGGER_CODE,
-                label=f"{record.condition.value}:condition_end",
+                EPOCH_END_TRIGGER_CODE,
+                label=f"{record.condition.value}:{record.cue.value}:epoch_end",
                 time_s=onset_time_sec,
                 epoch_index=record.epoch_index,
             )
@@ -626,15 +623,15 @@ class QtTaskRunner(QObject):
         )
         self._records[-1] = replace(
             self._records[-1],
-            condition_end_trigger_code=CONDITION_END_TRIGGER_CODE,
-            condition_end_trigger_time_sec=onset_time_sec,
-            condition_end_trigger_succeeded=trigger_error is None,
-            condition_end_trigger_error=(
+            epoch_end_trigger_code=EPOCH_END_TRIGGER_CODE,
+            epoch_end_trigger_time_sec=onset_time_sec,
+            epoch_end_trigger_succeeded=trigger_error is None,
+            epoch_end_trigger_error=(
                 None if trigger_error is None else str(trigger_error)
             ),
         )
         if trigger_error is not None:
-            self._abort(f"BioSemi condition-end trigger output failed: {trigger_error}")
+            self._abort(f"BioSemi epoch-end trigger output failed: {trigger_error}")
             return None
         return onset_time_sec
 
@@ -834,10 +831,10 @@ def write_task_event_log(result: TaskRunResult, output_folder: Path) -> Path:
         "condition_epoch_number",
         "scheduled_onset_reference",
         "show_timer",
-        "condition_end_trigger_code",
-        "condition_end_trigger_time_sec",
-        "condition_end_trigger_succeeded",
-        "condition_end_trigger_error",
+        "epoch_end_trigger_code",
+        "epoch_end_trigger_time_sec",
+        "epoch_end_trigger_succeeded",
+        "epoch_end_trigger_error",
     ]
     with output_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -883,17 +880,17 @@ def write_task_event_log(result: TaskRunResult, output_folder: Path) -> Path:
                     ),
                     "scheduled_onset_reference": "condition_start",
                     "show_timer": result.settings.show_timer,
-                    "condition_end_trigger_code": (
-                        "" if event is None else event.condition_end_trigger_code
+                    "epoch_end_trigger_code": (
+                        "" if event is None else event.epoch_end_trigger_code
                     ),
-                    "condition_end_trigger_time_sec": (
-                        "" if event is None else event.condition_end_trigger_time_sec
+                    "epoch_end_trigger_time_sec": (
+                        "" if event is None else event.epoch_end_trigger_time_sec
                     ),
-                    "condition_end_trigger_succeeded": (
-                        "" if event is None else event.condition_end_trigger_succeeded
+                    "epoch_end_trigger_succeeded": (
+                        "" if event is None else event.epoch_end_trigger_succeeded
                     ),
-                    "condition_end_trigger_error": (
-                        "" if event is None else event.condition_end_trigger_error
+                    "epoch_end_trigger_error": (
+                        "" if event is None else event.epoch_end_trigger_error
                     ),
                 }
             )

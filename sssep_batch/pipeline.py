@@ -7,6 +7,8 @@ and each electrode's amplitude FFT follow the pinned FPVS reference.
 import traceback
 from pathlib import Path
 
+import numpy as np
+
 from sssep_batch.analysis.metrics import add_baseline_comparison, extract_target_metrics
 from sssep_batch.analysis.plotting import fft_plot_stem, plot_spectrum, reserve_plot_path
 from sssep_batch.analysis.protocol import default_analysis_protocol
@@ -134,30 +136,55 @@ def process_one_bdf(
         post_sec = POST_EVENT_SEC_IF_INCLUDED if INCLUDE_POST_STIMULUS else 0.0
         epoch_window_sec = PRE_EVENT_SEC + protocol.event_duration_sec + post_sec
         final_sfreq = float(raw.info["sfreq"])
-        stage = "baseline_epoch_extraction"
-        baseline_epochs = extract_epochs_for_code(
-            raw,
-            intended_events,
-            protocol.baseline_event_code,
-            fft_channels,
-            epoch_window_sec,
-            label=protocol.baseline_label,
-        )
         stage = "baseline_fft_window_cropping"
-        baseline_fft_epochs = crop_epochs_for_fft(baseline_epochs.epochs, final_sfreq)
-        fft_window_sec = baseline_fft_epochs.shape[-1] / final_sfreq
+        epoch_sample_count = int(round(epoch_window_sec * final_sfreq))
+        fft_window_sec = (
+            crop_epochs_for_fft(
+                np.empty((0, len(fft_channels), epoch_sample_count), dtype=float),
+                final_sfreq,
+            ).shape[-1]
+            / final_sfreq
+        )
         log_func(
             f"Extracted epoch window: {epoch_window_sec:g} s. FFT crop removes "
             f"{FFT_CROP_START_SEC:g} s from the start and {FFT_CROP_END_SEC:g} s "
             f"from the end, retaining {fft_window_sec:g} s."
         )
-        stage = "baseline_fft_calculation"
-        baseline_fft = (
-            compute_sssep_fft_from_averaged_epochs(baseline_fft_epochs, final_sfreq)
-            if len(baseline_epochs.epochs) else None
-        )
-        if baseline_fft is None:
-            log_func("WARNING: No complete baseline epochs; baseline amplitudes/ratios are unavailable.")
+        baseline_fft = None
+        baseline_usable_epochs = 0
+        baseline_skipped_epochs = 0
+        baseline_out_of_bounds_epochs = 0
+        if protocol.analyze_baseline:
+            stage = "baseline_epoch_extraction"
+            baseline_epochs = extract_epochs_for_code(
+                raw,
+                intended_events,
+                protocol.baseline_event_code,
+                fft_channels,
+                epoch_window_sec,
+                label=protocol.baseline_label,
+            )
+            baseline_usable_epochs = len(baseline_epochs.epochs)
+            baseline_skipped_epochs = baseline_epochs.skipped_epochs
+            baseline_out_of_bounds_epochs = baseline_epochs.out_of_bounds_epochs
+            stage = "baseline_fft_window_cropping"
+            baseline_fft_epochs = crop_epochs_for_fft(baseline_epochs.epochs, final_sfreq)
+            stage = "baseline_fft_calculation"
+            baseline_fft = (
+                compute_sssep_fft_from_averaged_epochs(baseline_fft_epochs, final_sfreq)
+                if baseline_usable_epochs else None
+            )
+            if baseline_fft is None:
+                log_func(
+                    "WARNING: No complete baseline epochs; "
+                    "baseline amplitudes/ratios are unavailable."
+                )
+        else:
+            log_func(
+                f"Trigger {protocol.baseline_event_code} remains in the Status-event audit "
+                "as the epoch-end/break delimiter; baseline FFT calculation is disabled "
+                "for this task protocol."
+            )
 
         stage = "active_sssep_analysis"
         summary_rows = []
@@ -171,7 +198,7 @@ def process_one_bdf(
                     trigger_code=protocol.baseline_event_code,
                     trigger_label=protocol.baseline_label,
                     target_hz=None,
-                    usable_epochs=len(baseline_epochs.epochs),
+                    usable_epochs=baseline_usable_epochs,
                     channel_names=tuple(fft_channels),
                     analysis_channels=tuple(analysis_channels),
                     spectrum=baseline_fft,
@@ -223,9 +250,9 @@ def process_one_bdf(
                 "analysis_channels": ";".join(analysis_channels),
                 "fft_channels": ";".join(fft_channels),
                 "baseline_trigger_code": protocol.baseline_event_code,
-                "baseline_usable_epochs": len(baseline_epochs.epochs),
-                "baseline_skipped_epochs": baseline_epochs.skipped_epochs,
-                "baseline_out_of_bounds_epochs": baseline_epochs.out_of_bounds_epochs,
+                "baseline_usable_epochs": baseline_usable_epochs,
+                "baseline_skipped_epochs": baseline_skipped_epochs,
+                "baseline_out_of_bounds_epochs": baseline_out_of_bounds_epochs,
                 "baseline_edge_excluded_epochs": 0,
                 "fir_edge_margin_samples": 0, "fir_edge_margin_sec": 0.0,
                 "status": "success" if n_epochs else "no_complete_epochs",
@@ -281,7 +308,7 @@ def process_one_bdf(
                         channel_names=fft_channels, plot_channel=plot_channel,
                         active_label=f"Trigger code average ({n_epochs} epochs)",
                         baseline_label=(
-                            f"Gap/Break average ({len(baseline_epochs.epochs)} epochs)"
+                            f"Gap/Break average ({baseline_usable_epochs} epochs)"
                         ),
                     )
                 except Exception as exc:
