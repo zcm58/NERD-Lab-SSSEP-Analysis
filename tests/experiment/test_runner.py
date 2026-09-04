@@ -11,6 +11,7 @@ from sssep_batch.experiment.models import (
     CUE_PROMPTS,
     CueTarget,
     CueTriggerCodes,
+    ParticipantInformation,
     TaskCondition,
     TaskSettings,
 )
@@ -195,6 +196,19 @@ def _settings(output_folder) -> TaskSettings:
     )
 
 
+def _participant_information(
+    events: list[tuple[str, object]],
+) -> ParticipantInformation:
+    events.append(("participant_information", "0012"))
+    return ParticipantInformation(
+        participant_number="0012",
+        age=24,
+        sex="Female",
+        handedness="Right handed",
+        colorblind=False,
+    )
+
+
 def _start_runner(
     settings: TaskSettings,
     *,
@@ -215,6 +229,7 @@ def _start_runner(
     done: list[bool] = []
     runner = QtTaskRunner(
         trigger_backend=backend,
+        participant_information_collector=lambda: _participant_information(events),
         surface_factory=surface_factory,
         monotonic=clock,
     )
@@ -342,12 +357,13 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
     surface = factory.surface
     assert surface is not None
 
-    assert [name for name, _ in events[:3]] == [
+    assert [name for name, _ in events[:4]] == [
         "connect",
+        "participant_information",
         "surface_created",
         "show_ready",
     ]
-    assert events[2] == ("show_ready", READY_PROMPT)
+    assert events[3] == ("show_ready", READY_PROMPT)
 
     surface.press_space()
     surface.press_confirm()
@@ -542,6 +558,11 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
         [5.1, 30.11, 107.16, 132.16]
     )
     assert {row["test_mode"] for row in rows} == {"False"}
+    assert {row["participant_number"] for row in rows} == {"0012"}
+    assert {row["participant_age"] for row in rows} == {"24"}
+    assert {row["participant_sex"] for row in rows} == {"Female"}
+    assert {row["participant_handedness"] for row in rows} == {"Right handed"}
+    assert {row["participant_colorblind"] for row in rows} == {"False"}
     assert {row["show_timer"] for row in rows} == {"True"}
     assert {row["serial_port"] for row in rows} == {"COM3"}
     assert {row["break_duration_sec"] for row in rows} == {"10.0"}
@@ -585,6 +606,9 @@ def test_runner_test_mode_skips_com3_and_marks_the_ready_screen(
     )
     clock = _FakeMonotonic()
     runner = QtTaskRunner(
+        participant_information_collector=lambda: pytest.fail(
+            "Test mode displayed the participant information survey."
+        ),
         surface_factory=factory,
         monotonic=clock,
     )
@@ -608,6 +632,48 @@ def test_runner_test_mode_skips_com3_and_marks_the_ready_screen(
     with results[0].log_path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     assert {row["test_mode"] for row in rows} == {"True"}
+    assert {row["participant_number"] for row in rows} == {""}
+    assert {row["participant_age"] for row in rows} == {""}
+    assert {row["participant_sex"] for row in rows} == {""}
+    assert {row["participant_handedness"] for row in rows} == {""}
+    assert {row["participant_colorblind"] for row in rows} == {""}
+
+
+def test_cancelling_participant_information_closes_com3_before_any_surface(tmp_path):
+    events: list[tuple[str, object]] = []
+    factory = _FakeSurfaceFactory(events)
+    backend = _FakeBackend(events)
+    results = []
+    failures: list[Exception] = []
+    done: list[bool] = []
+    runner = QtTaskRunner(
+        trigger_backend=backend,
+        participant_information_collector=lambda: events.append(
+            ("participant_information_cancelled", None)
+        ),
+        surface_factory=factory,
+    )
+    runner.task_finished.connect(results.append)
+    runner.task_failed.connect(failures.append)
+    runner.task_done.connect(lambda: done.append(True))
+
+    runner.start(_settings(tmp_path))
+
+    assert failures == []
+    assert done == [True]
+    assert factory.surface is None
+    assert [name for name, _ in events] == [
+        "connect",
+        "participant_information_cancelled",
+        "backend_closed",
+    ]
+    assert len(results) == 1
+    result = results[0]
+    assert result.aborted is True
+    assert result.completed_epochs == 0
+    assert result.participant_information is None
+    assert result.abort_reason == "Participant information entry was cancelled."
+    assert result.log_path is not None and result.log_path.exists()
 
 
 @pytest.mark.parametrize("show_timer", [True, False])

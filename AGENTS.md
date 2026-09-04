@@ -44,7 +44,11 @@ no marker. Neither admin screen has a countdown. Initial ready-screen Space
 starts a five-second lead-in. Close five seconds after the thank-you screen.
 The persistent Show countdown timer setting defaults to on and changes visibility
 only. Log every epoch-end send on its attention epoch row.
-Cue/break text is editable in File > Settings. Save preferences across launches
+Cue/break text is editable in File > Settings. After COM3 opens, normal runs
+require participant number, age, sex, handedness, and colorblind status before
+the fullscreen ready screen; these per-run values belong in the task CSV and
+must not be saved as preferences. Confirmed test mode skips this survey.
+Save preferences across launches
 in ignored `.sssep_gui_settings.json`; never save hardware codes or random seeds.
 The home shows only its title, Start SSSEP Task button, and settings hint. Use
 the View menu instead of workflow tabs. Keep fixed codes `11`/`12` for both hands and `21`/`22`
@@ -91,7 +95,8 @@ future timing, code, frequency, or counterbalancing change in
 3. Keep task/run selections in the launcher and analysis defaults in
    `sssep_batch/config.py`. Keep the BioSemi port fixed at `COM3` and absent
    from the GUI. The explicit, confirmed test-mode checkbox may bypass COM3;
-   normal runs may not.
+   normal runs may not. Normal runs collect participant information only after
+   COM3 connects; test mode does not collect it.
 4. Do not add generic utility modules when a more specific home exists.
 5. Treat `.bdf` data as external local input, not as repository content.
 

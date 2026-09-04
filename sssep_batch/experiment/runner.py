@@ -17,10 +17,12 @@ from PySide6.QtCore import QObject, QRect, QTimer, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter
 from PySide6.QtGui import QSurfaceFormat
 from PySide6.QtOpenGL import QOpenGLWindow
+from PySide6.QtWidgets import QWidget
 
 from .models import (
     CueEpoch,
     CuePresentationRecord,
+    ParticipantInformation,
     TaskRunResult,
     TaskSettings,
 )
@@ -80,6 +82,7 @@ class TriggerBackend(Protocol):
 FrameCallback = Callable[[], None]
 ErrorCallback = Callable[[Exception], None]
 TriggerBackendFactory = Callable[[TaskSettings], TriggerBackend]
+ParticipantInformationCollector = Callable[[], ParticipantInformation | None]
 
 
 class PresentationSurface(Protocol):
@@ -361,6 +364,9 @@ class QtTaskRunner(QObject):
         *,
         trigger_backend: TriggerBackend | None = None,
         trigger_backend_factory: TriggerBackendFactory | None = None,
+        participant_information_collector: (
+            ParticipantInformationCollector | None
+        ) = None,
         surface_factory: PresentationSurfaceFactory | None = None,
         monotonic: Callable[[], float] = perf_counter,
         parent: QObject | None = None,
@@ -370,6 +376,7 @@ class QtTaskRunner(QObject):
             raise ValueError("Pass trigger_backend or trigger_backend_factory, not both.")
         self._provided_backend = trigger_backend
         self._trigger_backend_factory = trigger_backend_factory
+        self._participant_information_collector = participant_information_collector
         self._surface_factory = surface_factory or _QtCueWindow
         self._monotonic = monotonic
 
@@ -377,6 +384,7 @@ class QtTaskRunner(QObject):
         self._schedule: tuple[CueEpoch, ...] = ()
         self._records: list[CuePresentationRecord] = []
         self._trigger_backend: TriggerBackend | None = None
+        self._participant_information: ParticipantInformation | None = None
         self._send_prevalidated_trigger: Callable[..., Any] | None = None
         self._surface: PresentationSurface | None = None
         self._run_id = ""
@@ -413,6 +421,24 @@ class QtTaskRunner(QObject):
                 "send_prevalidated_trigger",
                 self._trigger_backend.send_trigger,
             )
+            if not settings.test_mode:
+                collector = (
+                    self._participant_information_collector
+                    or self._collect_participant_information
+                )
+                participant_information = collector()
+                if participant_information is None:
+                    self._finish_result(
+                        aborted=True,
+                        abort_reason="Participant information entry was cancelled.",
+                    )
+                    return
+                if not isinstance(participant_information, ParticipantInformation):
+                    raise TypeError(
+                        "The participant information collector must return a "
+                        "ParticipantInformation value or None."
+                    )
+                self._participant_information = participant_information
             self._surface = self._surface_factory(
                 self._space_pressed,
                 self._confirm_pressed,
@@ -443,6 +469,14 @@ class QtTaskRunner(QObject):
         if settings.test_mode:
             return SimulatedTriggerBackend()
         return SerialTriggerBackend(port=settings.serial_port)
+
+    def _collect_participant_information(self) -> ParticipantInformation | None:
+        from .participant_information import collect_participant_information
+
+        parent = self.parent()
+        return collect_participant_information(
+            parent if isinstance(parent, QWidget) else None
+        )
 
     def _ready_frame_visible(self) -> None:
         self._ready_visible = True
@@ -742,6 +776,7 @@ class QtTaskRunner(QObject):
             schedule=self._schedule,
             events=tuple(self._records),
             aborted=aborted,
+            participant_information=self._participant_information,
             abort_reason=abort_reason,
         )
 
@@ -806,6 +841,11 @@ def write_task_event_log(result: TaskRunResult, output_folder: Path) -> Path:
     fieldnames = [
         "run_id",
         "started_at_utc",
+        "participant_number",
+        "participant_age",
+        "participant_sex",
+        "participant_handedness",
+        "participant_colorblind",
         "condition",
         "epoch_duration_sec",
         "total_epochs",
@@ -841,10 +881,22 @@ def write_task_event_log(result: TaskRunResult, output_folder: Path) -> Path:
         writer.writeheader()
         for epoch in result.schedule:
             event = events_by_index.get(epoch.epoch_index)
+            participant = result.participant_information
             writer.writerow(
                 {
                     "run_id": result.run_id,
                     "started_at_utc": result.started_at_utc,
+                    "participant_number": (
+                        "" if participant is None else participant.participant_number
+                    ),
+                    "participant_age": "" if participant is None else participant.age,
+                    "participant_sex": "" if participant is None else participant.sex,
+                    "participant_handedness": (
+                        "" if participant is None else participant.handedness
+                    ),
+                    "participant_colorblind": (
+                        "" if participant is None else participant.colorblind
+                    ),
                     "condition": epoch.condition.value,
                     "epoch_duration_sec": result.settings.epoch_duration_sec,
                     "total_epochs": result.settings.total_epochs,

@@ -5,6 +5,7 @@
 This package runs the participant cue task. TENS is controlled externally.
 
 - `models.py`: validated conditions, cue codes, settings, and records.
+- `participant_information.py`: required normal-run participant survey.
 - `schedule.py`: fresh balanced cue order, capped at two repeats, with breaks.
 - `runner.py`: PySide6 cues, breaks, countdowns, and task-event CSVs.
 - `triggers.py`: BioSemi USB serial output.
@@ -14,6 +15,10 @@ This package runs the participant cue task. TENS is controlled externally.
 - Open the fixed `COM3` connection before creating participant-facing screens
   in normal runs. The only exception is the explicit GUI test mode after its
   yes/no confirmation; test mode must be recorded in the task log.
+- After COM3 connects, require Participant Number, Age, Sex, Handedness, and
+  Colorblind status before creating the fullscreen surface. Cancel stops before
+  that surface. Confirmed test mode skips the survey, and its CSV fields stay
+  blank. Never save per-run participant information in launcher preferences.
 - Send every cue code as the first external action in the matching
   `QOpenGLWindow.frameSwapped` callback for its newly drawn frame.
 - Use one raw byte per event (`1..255`) over fixed COM3 at 115200 baud, 8N1.

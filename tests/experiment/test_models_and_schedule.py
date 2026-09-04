@@ -11,6 +11,7 @@ from sssep_batch.experiment.models import (
     CUE_PROMPTS,
     CueTarget,
     CueTriggerCodes,
+    ParticipantInformation,
     TaskCondition,
     TaskSettings,
     analysis_protocol_for_task,
@@ -124,6 +125,38 @@ def test_task_test_mode_is_explicit_and_boolean() -> None:
             trigger_codes=_codes(),
             test_mode=1,  # type: ignore[arg-type]
         )
+
+
+def test_participant_information_preserves_leading_zeroes_and_validates_fields(
+) -> None:
+    information = ParticipantInformation(
+        participant_number=" 0012 ",
+        age=24,
+        sex="Female",
+        handedness="Right handed",
+        colorblind=False,
+    )
+
+    assert information.participant_number == "0012"
+
+    invalid_values = [
+        {"participant_number": "P12"},
+        {"age": 0},
+        {"age": True},
+        {"sex": "Other"},
+        {"handedness": "Right"},
+        {"colorblind": None},
+    ]
+    baseline = {
+        "participant_number": "0012",
+        "age": 24,
+        "sex": "Female",
+        "handedness": "Right handed",
+        "colorblind": False,
+    }
+    for replacement in invalid_values:
+        with pytest.raises((TypeError, ValueError)):
+            ParticipantInformation(**(baseline | replacement))
 
 
 def test_trigger_codes_must_be_unique_normal_biosemi_codes() -> None:

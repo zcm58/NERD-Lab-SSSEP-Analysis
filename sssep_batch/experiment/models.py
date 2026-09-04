@@ -57,6 +57,51 @@ ANALYSIS_CUE_LABELS: dict[CueTarget, str] = {
     CueTarget.RIGHT_ANKLE: "Right Ankle",
 }
 
+PARTICIPANT_SEX_VALUES = ("Female", "Male")
+PARTICIPANT_HANDEDNESS_VALUES = (
+    "Right handed",
+    "Left handed",
+    "Ambidextrous",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantInformation:
+    """Required participant details collected immediately before a normal run."""
+
+    participant_number: str
+    age: int
+    sex: str
+    handedness: str
+    colorblind: bool
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.participant_number, str):
+            raise TypeError("participant_number must be text containing digits only.")
+        participant_number = self.participant_number.strip()
+        if not participant_number or not participant_number.isdigit():
+            raise ValueError("participant_number must contain digits only.")
+        object.__setattr__(self, "participant_number", participant_number)
+
+        if (
+            not isinstance(self.age, int)
+            or isinstance(self.age, bool)
+            or not 1 <= self.age <= 120
+        ):
+            raise ValueError("age must be a whole number from 1 to 120.")
+        if self.sex not in PARTICIPANT_SEX_VALUES:
+            raise ValueError(
+                "sex must be one of: " + ", ".join(PARTICIPANT_SEX_VALUES) + "."
+            )
+        if self.handedness not in PARTICIPANT_HANDEDNESS_VALUES:
+            raise ValueError(
+                "handedness must be one of: "
+                + ", ".join(PARTICIPANT_HANDEDNESS_VALUES)
+                + "."
+            )
+        if not isinstance(self.colorblind, bool):
+            raise TypeError("colorblind must be True or False.")
+
 
 @dataclass(frozen=True, slots=True)
 class CueTriggerCodes:
@@ -234,6 +279,7 @@ class TaskRunResult:
     schedule: tuple[CueEpoch, ...]
     events: tuple[CuePresentationRecord, ...]
     aborted: bool
+    participant_information: ParticipantInformation | None = None
     abort_reason: str | None = None
     log_path: Path | None = None
 

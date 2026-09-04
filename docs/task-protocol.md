@@ -37,12 +37,20 @@ This page records the task behavior that the software must preserve.
   on timed screens. It defaults to on and persists across launches. Hiding the
   timer does not change phase durations or marker timing. Countdown redraws send
   no markers.
-- After COM3 opens, PySide6 presents the ready frame. The task stops with an
-  error if the requested OpenGL frame does not swap within five seconds.
+- After COM3 opens, show a required participant-information survey for
+  Participant Number, Age, Sex, Handedness, and Colorblind status. Participant
+  numbers contain digits only, including optional leading zeroes; age is a whole
+  number from 1 to 120. Cancelling stops the run before the fullscreen task.
+  Accepted values are recorded in five additive `participant_*` task-log columns
+  and are not saved as launcher preferences. PySide6 then presents the ready
+  frame. The task stops with an error if the requested OpenGL frame does not swap
+  within five seconds.
 - An unchecked test-mode box is the default. If the operator checks it, the
   launcher asks `Are you sure you want to run the experiment in test mode?`
   **Yes** runs the same presentation without opening COM3 or sending markers;
-  **No** returns to setup. The task CSV records `test_mode=True`.
+  **No** returns to setup. Test mode also skips the participant-information
+  survey. The task CSV records `test_mode=True` and leaves the five
+  `participant_*` columns blank.
 - A precise timer is aligned to each accepted cue or break swap. The break's
   accepted swap closes the preceding cue in the event log; the next cue starts
   after the break's deadline. Neither phase is intentionally shortened.
@@ -80,7 +88,8 @@ This page records the task behavior that the software must preserve.
 - **Space** begins the five-second lead-in from the fullscreen ready screen;
   **Escape** aborts.
 - A CSV task log records the scheduled and presented epochs and trigger events,
-  the actual cue text, and the configured break duration and text. One file
+  the participant information, the actual cue text, and the configured break
+  duration and text. One file
   covers both conditions. `total_epochs` counts the whole experiment; additive
   `epochs_per_condition` and `condition_epoch_number` fields identify the blocks.
   Planned `scheduled_onset_sec` values are relative to each condition's planned

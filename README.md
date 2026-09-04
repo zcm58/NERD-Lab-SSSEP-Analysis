@@ -20,11 +20,12 @@ Once set up, right-click [main.py](main.py) in PyCharm and choose **Run**. The
 launcher opens the task home. Use **View** to switch workflows:
 
 - **SSSEP Task** has one **Start SSSEP Task** button. Each experiment
-  runs both hands first, then right hand/right ankle after an administrator
+  collects the participant number, age, sex, handedness, and colorblind status,
+  then runs both hands first followed by right hand/right ankle after an administrator
   handover and confirmation. Participant prompts are balanced and randomized
   with at most two identical prompts in a row, breaks, and optional countdowns.
   BioSemi markers use fixed `COM3`; confirmed test
-  mode skips them.
+  mode skips both participant information and markers.
 - **Process Data** processes saved `.bdf` files and creates FFT results.
 - **Generate FFT Plots** reopens an earlier FFT CSV to make participant/group
   electrode or ROI plots and scalp maps without processing the BDF files again.

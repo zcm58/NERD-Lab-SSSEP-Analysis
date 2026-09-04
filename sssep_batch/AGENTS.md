@@ -49,8 +49,9 @@ The package is organized around these boundaries:
   saved-table reloading, later ROI aggregation, plot/source-data output, and
   plotting helpers.
 - `experiment/`
-  Task models, balanced scheduling, PySide6 presentation, BioSemi serial
-  triggers, and task-event logs. It does not control TENS hardware.
+  Participant-information collection, task models, balanced scheduling, PySide6
+  presentation, BioSemi serial triggers, and task-event logs. It does not
+  control TENS hardware.
 - `events/`
   Status-channel event detection and epoch extraction.
 - `preprocess/`
@@ -163,6 +164,10 @@ The package is organized around these boundaries:
 
 - Open the fixed `COM3` connection before participant-facing screens in normal
   runs. Confirmed test mode uses the simulated backend and must be logged.
+- After COM3 opens in a normal run, require Participant Number, Age, Sex,
+  Handedness, and Colorblind status before the fullscreen ready screen. Skip the
+  survey in test mode, keep its log fields blank there, and never persist these
+  per-run values in launcher settings.
 - Keep cue emission as the first external action in the matching
   `QOpenGLWindow.frameSwapped` callback for each newly drawn cue.
 - Run both hands first, then right hand/right ankle. Freshly randomize balanced

@@ -21,6 +21,7 @@ PySide6 also presents the fullscreen participant task.
 | Persistent custom ROI definitions | [roi_settings.py](sssep_batch/roi_settings.py) |
 | Analysis defaults and advanced processing settings | [config.py](sssep_batch/config.py) |
 | Task settings and event records | [experiment/models.py](sssep_batch/experiment/models.py) |
+| Participant information survey | [experiment/participant_information.py](sssep_batch/experiment/participant_information.py) |
 | Balanced randomized cue order | [experiment/schedule.py](sssep_batch/experiment/schedule.py) |
 | Fullscreen prompts, breaks, countdowns, or task CSV log | [experiment/runner.py](sssep_batch/experiment/runner.py) |
 | Fixed COM3 connection or one-byte BioSemi markers | [experiment/triggers.py](sssep_batch/experiment/triggers.py) |
@@ -49,9 +50,11 @@ Participant task:
 
 `entrypoint → gui → experiment settings → schedule → trigger backend → PySide6 presenter → task CSV`
 
-Normal runs open the fixed `COM3` connection before participant screens. A
-checked and confirmed test mode uses a simulated backend and clearly marks the
-ready screen and task CSV; it never opens COM3 or sends markers. After
+Normal runs open the fixed `COM3` connection, then collect the participant
+number, age, sex, handedness, and colorblind status before the fullscreen ready
+screen. A checked and confirmed test mode skips that survey, uses a simulated
+backend, and clearly marks the ready screen and task CSV; it never opens COM3 or
+sends markers. After
 Space starts a five-second lead-in, a main-thread `QOpenGLWindow` draws each cue. Both hands
 run first, followed by hand/ankle after untimed Space-then-Y admin screens. Its
 matching `frameSwapped` callback immediately requests the cue's unique `1..255`
@@ -172,6 +175,9 @@ Scalp-map names retain their frequency, and old exports are not renamed.
   a request to set the frequency. Reject unsupported frequencies without clamping.
 - Keep PySide6 presentation and live serial output inside `experiment/`,
   separate from BDF analysis.
+- Collect participant information only after a normal run has opened COM3 and
+  before creating the fullscreen task surface. Skip it in confirmed test mode.
+  Keep its values in the task CSV, not in persistent launcher preferences.
 - Keep `COM3` fixed and absent from the GUI. Open and check it before participant
   cues in normal runs; never continue after a trigger failure. Test mode must
   require explicit confirmation and must be recorded in the task CSV.

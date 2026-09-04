@@ -19,9 +19,11 @@ TENS stimulation is controlled separately. Set it up before starting the task.
 3. Connect the BioSemi trigger interface on its fixed `COM3` port and start
    recording. For a practice run without BioSemi, enable **Test mode (no
    BioSemi triggers)** in Settings and confirm **Yes** when starting.
-4. Choose **View > SSSEP Task**, click **Start SSSEP Task**, then press **Space**
-   on the fullscreen ready screen. A five-second message appears before the
-   first prompt starts.
+4. Choose **View > SSSEP Task** and click **Start SSSEP Task**. After COM3 opens,
+   the participant enters their Participant Number, Age, Sex, Handedness, and
+   Colorblind status. The participant then presses **Space** on the fullscreen
+   ready screen. A five-second message appears before the first prompt starts.
+   Confirmed test mode skips the participant-information survey.
 5. Complete **Condition 1: both hands**. When prompted, move the left-hand TENS
    electrodes to the **right ankle**. Press **Space**, then read the confirmation
    and press **Y** to begin **Condition 2: right hand + right ankle**.
@@ -33,7 +35,9 @@ handover waits for the administrator and has no countdown.
 
 Trigger codes stay locked: `11`/`12` for both hands and `21`/`22` for hand/ankle.
 Every attention epoch begins with its cue code and ends with code `100`; both are
-recorded in the task log.
+recorded in the task log. The participant-information fields are repeated on
+each task-log row so the CSV remains self-contained; they are not stored in the
+app's saved preferences. Test-mode logs leave those fields blank.
 Test mode sends no markers; choosing **No** at its warning returns home.
 Its checkbox is remembered, but every test run still asks for confirmation.
 
