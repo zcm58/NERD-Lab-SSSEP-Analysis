@@ -167,7 +167,7 @@ def apply_biosemi_montage(
     raw: mne.io.BaseRaw,
     log_func: Callable[[str], None],
 ) -> None:
-    """Apply the configured FPVS montage before initial reference and channel drop."""
+    """Apply the configured scalp montage before initial reference and channel drop."""
     try:
         montage = mne.channels.make_standard_montage(MONTAGE_NAME)
         with warnings.catch_warnings(record=True) as caught:

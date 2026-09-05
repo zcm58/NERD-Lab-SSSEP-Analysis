@@ -3,7 +3,8 @@
 Set FPVS_REFERENCE_ROOT to the Toolbox checkout. Actual BDFs, the Toolbox's
 loader/preprocessor, and FFT expressions extracted from its AST are exercised.
 Its visual-oddball crop is intentionally replaced by this experiment's SSSEP
-windows. No FPVS GUI, QC workflow, or participant data is needed.
+windows, and its loaded montage is explicitly matched to SSSEP biosemi64.
+This verifies the remaining processing at matching coordinates. No FPVS GUI, QC workflow, or participant data is needed.
 """
 
 import ast
@@ -74,7 +75,7 @@ def reference_fft_from_source(source_path, epochs, sfreq):
 
 
 @pytest.mark.parametrize("sfreq,mode", [(256, "clean"), (512, "automatic_bad"), (2048, "manual_bad"), (512, "disabled")])
-def test_bdf_pipeline_is_exactly_equal_to_fpvs(fpvs_source, tmp_path, monkeypatch, sfreq, mode):
+def test_bdf_pipeline_equals_fpvs_with_matching_biosemi_montage(fpvs_source, tmp_path, monkeypatch, sfreq, mode):
     path = tmp_path / f"synthetic_{sfreq}_{mode}.bdf"
     write_synthetic_bdf(path, sfreq)
     log = []
@@ -83,6 +84,8 @@ def test_bdf_pipeline_is_exactly_equal_to_fpvs(fpvs_source, tmp_path, monkeypatc
         app, str(path), ref_pair=config.REFERENCE_CHANNELS, first_n_channels=64,
     )
     assert reference_raw is not None, log
+    # Authorized SSSEP montage difference; do not modify the reference source.
+    reference_raw.set_montage(config.MONTAGE_NAME, on_missing="ignore", match_case=False)
     sssep_raw = pipeline.load_bdf(path)
 
     def add_bad(raw):

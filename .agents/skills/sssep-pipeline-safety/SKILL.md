@@ -23,7 +23,7 @@ explicitly asks for an analysis change.
    - The current method is `fpvs_amplitude_epoch_crop_v2`, based on FPVS commit
      `185d803f0056daebee04e5f28cc6b554c47336ce`; the old power/Welch method was
      intentionally replaced.
-   - Load the reference BioSemi channel subset and apply `standard_1005`
+   - Load the reference BioSemi channel subset and apply `biosemi64`
      before preprocessing, then EXG reference/drop and scalp-plus-Status
      retention.
    - Apply the scaled-duration 0.1–50 Hz FIR at the original sampling rate,

@@ -187,3 +187,7 @@ Hemisphere comparisons and statistics remain outside this package.
 
 For the processing method, see [FPVS parity](fpvs-parity.md). For code changes,
 see the [code map](../architecture.md).
+
+New processing uses the BioSemi 64 electrode montage for interpolation and scalp
+maps. Earlier saved results keep their recorded montage; reprocess the original
+BDF files to generate results using the new coordinates.

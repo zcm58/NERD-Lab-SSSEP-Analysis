@@ -88,8 +88,8 @@ Saved-result plotting is separate:
 Later ROI means average electrodes within participant before the equal-weight
 group mean, retaining participant contributions in memory. Scalp maps use finite
 electrodes with coordinates in the
-saved `standard_1005` montage; missing or unmapped electrodes are not replaced
-with zero. Two explicitly selected cue conditions can share one side-by-side
+montage recorded in the saved CSV (`biosemi64` for new runs); missing or unmapped
+electrodes are not replaced with zero. Two explicitly selected cue conditions can share one side-by-side
 figure and one amplitude color scale without pooling their data or participant
 cohorts. Saved plots are PNGs directly in `saved_fft_plots`, without per-plot
 CSV/Excel copies or subfolders. Reserve filenames exclusively and add numbered
@@ -143,7 +143,7 @@ Scalp-map names retain their frequency, and old exports are not renamed.
   tabs. Allow definition before results are loaded, retaining access to loaded
   non-BioSemi labels and saved selections. The
   BioSemi diagram is a selection aid, not a replacement for the processing or
-  scalp-map `standard_1005` montage. Presets are FPVS examples, not validated
+  scalp-map montage recorded in each result. Presets are FPVS examples, not validated
   SSSEP regions. Save Custom ROI explicitly persists one or more electrodes in
   ignored `.sssep_rois.json`, separate from experiment settings and analysis
   results. Use atomic writes, confirm replaced definitions, and report malformed

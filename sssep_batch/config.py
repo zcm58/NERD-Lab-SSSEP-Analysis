@@ -115,7 +115,8 @@ LOCAL_NOISE_EXCLUSION_HALF_WIDTH_HZ = 0.20
 SCALP_CHANNEL_COUNT = 64
 REFERENCE_CHANNELS = ("EXG1", "EXG2")
 STIM_CHANNEL = "Status"
-MONTAGE_NAME = "standard_1005"
+# BioSemi 64 coordinates for interpolation and newly exported scalp maps.
+MONTAGE_NAME = "biosemi64"
 
 # Sampling rate after downsampling, in Hz. Use 0 or None to disable this step.
 DOWNSAMPLE_RATE = 256

@@ -74,7 +74,7 @@ The package is organized around these boundaries:
 - Current method: `fpvs_amplitude_epoch_crop_v2`, referenced to FPVS commit
   `185d803f0056daebee04e5f28cc6b554c47336ce`. See
   [FPVS method and parity checks](../docs/fpvs-parity.md).
-- Load the reference channel subset, assign `standard_1005` before
+- Load the reference channel subset, assign `biosemi64` before
   preprocessing, then apply EXG reference/drop and keep scalp EEG plus Status.
 - Apply the scaled-duration 0.1–50 Hz FIR at the original sampling rate before
   downsampling to 256 Hz. Kurtosis screening/interpolation precedes the final

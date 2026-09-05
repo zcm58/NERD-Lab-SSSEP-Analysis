@@ -106,7 +106,7 @@ The authorized `fpvs_amplitude_epoch_crop_v2` method replaces the former SSSEP
 power/Welch pipeline. Preserve this current design unless a further change is
 authorized:
 
-- Use the reference-compatible loader and `standard_1005` montage before
+- Use the reference-compatible loader and `biosemi64` montage before
   preprocessing, then EXG reference/drop and retention of 64 scalp channels
   plus `Status`.
 - Filter at the original sampling rate with the scaled-duration 0.1–50 Hz FIR,

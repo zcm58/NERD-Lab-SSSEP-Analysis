@@ -103,14 +103,14 @@ def test_unknown_64_fft_channels_keep_actual_names(raw_builder):
     assert channels.get_fft_channels(raw) == names
 
 
-def test_montage_matches_fpvs_loader_before_reference(monkeypatch, raw_builder):
-    monkeypatch.setattr(channels, "MONTAGE_NAME", "standard_1005")
+def test_default_montage_is_biosemi64_before_reference(raw_builder):
+    assert channels.MONTAGE_NAME == "biosemi64"
     raw = raw_builder(["cz", "Pz", "EXG1", "EXG2", "Status"],
                       ["eeg", "eeg", "eeg", "eeg", "stim"])
     expected = raw.copy()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        expected.set_montage("standard_1005", on_missing="warn", match_case=False, verbose=False)
+        expected.set_montage("biosemi64", on_missing="warn", match_case=False, verbose=False)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         channels.apply_biosemi_montage(raw, lambda _: None)

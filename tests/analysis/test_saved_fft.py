@@ -105,7 +105,7 @@ def test_saved_fft_round_trip_recovers_events_participants_and_electrodes(tmp_pa
     ]
     assert dataset.processing_method == "fpvs_amplitude_v1"
     assert dataset.provenance.fft_schema_version == 1
-    assert dataset.provenance.montage_name == "standard_1005"
+    assert dataset.provenance.montage_name == "biosemi64"
     assert dataset.provenance.sampling_rate_hz == 40.0
     assert dataset.provenance.analysis_window_sec == 0.1
     assert dataset.provenance.epoch_window_sec == 0.2
@@ -417,7 +417,7 @@ def test_saved_fft_rejects_mixed_saved_provenance(tmp_path):
         ),
     )
     frame = pd.read_csv(source_csv)
-    frame.loc[frame.participant_id == "P02", "montage_name"] = "biosemi64"
+    frame.loc[frame.participant_id == "P02", "montage_name"] = "standard_1005"
     frame.to_csv(source_csv, index=False)
 
     with pytest.raises(ValueError, match="inconsistent FFT provenance"):
@@ -694,7 +694,7 @@ def test_saved_scalp_plot_omits_unmapped_electrodes_and_records_them(tmp_path):
                     "Fp1": [1, 2, 3],
                     "Fp2": [2, 3, 4],
                     "C3": [3, 4, 5],
-                    "C4": [4, 5, 6],
+                    "P4": [4, 5, 6],
                     "Unknown": [5, 6, 7],
                 },
             ),
@@ -724,14 +724,14 @@ def test_saved_paired_scalp_plot_uses_two_panels_with_one_shared_scale(
         "Fp1": [1, 2, 3],
         "Fp2": [2, 3, 4],
         "C3": [3, 4, 5],
-        "C4": [4, 5, 6],
+        "P4": [4, 5, 6],
         "Unknown": [5, 6, 7],
     }
     second_channels = {
         "Fp1": [2, 8, 4],
         "Fp2": [3, 9, 5],
         "C3": [4, 10, 6],
-        "C4": [5, 11, 7],
+        "P4": [5, 11, 7],
     }
     run_folder, source_csv = write_saved_dataset(
         tmp_path,
@@ -1025,3 +1025,26 @@ def test_saved_scalp_frequency_is_limited_to_configured_plot_range(tmp_path):
             trigger_code=11,
             frequency_hz=0.0,
         )
+
+
+@pytest.mark.parametrize("montage_name", ["biosemi64", "standard_1005"])
+def test_saved_scalp_coordinates_follow_new_or_legacy_provenance(tmp_path, montage_name):
+    import mne
+    from sssep_batch.analysis.plotting import _mapped_saved_scalp_data
+
+    run_folder, source_csv = write_saved_dataset(tmp_path, (
+        make_record("P01", {name: [1, 2, 3] for name in ("Fp1", "Fp2", "C3", "P4", "Cz")}),
+    ))
+    frame = pd.read_csv(source_csv)
+    frame["montage_name"] = montage_name
+    frame.to_csv(source_csv, index=False)
+    original = source_csv.read_bytes()
+    dataset = load_saved_fft_dataset(run_folder)
+    values = saved_scalp_values(dataset, event_type="cue", trigger_code=11, frequency_hz=10.0)
+    info, *_ = _mapped_saved_scalp_data(values)
+    expected = mne.create_info(info.ch_names, info["sfreq"], "eeg")
+    expected.set_montage(montage_name)
+    for actual, reference in zip(info["chs"], expected["chs"], strict=True):
+        np.testing.assert_array_equal(actual["loc"], reference["loc"])
+    create_saved_scalp_outputs(dataset, event_type="cue", trigger_code=11, frequency_hz=10.0)
+    assert source_csv.read_bytes() == original

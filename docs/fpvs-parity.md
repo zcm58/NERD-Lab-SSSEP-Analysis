@@ -28,10 +28,15 @@ changes, the test fails rather than silently accepting a different reference.
    unselected EXG1–EXG8 channels are misc. The source recording is never edited.
    SSSEP loads into RAM; FPVS uses a disk-backed float64 array. Identical loaded
    samples are verified through their complete downstream processing.
-2. **Montage:** Apply MNE's `standard_1005` with case-insensitive matching and
-   `on_missing="warn"`, before the initial reference. This replaces the previous
-   `biosemi64` electrode coordinates for interpolation. The BioSemi name order
-   is still used for recognized complete 64-electrode output sets.
+2. **Montage:** New runs use MNE's `biosemi64` with case-insensitive matching
+   and `on_missing="warn"`, before the initial reference. This authorized
+   September 2026 change replaces `standard_1005` and can change bad-channel
+   interpolation and scalp-map geometry. FFT arithmetic and CSV fields are
+   unchanged; `montage_name` records the coordinates used. Existing saved CSVs
+   retain their recorded montage when plotted and are never relabeled.
+   Optional FPVS comparisons explicitly assign `biosemi64` to the loaded
+   reference data before preprocessing, so they compare matching coordinates,
+   not the reference loader's original `standard_1005` geometry.
 3. **Initial reference:** Subtract the mean of EXG1/EXG2 with `projection=False`,
    drop the selected references, and retain the selected scalp channels plus
    `Status`. If references are missing, FPVS logs the skipped operation.
@@ -234,7 +239,8 @@ $env:FPVS_REFERENCE_ROOT = "C:\Projects\FPVS Toolbox Repo"
 The source comparison directly exercises the reference loader/preprocessor
 on deterministic 67-channel BDFs at 256, 512, and 2048 Hz. Four cases cover
 clean data, automatic bad-channel detection/interpolation, a pre-marked bad
-channel, and disabled interpolation. Assertions require exact array equality
+channel, and disabled interpolation. Both sides use matching `biosemi64`
+coordinates as described above. Assertions require exact array equality
 for final continuous samples, events, epochs, and participant FFT amplitudes.
 No numerical tolerance is used for those source-parity comparisons. Separate
 end-to-end tests check the consolidated participant and group CSV values.

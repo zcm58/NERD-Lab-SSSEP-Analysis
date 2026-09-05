@@ -82,7 +82,7 @@ def test_participant_table_has_one_row_per_event_and_frequency() -> None:
     np.testing.assert_array_equal(cue_rows.C3_amplitude_uv, [2.0, 4.0, 6.0])
     assert cue_rows.analysis_channels.unique().tolist() == ["C3;C4"]
     assert cue_rows.fft_schema_version.unique().tolist() == [1]
-    assert cue_rows.montage_name.unique().tolist() == ["standard_1005"]
+    assert cue_rows.montage_name.unique().tolist() == ["biosemi64"]
     assert cue_rows.sampling_rate_hz.unique().tolist() == [40.0]
     assert cue_rows.analysis_window_sec.unique().tolist() == [0.1]
     assert cue_rows.epoch_window_sec.unique().tolist() == [0.2]
@@ -156,7 +156,7 @@ def test_consolidated_tables_mark_unavailable_electrodes_and_report_group_ns() -
     assert trigger_11.C3_n_participants.unique().tolist() == [1]
     assert trigger_11.C4_n_participants.unique().tolist() == [2]
     assert trigger_11.fft_schema_version.unique().tolist() == [1]
-    assert trigger_11.montage_name.unique().tolist() == ["standard_1005"]
+    assert trigger_11.montage_name.unique().tolist() == ["biosemi64"]
     assert trigger_11.epoch_window_sec.unique().tolist() == [0.2]
     assert trigger_11.fft_crop_start_sec.unique().tolist() == [0.05]
     assert trigger_11.fft_crop_end_sec.unique().tolist() == [0.05]
