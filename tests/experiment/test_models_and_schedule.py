@@ -5,7 +5,10 @@ from itertools import product
 
 import pytest
 
-from sssep_batch.config import BASELINE_EVENT_CODE, FMAX, FMIN
+from sssep_batch.config import (
+    BASELINE_EVENT_CODE, EVENT_DURATION_SEC, EXPECTED_REPETITIONS_PER_TRIGGER,
+    FMAX, FMIN,
+)
 from sssep_batch.experiment.models import (
     CONDITION_ORDER,
     CUE_PROMPTS,
@@ -71,18 +74,43 @@ def test_task_settings_reject_blank_or_nontext_prompts(field: str, prompt: objec
         )
 
 
-def test_task_defaults_use_ten_second_breaks_and_existing_cue_text() -> None:
+def test_task_defaults_use_six_second_epochs_and_thirty_repeats_per_prompt() -> None:
     settings = TaskSettings(
-        epoch_duration_sec=15.0,
-        epochs_per_condition=10,
+        epoch_duration_sec=EVENT_DURATION_SEC,
+        epochs_per_condition=EXPECTED_REPETITIONS_PER_TRIGGER * 2,
         trigger_codes=_codes(),
+        random_seed=42,
     )
 
-    assert settings.break_duration_sec == 10.0
+    assert settings.epoch_duration_sec == 6.0
+    assert settings.break_duration_sec == 2.0
     assert settings.break_prompt == "Now let's take a short break."
     assert {cue: settings.prompt_for(cue) for cue in CueTarget} == CUE_PROMPTS
-    assert settings.epochs_per_condition == 10
-    assert settings.total_epochs == 20
+    assert settings.epochs_per_condition == 60
+    assert settings.total_epochs == 120
+    schedule = build_cue_schedule(settings)
+    assert Counter(epoch.trigger_code for epoch in schedule) == {
+        11: 30, 12: 30, 21: 30, 22: 30,
+    }
+    for condition in CONDITION_ORDER:
+        block = [epoch for epoch in schedule if epoch.condition == condition]
+        assert [epoch.scheduled_onset_sec for epoch in block] == [
+            index * 8.0 for index in range(60)
+        ]
+        assert all(
+            len({epoch.cue for epoch in block[index:index + 3]}) > 1
+            for index in range(len(block) - 2)
+        )
+    protocol = analysis_protocol_for_task(
+        epoch_duration_sec=settings.epoch_duration_sec,
+        epochs_per_condition=settings.epochs_per_condition,
+        trigger_codes=settings.trigger_codes,
+        target_hz=26.0,
+    )
+    assert protocol.event_duration_sec == 6.0
+    assert protocol.expected_repetitions_per_trigger == 30
+    assert protocol.active_event_codes == (11, 12, 21, 22)
+    assert protocol.analyze_baseline is False
 
 
 def test_task_serial_port_is_fixed_to_com3() -> None:

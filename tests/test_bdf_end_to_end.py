@@ -132,10 +132,10 @@ def _check_processing_summary(result: dict[str, object], known: dict[str, object
     assert (summary["edge_excluded_epochs"] == 0).all()
     assert (summary["out_of_bounds_epochs"] == 0).all()
     assert (summary["baseline_edge_excluded_epochs"] == 0).all()
-    assert (summary["epoch_window_sec"] == 15.0).all()
-    assert (summary["fft_crop_start_sec"] == 2.5).all()
-    assert (summary["fft_crop_end_sec"] == 2.5).all()
-    assert (summary["analysis_window_sec"] == 10.0).all()
+    assert (summary["epoch_window_sec"] == 6.0).all()
+    assert (summary["fft_crop_start_sec"] == 1.0).all()
+    assert (summary["fft_crop_end_sec"] == 0.0).all()
+    assert (summary["analysis_window_sec"] == 5.0).all()
     for code in config.ACTIVE_EVENT_CODES:
         expected = known["active_counts"].get(code, 0)
         assert summary.loc[code, "usable_epochs"] == expected
@@ -171,15 +171,15 @@ def _check_participant_spectra(
         known["active_counts"][code] for code in config.ACTIVE_EVENT_CODES
     ]
     assert all(record.channel_names == tuple(known["scalp_channels"]) for record in records)
-    assert all(record.epoch_window_sec == 15.0 for record in records)
-    assert all(record.fft_crop_start_sec == 2.5 for record in records)
-    assert all(record.fft_crop_end_sec == 2.5 for record in records)
-    assert all(record.analysis_window_sec == 10.0 for record in records)
+    assert all(record.epoch_window_sec == 6.0 for record in records)
+    assert all(record.fft_crop_start_sec == 1.0 for record in records)
+    assert all(record.fft_crop_end_sec == 0.0 for record in records)
+    assert all(record.analysis_window_sec == 5.0 for record in records)
 
     cue_11 = next(record for record in cue_records if record.trigger_code == 11)
-    expected_frequencies = np.fft.rfftfreq(2560, 1 / 256)
+    expected_frequencies = np.fft.rfftfreq(1280, 1 / 256)
     np.testing.assert_allclose(cue_11.spectrum.freqs, expected_frequencies)
-    assert cue_11.spectrum.amplitude_uv.shape == (64, 1281)
+    assert cue_11.spectrum.amplitude_uv.shape == (64, 641)
     probe_index = cue_11.channel_names.index(known["probe_channel"])
     nearest = int(np.argmin(abs(cue_11.spectrum.freqs - 10)))
     assert cue_11.spectrum.amplitude_uv[probe_index, nearest] == pytest.approx(
@@ -264,7 +264,7 @@ def test_real_batch_workers_write_consolidated_group_outputs_and_keep_reruns_sep
     assert participant_frame.processing_method.unique().tolist() == [
         config.PROCESSING_METHOD
     ]
-    assert len(participant_frame) == 2 * (1 + len(known["active_counts"])) * 1281
+    assert len(participant_frame) == 2 * (1 + len(known["active_counts"])) * 641
     assert participant_frame.groupby(
         ["participant_id", "event_type", "trigger_code"]
     ).ngroups == 2 * (1 + len(known["active_counts"]))
@@ -281,10 +281,10 @@ def test_real_batch_workers_write_consolidated_group_outputs_and_keep_reruns_sep
         & (participant_frame.event_type == "cue")
         & (participant_frame.trigger_code == 11)
     ].reset_index(drop=True)
-    assert len(participant_11) == 1281
+    assert len(participant_11) == 641
     np.testing.assert_allclose(
         participant_11.frequency_hz,
-        np.fft.rfftfreq(2560, 1 / 256),
+        np.fft.rfftfreq(1280, 1 / 256),
     )
     roi_columns = [f"{channel}_amplitude_uv" for channel in config.ANALYSIS_CHANNELS]
     np.testing.assert_allclose(
@@ -300,7 +300,7 @@ def test_real_batch_workers_write_consolidated_group_outputs_and_keep_reruns_sep
     assert group_frame.processing_method.unique().tolist() == [
         config.PROCESSING_METHOD
     ]
-    assert len(group_frame) == (1 + len(known["active_counts"])) * 1281
+    assert len(group_frame) == (1 + len(known["active_counts"])) * 641
     assert group_frame.groupby(["event_type", "trigger_code"]).ngroups == (
         1 + len(known["active_counts"])
     )

@@ -61,7 +61,7 @@ def _next_steps_for_stage(stage: str) -> list[str]:
     if stage in {"baseline_fft_window_cropping", "active_fft_window_cropping"}:
         return [
             "Use epochs longer than the combined FFT start and end crop.",
-            "Restore the documented 15-second epoch if the duration was changed.",
+            "Check that the epoch duration matches the recording (default: 6 seconds).",
         ]
     return [
         "Open batch_processing_summary.csv and find this file's error_file path.",

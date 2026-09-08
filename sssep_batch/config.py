@@ -74,14 +74,14 @@ FIXED_HZ_LINES = []
 
 # Timing of each recorded epoch and the samples retained for its FFT, in seconds.
 PRE_EVENT_SEC = 0.0
-EVENT_DURATION_SEC = 15.0
+EVENT_DURATION_SEC = 6.0
 INCLUDE_POST_STIMULUS = False
 POST_EVENT_SEC_IF_INCLUDED = 2.5
-# The default 15-second epoch therefore contributes its middle 10 seconds.
-FFT_CROP_START_SEC = 2.5
-FFT_CROP_END_SEC = 2.5
+# The default 6-second epoch contributes its final 5 seconds, with no end crop.
+FFT_CROP_START_SEC = 1.0
+FFT_CROP_END_SEC = 0.0
 # Expected usable repetitions per active trigger; differences are flagged.
-EXPECTED_REPETITIONS_PER_TRIGGER = 5
+EXPECTED_REPETITIONS_PER_TRIGGER = 30
 
 # Electrodes included in the region of interest (ROI) for SSSEP summaries and
 # compatibility mean columns in the participant FFT CSV. PNGs use PLOT_CHANNEL.

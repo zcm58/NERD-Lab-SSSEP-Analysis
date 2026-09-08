@@ -2,6 +2,13 @@
 
 This page records the task behavior that the software must preserve.
 
+Timing revision (2026-09-08): default attention epochs last 6 seconds, with
+2-second breaks between epochs. Analysis discards only the first 1.0 second
+and retains the final 5 seconds, with no end crop. At 256 Hz this extracts
+1536 samples and analyzes the stop-exclusive slice `256:1536` (1280 samples).
+Each prompt repeats 30 times: 60 epochs per condition and 120 overall.
+All other presentation, trigger, and FFT calculation behavior is preserved.
+
 - Every experiment runs **Condition 1: both hands** first (left-hand and
   right-hand cues), then **Condition 2: right hand + right ankle** (right-hand
   and right-ankle cues). The order is fixed and is not an operator setting.
@@ -13,8 +20,9 @@ This page records the task behavior that the software must preserve.
   text under **File > Settings**. Text changes do not change cue identities or
   marker codes. The home screen starts the whole experiment.
 - The operator chooses the epoch duration and an even **epoch count per
-  condition**. Defaults are 15 seconds and 10 epochs per condition (20 overall).
-- A configurable break (10 seconds by default) separates every pair of cue
+  condition**. Defaults are 6 seconds and 60 epochs per condition (120 overall,
+  30 for each of the four trigger codes).
+- A configurable break (2 seconds by default) separates every pair of cue
   epochs within each condition, including repeated cues. No timed break precedes
   the first or follows the last cue of a condition. The default text is
   `Now let's take a short break.` Its accepted frame swap ends the preceding
@@ -75,8 +83,8 @@ This page records the task behavior that the software must preserve.
   also start with `100`, but have no following attention onset in the same block.
 - Process Data retains every `100` in its Status-event audit, but does not use
   these variable break, handover, or closing intervals as FFT baselines. At the
-  10-second break default, extracting the same 15-second window used for an
-  attention epoch would include five seconds from outside that break. Attention
+  2-second break default, extracting the same 6-second window used for an
+  attention epoch would include four seconds from outside that break. Attention
   FFTs remain fixed windows from `11`, `12`, `21`, and `22` onsets.
 - Fixed markers are `11` for both-hands/left-hand, `12` for
   both-hands/right-hand, `21` for hand-and-ankle/right-hand, and `22` for
@@ -113,8 +121,8 @@ range (3–50 Hz by default). Leaving it blank still saves the complete
 per-electrode FFT.
 
 Recording analysis requires each full configured epoch. It then removes the
-first and final 2.5 seconds before averaging same-cue epochs and calculating the
-FFT. At the 15-second default, the FFT uses the middle 10 seconds. This analysis
+first 1.0 second, with no end crop, before averaging same-cue epochs and calculating
+the FFT. At the 6-second default, the FFT uses the final 5 seconds. This analysis
 crop does not shorten the participant's fullscreen cue.
 
 Outside confirmed test mode, the software must open and check `COM3` before

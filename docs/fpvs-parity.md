@@ -65,9 +65,9 @@ changes, the test fails rather than silently accepting a different reference.
    was applied; it is necessary for exact numerical parity. Do not add an FIR
    edge margin or replace EEG NaNs/infinities with zeros. Require each entire
    configured epoch before retaining it.
-9. **SSSEP FFT window:** Remove 2.5 seconds from the start and end of every
-   retained epoch. At the 15-second default and 256 Hz, extract 3840 samples,
-   retain the stop-exclusive slice `640:3200`, and pass 2560 samples (10
+9. **SSSEP FFT window:** Remove the first 1.0 second of every retained
+   epoch, with no end crop. At the 6-second default and 256 Hz, extract 1536
+   samples, retain the stop-exclusive slice `256:1536`, and pass 1280 samples (5
    seconds) to the cue average and FFT. Apply the same crop to cue and baseline
    epochs.
 10. **Participant cue average and FFT:** For one participant's cropped
@@ -131,19 +131,19 @@ calculation for identical input data, settings, electrode labels, and samples
 supplied to the FFT. These experiment-specific choices remain:
 
 - Both SSSEP conditions supply fixed trigger codes (`11`/`12` and `21`/`22`);
-  cue duration remains editable in File > Settings. The default full window is 15
-  seconds, or 3840 samples at 256 Hz. Other durations use
+  cue duration remains editable in File > Settings. The default full window is 6
+  seconds, or 1536 samples at 256 Hz. Other durations use
   `round(duration * sampling_rate)` samples, with a stop-exclusive slice and no
   extra endpoint. Event indices account for MNE's `raw.first_samp`.
-- SSSEP removes 2.5 seconds from both epoch ends before averaging and FFT. This
-  fixed onset/offset crop defines the middle analysis window. It is separate
+- SSSEP removes the first 1.0 second before averaging and FFT, with no end crop.
+  This onset crop defines the final analysis window. It is separate
   from FPVS's visual-oddball marker-55 crop, which aligns 1.2 Hz stimulation
   cycles. The FPVS marker crop and its 1.2 Hz exact-bin restrictions do not
   apply here. The reference test executes FPVS's FFT assignments after
   supplying the cropped SSSEP samples; it does not claim an unchanged FPVS
   experiment.
-- FFT bin spacing is the reciprocal of the analyzed duration: 0.1 Hz for the
-  default middle 10-second window. The optional
+- FFT bin spacing is the reciprocal of the analyzed duration: 0.2 Hz for the
+  default final 5-second window. The optional
   stimulation frequency shown in the launcher defaults to 26 Hz and adds dashed
   FFT markers labeled `TENS Unit Stimulation Frequency`
   and SSSEP summary values. Leaving it blank leaves those target summaries

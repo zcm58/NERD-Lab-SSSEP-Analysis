@@ -19,7 +19,7 @@ def task_protocol() -> AnalysisProtocol:
             AnalysisTrigger(code, f"Condition Site {code}", 10.0)
             for code in (1, 2, 3, 4)
         ),
-        event_duration_sec=15.0,
+        event_duration_sec=6.0,
         expected_repetitions_per_trigger=1,
         baseline_event_code=100,
     )
@@ -96,10 +96,10 @@ def test_pipeline_uses_fpvs_order_and_creates_one_plot_per_cue(monkeypatch, tmp_
     assert summary.usable_epochs.tolist() == [1, 1, 1, 1]
     assert summary.trigger_code.tolist() == [1, 2, 3, 4]
     assert summary.expected_repetitions.tolist() == [1, 1, 1, 1]
-    assert summary.epoch_window_sec.tolist() == [15.0, 15.0, 15.0, 15.0]
-    assert summary.fft_crop_start_sec.tolist() == [2.5, 2.5, 2.5, 2.5]
-    assert summary.fft_crop_end_sec.tolist() == [2.5, 2.5, 2.5, 2.5]
-    assert summary.analysis_window_sec.tolist() == [10.0, 10.0, 10.0, 10.0]
+    assert summary.epoch_window_sec.tolist() == [6.0, 6.0, 6.0, 6.0]
+    assert summary.fft_crop_start_sec.tolist() == [1.0, 1.0, 1.0, 1.0]
+    assert summary.fft_crop_end_sec.tolist() == [0.0, 0.0, 0.0, 0.0]
+    assert summary.analysis_window_sec.tolist() == [5.0, 5.0, 5.0, 5.0]
     assert summary.edge_excluded_epochs.tolist() == [0, 0, 0, 0]
     assert set(summary.processing_method) == {"fpvs_amplitude_epoch_crop_v2"}
     assert "sssep_fft_nearest_amplitude_uv" in summary
@@ -117,14 +117,14 @@ def test_pipeline_uses_fpvs_order_and_creates_one_plot_per_cue(monkeypatch, tmp_
     assert [record.trigger_code for record in cue_records] == [1, 2, 3, 4]
     assert cue_records[0].spectrum.freqs[0] == 0
     assert cue_records[0].spectrum.freqs[-1] == 128
-    assert extracted_sample_counts == [3840] * 5
-    assert fft_input_sample_counts == [2560] * 5
-    assert all(record.epoch_window_sec == 15.0 for record in records)
-    assert all(record.fft_crop_start_sec == 2.5 for record in records)
-    assert all(record.fft_crop_end_sec == 2.5 for record in records)
-    assert all(record.analysis_window_sec == 10.0 for record in records)
-    assert len(cue_records[0].spectrum.freqs) == 1281
-    assert cue_records[0].spectrum.freqs[1] == pytest.approx(0.1)
+    assert extracted_sample_counts == [1536] * 5
+    assert fft_input_sample_counts == [1280] * 5
+    assert all(record.epoch_window_sec == 6.0 for record in records)
+    assert all(record.fft_crop_start_sec == 1.0 for record in records)
+    assert all(record.fft_crop_end_sec == 0.0 for record in records)
+    assert all(record.analysis_window_sec == 5.0 for record in records)
+    assert len(cue_records[0].spectrum.freqs) == 641
+    assert cue_records[0].spectrum.freqs[1] == pytest.approx(0.2)
     assert "Cz" in cue_records[0].channel_names
     assert plots[0]["active"].amplitude_uv.ndim == 2
     assert "one per usable trigger code" in (
@@ -136,7 +136,7 @@ def test_task_protocol_audits_epoch_end_markers_without_using_a_baseline_fft(
     monkeypatch, tmp_path,
 ):
     protocol = analysis_protocol_for_task(
-        epoch_duration_sec=15.0,
+        epoch_duration_sec=6.0,
         epochs_per_condition=2,
         trigger_codes=CueTriggerCodes(11, 12, 21, 22),
         target_hz=10.0,
@@ -292,7 +292,7 @@ def test_duplicate_condition_names_preserve_plots_when_one_render_fails(monkeypa
     monkeypatch.setattr(pipeline, "load_bdf", lambda *args: make_recording())
     protocol = AnalysisProtocol(
         active_triggers=tuple(AnalysisTrigger(code, "Same Condition", 10.0) for code in (1, 2, 3, 4)),
-        event_duration_sec=15.0,
+        event_duration_sec=6.0,
         expected_repetitions_per_trigger=1,
         baseline_event_code=100,
     )

@@ -115,9 +115,9 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert dialog.windowTitle() == "SSSEP Settings"
                 assert not hasattr(dialog, "serial_port_edit")
                 assert not hasattr(dialog, "condition_combo")
-                assert dialog.epochs_per_condition_spin.value() == 10
-                assert dialog.epoch_duration_spin.value() == 15.0
-                assert dialog.break_duration_spin.value() == 10.0
+                assert dialog.epochs_per_condition_spin.value() == 60
+                assert dialog.epoch_duration_spin.value() == 6.0
+                assert dialog.break_duration_spin.value() == 2.0
                 assert dialog.stimulation_frequency_edit.text() == "26"
                 assert not dialog.test_mode_checkbox.isChecked()
                 assert dialog.show_timer_checkbox.text() == "Show countdown timer"
@@ -198,7 +198,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 dialog._save()
                 assert dialog.isVisible()
                 assert messages[-1][0] == "Settings Need Attention"
-                assert window_ref[0].session_settings.epochs_per_condition == 10
+                assert window_ref[0].session_settings.epochs_per_condition == 60
                 assert window_ref[0].plot_rois == {gui.PLOT_CHANNEL: (gui.PLOT_CHANNEL,)}
                 messages.clear()
                 dialog.break_prompt_edit.setText("Rest for a moment.")
@@ -215,7 +215,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 gui.save_launcher_settings = fail_save
                 dialog._save()
                 assert dialog.isVisible()
-                assert window_ref[0].session_settings.epochs_per_condition == 10
+                assert window_ref[0].session_settings.epochs_per_condition == 60
                 assert not gui.SETTINGS_PATH.exists()
                 assert window_ref[0].saved_plots_page.plot_rois == {gui.PLOT_CHANNEL: (gui.PLOT_CHANNEL,)}
                 assert messages[-1][0] == "Could Not Save Settings"
@@ -236,7 +236,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert not window.task_page.findChildren(QLineEdit)
                 assert not window.task_page.findChildren(QSpinBox)
                 assert window.start_task_button.text() == "Start SSSEP Task"
-                assert window.session_settings.total_epochs == 20
+                assert window.session_settings.total_epochs == 120
                 assert not hasattr(window, "condition_combo")
                 assert window.settings_action.isEnabled()
                 menu_bar = window.layout().menuBar()

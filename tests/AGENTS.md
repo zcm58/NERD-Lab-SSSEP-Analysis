@@ -88,10 +88,10 @@ generated BDF fixtures. Run from the repo root:
   Exact float64 trial-mean FFT amplitudes, output shapes, frequency bins,
   electrode amplitude averaging, equal participant weighting after FFT, and
   invalid-input handling. Test absence of Hann taper/detrending, preservation
-  of the reference's factor of two, the exact 2.5-second crop at both epoch
-  ends, and rejection of incompatible frequency grids or duplicate
-  participant/cue inputs. The default 15-second epoch must retain samples
-  640:3200 at 256 Hz, producing 2560 samples and 0.1 Hz FFT spacing.
+  of the reference's factor of two, the exact 1.0-second onset crop with no end
+  crop, and rejection of incompatible frequency grids or duplicate
+  participant/cue inputs. The default 6-second epoch must retain samples
+  256:1536 at 256 Hz, producing 1280 samples and 0.2 Hz FFT spacing.
 - `events/`
   Reference MNE event behavior after preprocessing, SSSEP epoch counts,
   onset indexing, and out-of-bounds behavior. Extra FIR edge exclusion is no

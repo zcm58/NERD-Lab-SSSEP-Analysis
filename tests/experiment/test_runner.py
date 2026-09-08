@@ -189,6 +189,7 @@ class _FakeBackend:
 def _settings(output_folder) -> TaskSettings:
     return TaskSettings(
         epoch_duration_sec=0.2,
+        break_duration_sec=10.0,
         epochs_per_condition=2,
         trigger_codes=CueTriggerCodes(11, 12, 21, 22),
         output_folder=output_folder,

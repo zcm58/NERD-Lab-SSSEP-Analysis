@@ -43,7 +43,7 @@ CUE_PROMPTS: dict[CueTarget, str] = {
     CueTarget.RIGHT_ANKLE: "Think of your right ankle",
 }
 
-DEFAULT_BREAK_DURATION_SEC = 10.0
+DEFAULT_BREAK_DURATION_SEC = 2.0
 DEFAULT_BREAK_PROMPT = "Now let's take a short break."
 
 ANALYSIS_CONDITION_LABELS: dict[TaskCondition, str] = {

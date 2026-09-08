@@ -34,9 +34,9 @@ outside this package; existing ROI mean compatibility fields remain in exported
 CSVs/summaries.
 
 Every run completes both hands first, then right hand/right ankle. Freshly
-randomize balanced cues within each condition (default 10 epochs each), with
-at most two identical cues in a row. Timed
-breaks (default 10 seconds) separate cues within a condition. Between conditions,
+randomize balanced cues within each condition (default 60 epochs each, 30 per
+prompt), with at most two identical cues in a row. Timed
+breaks (default 2 seconds) separate cues within a condition. Between conditions,
 wait for Space on the electrode handover screen, then a fresh Y on its visible
 confirmation screen. End every completed attention epoch with fixed code `100`
 on the first following break, handover, or thank-you frame; confirmation sends
@@ -114,12 +114,12 @@ authorized:
   final average reference. Preserve the reference's explicitly logged
   warning-and-continue paths; do not add silent fallbacks.
 - Detect `Status` events after preprocessing with the reference MNE options.
-  Require complete SSSEP onset windows (15 seconds by default), with no extra
+  Require complete SSSEP onset windows (6 seconds by default), with no extra
   FIR edge exclusion or EEG zero replacement.
-- Before same-cue averaging and FFT calculation, remove 2.5 seconds from the
-  start and end of every epoch. At the default, analyze samples 640:3200 at
-  256 Hz: the middle 2560 samples, or 10 seconds. This is an SSSEP-specific
-  analysis window, not the FPVS visual-oddball 1.2 Hz marker crop.
+- Before same-cue averaging and FFT calculation, remove 1.0 second from the
+  start of every epoch, with no end crop. At the default, analyze samples
+  256:1536 at 256 Hz: the final 1280 samples, or 5 seconds. This is an
+  SSSEP-specific analysis window, not the FPVS visual-oddball 1.2 Hz marker crop.
 - Average trials in float64 per electrode and calculate the reference
   microvolt amplitude FFT, `abs(FFT(mean_epoch_uv)) / N * 2`, retaining its
   DC/Nyquist scaling. Average all epochs for the same cue in the time domain

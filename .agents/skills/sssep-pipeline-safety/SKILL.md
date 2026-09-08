@@ -31,10 +31,10 @@ explicitly asks for an analysis change.
      5, and apply the final average reference. Keep the reference's logged
      warning-and-continue behavior explicit.
    - Detect `Status` events after preprocessing with the reference MNE options.
-     Require complete SSSEP onset windows (default 15 seconds), with no extra
+     Require complete SSSEP onset windows (default 6 seconds), with no extra
      FIR edge exclusion or EEG zero replacement. Before same-cue averaging and
-     FFT calculation, remove 2.5 seconds from each end. At 256 Hz, the default
-     retains samples 640:3200: 2560 samples, or 10 seconds. This SSSEP-specific
+     FFT calculation, remove the first 1.0 second with no end crop. At 256 Hz, the
+     default retains samples 256:1536: 1280 samples, or 5 seconds. This SSSEP-specific
      crop is distinct from the FPVS visual-oddball 1.2 Hz marker crop.
    - Exclude unresolved bad channels. Average trials in float64 per electrode,
      convert to microvolts, and compute the first `N // 2 + 1` bins of

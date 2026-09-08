@@ -140,7 +140,7 @@ def test_bdf_pipeline_equals_fpvs_with_matching_biosemi_montage(fpvs_source, tmp
     def compare_epochs(raw, events, code, picks, window_sec, **kwargs):
         actual = extract_epochs(raw, events, code, picks, window_sec, **kwargs)
         n_times = round(window_sec * reference_raw.info["sfreq"])
-        assert n_times == 3840
+        assert n_times == 1536
         extracted_sample_counts.append(actual.epochs.shape[-1])
         starts = reference_events[reference_events[:, 2] == code, 0] - reference_raw.first_samp
         expected = [reference_raw.get_data(start=int(start), stop=int(start + n_times))
@@ -158,7 +158,7 @@ def test_bdf_pipeline_equals_fpvs_with_matching_biosemi_montage(fpvs_source, tmp
         return actual
 
     def compare_fft(epochs, final_sfreq):
-        assert epochs.shape[-1] == 2560
+        assert epochs.shape[-1] == 1280
         fft_input_sample_counts.append(epochs.shape[-1])
         actual = compute_fft(epochs, final_sfreq)
         frequencies, amplitudes = reference_fft_from_source(
@@ -179,12 +179,12 @@ def test_bdf_pipeline_equals_fpvs_with_matching_biosemi_montage(fpvs_source, tmp
         if result["status"] != "success":
             pytest.fail(Path(result["error_file"]).read_text(encoding="utf-8"))
         assert checked_preprocessing == [True]
-        assert extracted_sample_counts == [3840] * 5
-        assert fft_input_sample_counts == [2560] * 5
+        assert extracted_sample_counts == [1536] * 5
+        assert fft_input_sample_counts == [1280] * 5
         assert result["bad_channels_by_kurtosis"] == reference_n_bad
         assert len(captured_spectra) == 5  # Baseline plus four present active conditions.
-        assert all(len(spectrum.freqs) == 1281 for spectrum in captured_spectra)
-        assert all(spectrum.freqs[1] == pytest.approx(0.1) for spectrum in captured_spectra)
+        assert all(len(spectrum.freqs) == 641 for spectrum in captured_spectra)
+        assert all(spectrum.freqs[1] == pytest.approx(0.2) for spectrum in captured_spectra)
         summary = pd.read_csv(result["summary_csv"])
         fft_channels = tuple(summary.iloc[0]["fft_channels"].split(";"))
         participant_records = result["_participant_spectra"]

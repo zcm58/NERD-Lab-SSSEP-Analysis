@@ -74,9 +74,9 @@ Recording analysis:
 
 The numerical order is load/montage → EXG reference/drop → filter → resample
 → interpolate → average reference → recorded events → complete SSSEP epochs
-→ remove 2.5 seconds from each epoch end → trial mean within each participant
-and cue → per-electrode amplitude FFT. The default 15-second epoch therefore
-uses its middle 10 seconds for the FFT. After all files finish, the batch
+→ remove the first 1.0 second of each epoch → trial mean within each participant
+and cue → per-electrode amplitude FFT. The default 6-second epoch therefore
+uses its final 5 seconds for the FFT. After all files finish, the batch
 averages participant amplitude spectra with equal participant weight. It writes
 consolidated participant and group FFT CSVs plus one selected-electrode PNG per
 cue at each level.
@@ -198,9 +198,9 @@ Scalp-map names retain their frequency, and old exports are not renamed.
   event audit as the epoch-end/break delimiter, but exclude it from baseline FFT
   calculation for this task because those following intervals vary in duration.
 - Preserve the validated FPVS analysis method unless a change is authorized.
-- Require a complete configured epoch, then remove 2.5 seconds from its start
-  and end before cue averaging and FFT calculation. This SSSEP analysis window
-  is separate from FPVS's visual-oddball marker crop.
+- Require a complete configured epoch, then remove 1.0 second from its start
+  and nothing from its end before cue averaging and FFT calculation. This SSSEP
+  analysis window is separate from FPVS's visual-oddball marker crop.
 - Treat one BDF as one participant. Average all same-cue epochs in the time
   domain before that participant's FFT; never average epoch FFT amplitudes.
 - At the group level, average participant amplitude spectra equally rather than

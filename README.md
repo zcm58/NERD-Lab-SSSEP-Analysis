@@ -3,8 +3,8 @@
 Run the SSSEP attention task and analyze its BioSemi `.bdf` recordings from one
 simple program. The task shows fullscreen body-part prompts and sends trigger
 codes to BioSemi. For each participant, the analysis averages all usable epochs
-with the same trigger code before the FFT. The default epoch is 15 seconds;
-the FFT uses only its middle 10 seconds after removing 2.5 seconds from each end. The program
+with the same trigger code before the FFT. The default epoch is 6 seconds;
+the FFT uses its final 5 seconds after removing the first 1.0 second. The program
 creates one graph per trigger code for the selected electrode, then creates
 the same graphs for the group.
 
@@ -36,8 +36,8 @@ launcher opens the task home. Use **View** to switch workflows:
 
 Edit session settings, participant text, and analysis options under **File >
 Settings**. Click **Save** to keep changes after closing the app. The default
-is 10 epochs per condition, or 20 overall. Analysis uses
-both conditions' fixed codes; match the duration and count to your recordings.
+is 60 epochs per condition, or 120 overall (30 per prompt), with 2-second breaks.
+Analysis uses both conditions' fixed codes; match the duration and count to your recordings.
 
 Use one `.bdf` file per participant in an analysis batch. Each run saves one
 consolidated participant FFT CSV and one group FFT CSV, both readable in Excel.

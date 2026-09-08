@@ -27,8 +27,8 @@ def crop_epochs_for_fft(
     """Return the stop-exclusive epoch samples retained for the FFT.
 
     Crop boundaries are converted to samples with the same ``round`` rule used
-    for epoch extraction. A 15-second epoch at 256 Hz therefore keeps samples
-    640 through 3199: exactly the middle 2560 samples, or 10 seconds.
+    for epoch extraction. A default 6-second epoch at 256 Hz keeps samples
+    256 through 1535: exactly the final 1280 samples, or 5 seconds.
     """
 
     epoch_data = np.asarray(epochs)

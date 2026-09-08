@@ -11,8 +11,9 @@ Use **File > Settings** to edit the experiment. Use **View** to choose
 TENS stimulation is controlled separately. Set it up before starting the task.
 
 1. Open **File > Settings**. Choose a task log folder outside the project.
-2. Check the epoch duration (default 15 seconds), break duration (10 seconds),
-   and **epochs per condition** (10, giving 20 overall). The count must be even.
+2. Check the epoch duration (default 6 seconds), break duration (2 seconds),
+   and **epochs per condition** (60, giving 120 overall and 30 per prompt).
+   The count must be even.
    Choose whether to **Show countdown timer** and edit participant text if needed,
    then click **Save**. Saved settings return
    when you reopen the app; **Cancel** keeps your previous settings.
@@ -88,8 +89,8 @@ even when a recording says `success`.
 
 For each participant, all usable epochs with the same trigger code are averaged
 together in the time domain before the FFT. Before that average, the analysis
-removes the first and final 2.5 seconds from every complete epoch. With the default
-15-second epoch, the FFT uses the middle 10 seconds. The group result then gives
+removes the first 1.0 second from every complete epoch, with no end crop. With the
+default 6-second epoch, the FFT uses the final 5 seconds. The group result then gives
 each participant's amplitude spectrum equal weight, regardless of how many
 usable epochs that participant had. Each PNG shows the electrode selected in
 the launcher. Changing that selection does not change the full-electrode CSV

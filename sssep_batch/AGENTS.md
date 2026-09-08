@@ -82,10 +82,10 @@ The package is organized around these boundaries:
 - `find_status_events()` runs after preprocessing on the final sampling grid.
   Its MNE options match the reference; do not restore the old mask or
   event-before-downsample path.
-- Require the complete configured SSSEP onset duration, 15 seconds by default.
+- Require the complete configured SSSEP onset duration, 6 seconds by default.
   Skip out-of-recording windows, but add no FIR edge margin or EEG zero
-  replacement. Before averaging and FFT, crop 2.5 seconds from each end. The
-  default retains samples 640:3200 at 256 Hz: 2560 samples, or 10 seconds.
+  replacement. Before averaging and FFT, crop the first 1.0 second with no end
+  crop. The default retains samples 256:1536 at 256 Hz: 1280 samples, or 5 seconds.
   This is SSSEP-specific and is not the FPVS visual-oddball 1.2 Hz marker crop.
 - Average trials in float64 per electrode, convert to microvolts, then use
   `abs(np.fft.fft(mean_epoch_uv)[:, :N // 2 + 1]) / N * 2` without a taper,
