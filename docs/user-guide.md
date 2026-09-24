@@ -27,7 +27,8 @@ TENS stimulation is controlled separately. Set it up before starting the task.
    Confirmed test mode skips the participant-information survey.
 5. Complete **Condition 1: both hands**. When prompted, move the left-hand TENS
    electrodes to the **right ankle**. Press **Space**, then read the confirmation
-   and press **Y** to begin **Condition 2: right hand + right ankle**.
+   and press **Y**. The same five-second waiting message appears before
+   **Condition 2: right hand + right ankle** begins.
 6. The final thank-you screen closes automatically after five seconds.
 
 Both conditions run every time, in that order. Each randomizes equal numbers of

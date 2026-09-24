@@ -291,6 +291,10 @@ def _request_end_screen(surface: _FakeSurface, clock: _FakeMonotonic) -> None:
     surface.press_space()
     surface.swap()
     surface.press_confirm()
+    assert surface._visible_text == BEGIN_PROMPT
+    surface.swap()
+    clock.advance(5.0)
+    surface.fire_scheduled()
     surface.swap()
     clock.advance(0.2)
     surface.fire_scheduled()
@@ -456,11 +460,24 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
     assert surface._visible_callback is None
     surface.press_confirm()
     next_prompt = surface._visible_text
+    assert next_prompt == BEGIN_PROMPT
+    assert surface.scheduled_delay is None
     surface.press_confirm()
     surface.press_space()
     assert surface._visible_text == next_prompt
     assert sum(name == "send_prevalidated" for name, _ in events) == 4
     clock.advance(0.03)
+    surface.swap()
+    assert surface.scheduled_delay == pytest.approx(5.0)
+    clock.advance(4.9)
+    surface.press_space()
+    surface.press_confirm()
+    assert surface._visible_callback is None
+    assert sum(name == "send_prevalidated" for name, _ in events) == 4
+    clock.advance(0.1)
+    surface.fire_scheduled()
+    assert surface._visible_text == runner._schedule[2].prompt
+    assert sum(name == "send_prevalidated" for name, _ in events) == 4
     surface.swap()
     assert surface.scheduled_delay == pytest.approx(15.0)
 
@@ -505,7 +522,7 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
         [15.01, 15.02, 15.0, 15.0]
     )
     assert [event.cue_onset_time_sec for event in result.events] == pytest.approx(
-        [5.1, 30.11, 107.16, 132.16]
+        [5.1, 30.11, 112.16, 137.16]
     )
     assert [epoch.scheduled_onset_sec for epoch in result.schedule] == [0.0, 25.0, 0.0, 25.0]
     assert [event.condition for event in result.events] == [
@@ -529,9 +546,9 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
     ]
     assert sum(name == "connect" for name, _ in events) == 1
     assert sum(name == "backend_closed" for name, _ in events) == 1
-    assert sum(name == "swap" for name, _ in events) == 11
+    assert sum(name == "swap" for name, _ in events) == 12
     assert surface.presented_durations == [
-        5.0, 15.0, 10.0, 15.0, None, None, 15.0, 10.0, 15.0, 5.0,
+        5.0, 15.0, 10.0, 15.0, None, None, 5.0, 15.0, 10.0, 15.0, 5.0,
     ]
     for send_index, (name, code) in enumerate(events):
         if name != "send_prevalidated":
@@ -556,7 +573,7 @@ def test_runner_preflights_then_sends_each_trigger_after_its_visible_swap(
     assert [row["condition_epoch_number"] for row in rows] == ["1", "2", "1", "2"]
     assert {row["scheduled_onset_reference"] for row in rows} == {"condition_start"}
     assert [float(row["cue_onset_time_sec"]) for row in rows] == pytest.approx(
-        [5.1, 30.11, 107.16, 132.16]
+        [5.1, 30.11, 112.16, 137.16]
     )
     assert {row["test_mode"] for row in rows} == {"False"}
     assert {row["participant_number"] for row in rows} == {"0012"}
@@ -704,6 +721,10 @@ def test_custom_prompts_and_breaks_preserve_every_cue_marker(tmp_path, show_time
             surface.swap()
             surface.press_confirm()
             surface.swap()
+            assert surface.scheduled_delay == pytest.approx(5.0)
+            clock.advance(5.0)
+            surface.fire_scheduled()
+            surface.swap()
         elif index < settings.total_epochs - 1:
             assert surface.scheduled_delay == pytest.approx(0.7)
             assert progress[-1] == (index + 1, settings.total_epochs)
@@ -721,7 +742,9 @@ def test_custom_prompts_and_breaks_preserve_every_cue_marker(tmp_path, show_time
     expected_prompts = [BEGIN_PROMPT]
     for index, epoch in enumerate(result.schedule):
         if index == settings.epochs_per_condition:
-            expected_prompts.extend([CONDITION_HANDOVER_PROMPT, CONDITION_CONFIRM_PROMPT])
+            expected_prompts.extend([
+                CONDITION_HANDOVER_PROMPT, CONDITION_CONFIRM_PROMPT, BEGIN_PROMPT,
+            ])
         elif index:
             expected_prompts.append(settings.break_prompt)
         expected_prompts.append(settings.prompt_for(epoch.cue))
@@ -739,11 +762,11 @@ def test_custom_prompts_and_breaks_preserve_every_cue_marker(tmp_path, show_time
     if show_timer:
         assert surface.presented_durations.count(0.2) == 12
         assert surface.presented_durations.count(0.7) == 10
-        assert surface.presented_durations.count(5.0) == 2
+        assert surface.presented_durations.count(5.0) == 3
     else:
         assert all(duration is None for duration in surface.presented_durations)
     assert [duration for name, duration in events if name == "schedule"] == pytest.approx(
-        [5.0] + ([0.2, 0.7] * 5 + [0.2]) * 2 + [5.0]
+        ([5.0] + [0.2, 0.7] * 5 + [0.2]) * 2 + [5.0]
     )
     assert all(event.completed for event in result.events)
     assert [event.observed_duration_sec for event in result.events] == pytest.approx([0.2] * 12)
@@ -831,7 +854,9 @@ def test_aborting_handover_preserves_condition_one_and_suppresses_condition_two(
     assert all(row["run_aborted"] == "True" for row in rows)
 
 
-@pytest.mark.parametrize("stage", ["handover", "confirmation_pending", "confirmation"])
+@pytest.mark.parametrize("stage", [
+    "handover", "confirmation_pending", "confirmation", "begin_pending", "begin",
+])
 def test_handover_presentation_failure_keeps_completed_condition_in_partial_log(
     tmp_path, stage,
 ):
@@ -842,7 +867,11 @@ def test_handover_presentation_failure_keeps_completed_condition_in_partial_log(
     _show_handover(surface, clock)
     if stage != "handover":
         surface.press_space()
-    if stage == "confirmation":
+    if stage in {"confirmation", "begin_pending", "begin"}:
+        surface.swap()
+    if stage in {"begin_pending", "begin"}:
+        surface.press_confirm()
+    if stage == "begin":
         surface.swap()
     clock.advance(45.0)
     surface.fail(RuntimeError("handover display failed"))
@@ -905,9 +934,14 @@ def test_held_y_before_confirmation_cannot_start_condition_two(tmp_path):
         runner._schedule[1].trigger_code,
         100,
     ]
-    send_y()  # A fresh press after visibility starts the next cue.
+    send_y()  # A fresh press after visibility starts the lead-in.
+    assert surface._visible_text == BEGIN_PROMPT
     assert surface._visible_callback is not None
     assert sum(name == "send_prevalidated" for name, _ in events) == 4
+    surface.swap()
+    assert sum(name == "send_prevalidated" for name, _ in events) == 4
+    clock.advance(5.0)
+    surface.fire_scheduled()
     surface.swap()
     assert sum(name == "send_prevalidated" for name, _ in events) == 5
     runner.request_stop()
@@ -1305,7 +1339,7 @@ def test_trigger_write_failure_aborts_without_presenting_later_cues(tmp_path) ->
     assert result.log_path is not None and result.log_path.exists()
 
 
-@pytest.mark.parametrize("stage", ["begin", "end"])
+@pytest.mark.parametrize("stage", ["begin", "condition_two_begin", "end"])
 @pytest.mark.parametrize("visible", [False, True])
 @pytest.mark.parametrize("stop_method", ["press_escape", "request_stop"])
 def test_aborting_preparation_or_end_screen_stops_timers_and_preserves_markers(
@@ -1318,6 +1352,12 @@ def test_aborting_preparation_or_end_screen_stops_timers_and_preserves_markers(
     if stage == "begin":
         surface.swap()
         surface.press_space()
+        assert surface._visible_text == BEGIN_PROMPT
+    elif stage == "condition_two_begin":
+        _show_handover(surface, clock)
+        surface.press_space()
+        surface.swap()
+        surface.press_confirm()
         assert surface._visible_text == BEGIN_PROMPT
     else:
         _request_end_screen(surface, clock)
@@ -1340,6 +1380,10 @@ def test_aborting_preparation_or_end_screen_stops_timers_and_preserves_markers(
     if stage == "begin":
         assert result.events == ()
         assert sends_before_abort == []
+    elif stage == "condition_two_begin":
+        assert result.completed_epochs == 2
+        assert len(result.events) == 2
+        assert sum(code == 100 for _, code in sends_before_abort) == 2
     else:
         assert result.completed_epochs == (4 if visible else 3)
         assert sum(code == 100 for _, code in sends_before_abort) == (4 if visible else 3)

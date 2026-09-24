@@ -495,6 +495,9 @@ class QtTaskRunner(QObject):
         settings = self._require_settings()
         self._task_zero = self._monotonic()
         self.progress_changed.emit(0, settings.total_epochs)
+        self._request_begin_screen()
+
+    def _request_begin_screen(self) -> None:
         self._require_surface().present(
             BEGIN_PROMPT,
             self._begin_frame_swapped,
@@ -508,7 +511,7 @@ class QtTaskRunner(QObject):
         if not self._confirmation_visible or self._finished:
             return
         self._confirmation_visible = False
-        self._request_next_cue()
+        self._request_begin_screen()
 
     def _escape_pressed(self) -> None:
         if self._finished:

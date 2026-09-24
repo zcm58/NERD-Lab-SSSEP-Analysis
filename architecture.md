@@ -56,7 +56,8 @@ screen. A checked and confirmed test mode skips that survey, uses a simulated
 backend, and clearly marks the ready screen and task CSV; it never opens COM3 or
 sends markers. After
 Space starts a five-second lead-in, a main-thread `QOpenGLWindow` draws each cue. Both hands
-run first, followed by hand/ankle after untimed Space-then-Y admin screens. Its
+run first, followed by hand/ankle after untimed Space-then-Y admin screens and
+another five-second lead-in. Its
 matching `frameSwapped` callback immediately requests the cue's unique `1..255`
 marker through the selected backend after Qt completes that frame's buffer
 swap. A Qt `PreciseTimer` advances between cue and break screens at their

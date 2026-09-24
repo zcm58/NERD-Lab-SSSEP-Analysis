@@ -2,6 +2,11 @@
 
 This page records the task behavior that the software must preserve.
 
+Timing revision (2026-09-24): after the visible electrode confirmation screen,
+a fresh Y press starts the same five-second `The experiment is about to begin..`
+lead-in used before Condition 1. Condition 2's first cue and trigger follow the
+full lead-in, timed from its accepted frame swap. The lead-in sends no marker.
+
 Timing revision (2026-09-08): default attention epochs last 6 seconds, with
 2-second breaks between epochs. Analysis discards only the first 1.0 second
 and retains the final 5 seconds, with no end crop. At 256 Hz this extracts
@@ -35,7 +40,8 @@ All other presentation, trigger, and FFT calculation behavior is preserved.
 - A fresh **Space** press on that visible screen opens a second untimed screen:
   `By continuing, you are confirming that the TENS unit electrodes are properly
   secured on the right hand and right ankle. Press 'Y' to continue.` Only a fresh
-  **Y** press after this screen is visible starts Condition 2. Early presses,
+  **Y** press after this screen is visible starts Condition 2's five-second
+  lead-in. Early presses,
   held-key repeats, and additional Space presses cannot bypass confirmation.
   The handover frame sends the final attention epoch's code `100`; confirmation
   sends no marker.
@@ -65,8 +71,9 @@ All other presentation, trigger, and FFT calculation behavior is preserved.
 - After the initial ready-screen **Space**, show
   `The experiment is about to begin..` for five seconds measured from its
   accepted frame swap, then present the first randomized cue and its marker.
-  Early/held Space presses do not skip this delay. This delay runs only before
-  Condition 1; the existing Space-then-Y confirmation still starts Condition 2.
+  The same delay follows the Space-then-Y confirmation before Condition 2.
+  Early/held Space or Y presses do not skip either delay. Neither lead-in sends
+  a marker; both respect the countdown visibility setting.
 - After the final cue duration, show
   `Thank you for your time! The experiment is now over.` for five seconds before
   closing. Its accepted frame swap closes the final cue and sends code `100`.
@@ -103,7 +110,7 @@ All other presentation, trigger, and FFT calculation behavior is preserved.
   Planned `scheduled_onset_sec` values are relative to each condition's planned
   start, explicitly labeled by `scheduled_onset_reference=condition_start`.
   Actual cue/trigger/offset times remain relative to the experiment start and
-  include the five-second lead-in and the operator's untimed handover pause.
+  include both five-second lead-ins and the operator's untimed handover pause.
   Additive `show_timer` and `epoch_end_trigger_*` fields preserve the existing
   one-row-per-epoch log structure while recording the new setting and markers.
 - TENS stimulation is controlled externally.
