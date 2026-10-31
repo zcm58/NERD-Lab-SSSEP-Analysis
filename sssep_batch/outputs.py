@@ -17,6 +17,7 @@ from sssep_batch.config import (
     ACTIVE_EVENT_CODES,
     BASELINE_EVENT_CODE,
     HIGHCUT,
+    FORCED_BAD_CHANNELS,
     KURTOSIS_REJECT_Z,
     LOWCUT,
     FPVS_REFERENCE_COMMIT,
@@ -158,6 +159,10 @@ def write_processing_report(
         report_file.write("Final reference requested: average projection over retained good EEG, after interpolation; see log for outcome.\n")
         report_file.write(f"Kurtosis rejection Z threshold: {KURTOSIS_REJECT_Z}\n")
         report_file.write(f"Bad channels by kurtosis: {n_bad_by_kurtosis}\n")
+        report_file.write(
+            f"Forced interpolation electrodes: {FORCED_BAD_CHANNELS}; "
+            "see bad_channel_metrics.csv and the log for actual outcomes.\n"
+        )
         report_file.write(f"Active triggers found: {active_found}\n")
         report_file.write(f"Active triggers missing: {active_missing}\n")
         report_file.write(

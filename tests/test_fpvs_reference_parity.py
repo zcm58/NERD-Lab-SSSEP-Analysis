@@ -74,7 +74,10 @@ def reference_fft_from_source(source_path, epochs, sfreq):
     return namespace["fft_frequencies"], namespace["fft_amplitudes"]
 
 
-@pytest.mark.parametrize("sfreq,mode", [(256, "clean"), (512, "automatic_bad"), (2048, "manual_bad"), (512, "disabled")])
+@pytest.mark.parametrize("sfreq,mode", [
+    (256, "clean"), (512, "automatic_bad"), (2048, "manual_bad"),
+    (512, "disabled"), (512, "forced_c4"),
+])
 def test_bdf_pipeline_equals_fpvs_with_matching_biosemi_montage(fpvs_source, tmp_path, monkeypatch, sfreq, mode):
     path = tmp_path / f"synthetic_{sfreq}_{mode}.bdf"
     write_synthetic_bdf(path, sfreq)
@@ -96,6 +99,13 @@ def test_bdf_pipeline_equals_fpvs_with_matching_biosemi_montage(fpvs_source, tmp
 
     add_bad(reference_raw)
     add_bad(sssep_raw)
+    # Original four cases retain the unmodified FPVS policy. The C4 case
+    # compares SSSEP's forced policy against FPVS's existing manual-bad path.
+    monkeypatch.setattr(
+        bad_channels, "FORCED_BAD_CHANNELS", ("C4",) if mode == "forced_c4" else (),
+    )
+    if mode == "forced_c4":
+        reference_raw.info["bads"].append("C4")
     threshold = 0 if mode == "disabled" else config.KURTOSIS_REJECT_Z
     monkeypatch.setattr(bad_channels, "KURTOSIS_REJECT_Z", threshold)
     params = {

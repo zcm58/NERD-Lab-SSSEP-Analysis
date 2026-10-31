@@ -239,6 +239,12 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert window.session_settings.total_epochs == 120
                 assert not hasattr(window, "condition_combo")
                 assert window.settings_action.isEnabled()
+                assert window.plot_channel_combo.count() == 64
+                assert not window.plot_channel_combo.isEditable()
+                assert tuple(
+                    window.plot_channel_combo.itemText(index) for index in range(64)
+                ) == gui.BIOSEMI64_CHANNELS
+                assert window.plot_channel_combo.currentText() == gui.PLOT_CHANNEL
                 menu_bar = window.layout().menuBar()
                 assert [action.text() for action in menu_bar.actions()] == ["File", "View"]
                 assert window.settings_action in menu_bar.actions()[0].menu().actions()
@@ -284,7 +290,8 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert window.saved_plots_page.stimulation_hz == 12.5
                 assert gui.SETTINGS_PATH.exists()
                 assert window.session_settings.total_epochs == 8
-                assert "C4" in window.analysis_settings_label.text()
+                assert window.plot_channel_combo.currentText() == "C4"
+                assert len(saved_settings) == 1, "Settings synchronization saved twice"
                 analysis_protocol = window._analysis_protocol()
                 assert analysis_protocol.active_event_codes == (11, 12, 21, 22)
                 assert analysis_protocol.event_duration_sec == 15.0
@@ -292,6 +299,36 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert [
                     trigger.target_hz for trigger in analysis_protocol.active_triggers
                 ] == [12.5] * 4
+                previous_settings = saved_settings[-1]
+                window._show_view(1)
+                assert window.plot_channel_combo.isVisible()
+                window.plot_channel_combo.setCurrentText("C3")
+                assert window.plot_channel == "C3"
+                assert saved_settings[-1] == replace(previous_settings, plot_channel="C3")
+                assert len(saved_settings) == 2
+                before_failed_change = gui.SETTINGS_PATH.read_bytes()
+                save_to_disk = gui.save_launcher_settings
+                for exception_type in (OSError, TypeError, ValueError):
+                    def fail_electrode_save(*args, **kwargs):
+                        raise exception_type("Electrode preference could not be saved")
+                    gui.save_launcher_settings = fail_electrode_save
+                    window.plot_channel_combo.setCurrentText("C4")
+                    assert window.plot_channel == "C3"
+                    assert window.plot_channel_combo.currentText() == "C3"
+                    assert gui.SETTINGS_PATH.read_bytes() == before_failed_change
+                    assert messages.pop()[0] == "Could Not Save Electrode"
+                gui.save_launcher_settings = save_to_disk
+                window.saved_plots_page.load_worker = object()
+                window.saved_plots_page.busy_changed.emit(True)
+                assert not window.plot_channel_combo.isEnabled()
+                window.plot_channel_combo.setCurrentText("C4")
+                assert window.plot_channel_combo.currentText() == "C3"
+                assert window.plot_channel == "C3"
+                assert gui.SETTINGS_PATH.read_bytes() == before_failed_change
+                window.saved_plots_page.load_worker = None
+                window.saved_plots_page.busy_changed.emit(False)
+                assert window.plot_channel_combo.isEnabled()
+                window._show_view(0)
                 window._start_task()
                 QTimer.singleShot(0, check_first_run)
 
@@ -305,6 +342,12 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert not window.view_actions[1].isEnabled()
                 assert not window.view_actions[2].isEnabled()
                 assert not window.settings_action.isEnabled()
+                assert not window.plot_channel_combo.isEnabled()
+                before_busy_change = gui.SETTINGS_PATH.read_bytes()
+                window.plot_channel_combo.setCurrentText("C4")
+                assert window.plot_channel_combo.currentText() == "C3"
+                assert window.plot_channel == "C3"
+                assert gui.SETTINGS_PATH.read_bytes() == before_busy_change
                 assert not any(action.isEnabled() for action in window.view_actions)
                 window._show_view(1)
                 assert window.pages.currentIndex() == 0
@@ -337,6 +380,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert window.view_actions[1].isEnabled()
                 assert window.view_actions[2].isEnabled()
                 assert window.settings_action.isEnabled()
+                assert window.plot_channel_combo.isEnabled()
                 assert "Task complete: 8 epoch(s)." in window.task_status_label.text()
                 window._start_task()
                 QTimer.singleShot(0, check_second_run)
@@ -447,7 +491,13 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 start_thread_ids, completion_thread_ids = [], []
                 messages, questions, question_answers = [], [], []
                 errors, window_ref = [], []
+                saved_settings = []
                 observed = set()
+                write_settings_to_disk = gui.save_launcher_settings
+                def track_saved_settings(settings, **kwargs):
+                    write_settings_to_disk(settings, **kwargs)
+                    saved_settings.append(settings)
+                gui.save_launcher_settings = track_saved_settings
                 settings_gui.QMessageBox = MessageBox
                 gui.QtTaskRunner = FakeTaskRunner
                 gui.SETTINGS_PATH = log_folder.parent / "gui-settings.json"
@@ -463,7 +513,8 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 reopened = QApplication.instance()._sssep_launcher_window
                 assert reopened.session_settings == settings_seen[-1]
                 assert reopened.session_settings.show_timer is False
-                assert reopened.plot_channel == "C4"
+                assert reopened.plot_channel == "C3"
+                assert reopened.plot_channel_combo.currentText() == "C3"
                 assert reopened.stimulation_hz == 12.5
                 assert list(reopened.plot_rois) == ["Central hands", "Left electrode"]
                 assert set(reopened.plot_rois["Central hands"]) == {"C3", "Cz", "C4"}
@@ -473,6 +524,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 assert reopened.pages.currentIndex() == 0
                 def cancel_reopened():
                     dialog = QApplication.activeModalWidget()
+                    assert dialog.plot_channel_combo.currentText() == "C3"
                     assert not dialog.show_timer_checkbox.isChecked()
                     dialog.show_timer_checkbox.setChecked(True)
                     dialog.epochs_per_condition_spin.setValue(40)
@@ -528,6 +580,11 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 QApplication.processEvents()
                 assert invalid._settings_need_review
                 assert invalid.saved_plots_page.settings_need_review
+                assert not invalid.plot_channel_combo.isEnabled()
+                invalid.plot_channel_combo.setCurrentText("C4")
+                assert invalid.plot_channel_combo.currentText() == gui.PLOT_CHANNEL
+                assert invalid.plot_channel == gui.PLOT_CHANNEL
+                assert gui.SETTINGS_PATH.read_text(encoding="utf-8") == '{broken'
                 invalid.saved_plots_page._warn = lambda title, message: messages.append((title, message))
                 invalid.saved_plots_page._start_plot("roi")
                 assert messages[-1][0] == "Settings Need Attention"
@@ -544,6 +601,7 @@ def test_task_view_settings_persist_and_tasks_run_on_qt_main_thread(tmp_path):
                 invalid.settings_action.trigger()
                 assert not invalid._settings_need_review
                 assert not invalid.saved_plots_page.settings_need_review
+                assert invalid.plot_channel_combo.isEnabled()
                 assert invalid.close()
                 assert not errors, errors
                 print("TASK_GUI_OK")

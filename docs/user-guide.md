@@ -58,10 +58,12 @@ recording; an aborted run still needs review before analysis.
 ## Analyze recordings
 
 1. In **File > Settings**, match the epoch duration and per-condition count to
-   the recordings. Choose the plot electrode and optional **TENS Unit
-   Stimulation Frequency (Hz)**, then save. The default is **26 Hz**; change it
+   the recordings. Choose the optional **TENS Unit Stimulation Frequency (Hz)**,
+   then save. The default is **26 Hz**; change it
    to match the TENS unit, or leave it blank if unknown.
-2. Choose **View > Process Data**.
+2. Choose **View > Process Data**. In **FFT output**, choose **Electrode for
+   processing plots**. The selection is saved automatically and also appears
+   in **File > Settings**.
 3. Choose the folder directly containing the `.bdf` files. Subfolders are not
    searched. Include one `.bdf` file per participant in the batch. The filename
    without `.bdf` becomes the participant ID in the results.
@@ -72,6 +74,12 @@ recording; an aborted run still needs review before analysis.
 Analysis includes all four trigger codes from both conditions. The optional
 stimulation frequency must be inside the usable plot, filter, and FFT range
 (3–50 Hz by default). The full FFT is saved even when frequency is blank.
+
+Every new analysis reconstructs C4 from the other usable scalp electrodes before
+average referencing. The recorded C4 signal is excluded first, so it cannot
+contaminate the reference or reconstruction of other bad channels. Check the
+processing report and `bad_channel_metrics.csv` for the outcome. Earlier runs
+retain their original data; reprocess recordings to apply this correction.
 
 Each analysis run gets a folder named with its date and 24-hour start time, such
 as `2026-09-01 @ 10h23`. If another run starts in the same minute, its folder

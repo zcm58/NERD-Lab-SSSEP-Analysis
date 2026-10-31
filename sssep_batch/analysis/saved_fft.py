@@ -36,6 +36,7 @@ _CROP_PROVENANCE_COLUMNS = (
     "fft_crop_start_sec",
     "fft_crop_end_sec",
 )
+_CROP_METHODS = ("fpvs_amplitude_epoch_crop_v2", PROCESSING_METHOD)
 _TEXT_COLUMNS = (
     "participant_id",
     "file_name",
@@ -254,9 +255,9 @@ def load_saved_fft_dataset(path: str | Path) -> SavedFftDataset:
         )
     if not crop_provenance_present:
         saved_methods = frame["processing_method"].dropna().astype(str).str.strip()
-        if saved_methods.eq(PROCESSING_METHOD).any():
+        if saved_methods.isin(_CROP_METHODS).any():
             raise ValueError(
-                f"Saved FFT data using {PROCESSING_METHOD!r} requires all three "
+                "Saved FFT data using an epoch-crop method requires all three "
                 "epoch and crop provenance columns. Reprocess the original BDF "
                 "files or restore the complete participant FFT CSV."
             )

@@ -135,6 +135,10 @@ FIR_WINDOW = "hamming"
 FIR_DESIGN = "firwin"
 
 # Bad-channel screening settings.
+# Discard C4's recorded samples in every SSSEP file and reconstruct it from
+# good BioSemi64 electrodes before the final average reference. This policy
+# remains active when automatic kurtosis detection is disabled.
+FORCED_BAD_CHANNELS = ("C4",)
 KURTOSIS_REJECT_Z = 5.0
 KURTOSIS_TRIM_PROPORTION = 0.10
 
@@ -143,4 +147,4 @@ EPS = 1e-20
 
 # Reference for the implemented preprocessing and per-electrode FFT formula.
 FPVS_REFERENCE_COMMIT = "185d803f0056daebee04e5f28cc6b554c47336ce"
-PROCESSING_METHOD = "fpvs_amplitude_epoch_crop_v2"
+PROCESSING_METHOD = "fpvs_amplitude_epoch_crop_c4_interp_v3"

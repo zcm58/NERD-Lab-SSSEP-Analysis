@@ -48,6 +48,7 @@ def _require_pyside6():
         from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
         from PySide6.QtWidgets import (
             QApplication,
+            QComboBox,
             QDialog,
             QFileDialog,
             QHBoxLayout,
@@ -71,6 +72,7 @@ def _require_pyside6():
         "QAction": QAction,
         "QActionGroup": QActionGroup,
         "QDesktopServices": QDesktopServices,
+        "QComboBox": QComboBox,
         "QDialog": QDialog,
         "QFileDialog": QFileDialog,
         "QHBoxLayout": QHBoxLayout,
@@ -107,6 +109,7 @@ def launch_gui() -> int:
     QAction = qt["QAction"]
     QActionGroup = qt["QActionGroup"]
     QDesktopServices = qt["QDesktopServices"]
+    QComboBox = qt["QComboBox"]
     QDialog = qt["QDialog"]
     QFileDialog = qt["QFileDialog"]
     QHBoxLayout = qt["QHBoxLayout"]
@@ -205,6 +208,9 @@ def launch_gui() -> int:
                     "analysis launcher."
                 )
             self.plot_channel = PLOT_CHANNEL
+            self.plot_channel_combo = QComboBox()
+            self.plot_channel_combo.addItems(BIOSEMI64_CHANNELS)
+            self.plot_channel_combo.setAccessibleName("Electrode for processing plots")
             self.stimulation_hz = STIMULATION_FREQUENCY_HZ
             self.remember_folders = True
             self.analysis_settings_label = hint_label("")
@@ -297,8 +303,10 @@ def launch_gui() -> int:
             fft_card = SectionCard(
                 "FFT output", "Full electrode data are saved for later plotting."
             )
+            fft_form = make_form()
+            fft_form.addRow("Electrode for processing plots", self.plot_channel_combo)
+            fft_card.body.addLayout(fft_form)
             fft_card.body.addWidget(self.analysis_settings_label)
-            fft_card.body.addWidget(hint_label("Change analysis settings in File > Settings."))
 
             analysis_body, analysis_footer = build_page(self.analysis_page)
             analysis_body.addWidget(hint_label(
@@ -363,6 +371,7 @@ def launch_gui() -> int:
             self.start_task_button.clicked.connect(self._start_task)
             self.input_browse_button.clicked.connect(self._browse_input)
             self.output_browse_button.clicked.connect(self._browse_output)
+            self.plot_channel_combo.currentTextChanged.connect(self._change_plot_channel)
             self.process_button.clicked.connect(self._start_processing)
             self.view_output_button.clicked.connect(self._view_output)
             self.saved_plots_page.busy_changed.connect(
@@ -421,13 +430,48 @@ def launch_gui() -> int:
             )
 
         def _refresh_settings_summary(self) -> None:
+            blocked = self.plot_channel_combo.blockSignals(True)
+            try:
+                self.plot_channel_combo.setCurrentText(self.plot_channel)
+            finally:
+                self.plot_channel_combo.blockSignals(blocked)
+            self.plot_channel_combo.setEnabled(not (
+                self._settings_need_review or self.worker is not None
+                or self.task_running or self.saved_plots_page.is_busy()
+            ))
             settings = self.session_settings
             frequency = "Not set" if self.stimulation_hz is None else f"{self.stimulation_hz:g} Hz"
             self.analysis_settings_label.setText(
                 f"Both conditions  |  {settings.epoch_duration_sec:g}-second epochs  |  "
                 f"{settings.epochs_per_condition} epochs per condition\n"
-                f"Electrode: {self.plot_channel}  |  TENS stimulation frequency: {frequency}"
+                f"TENS stimulation frequency: {frequency}"
             )
+
+        def _change_plot_channel(self, plot_channel: str) -> None:
+            """Save a screen selection before applying it to the next batch."""
+            if plot_channel == self.plot_channel:
+                return
+            if (
+                self._settings_need_review or self.worker is not None
+                or self.task_running or self.saved_plots_page.is_busy()
+                or plot_channel not in BIOSEMI64_CHANNELS
+            ):
+                self._refresh_settings_summary()
+                return
+            try:
+                self._save_settings_draft(
+                    self.session_settings, plot_channel, self.stimulation_hz,
+                    self.remember_folders, self.plot_rois,
+                )
+            except (OSError, TypeError, ValueError) as exc:
+                self._refresh_settings_summary()
+                QMessageBox.warning(
+                    self, "Could Not Save Electrode",
+                    f"The electrode selection could not be saved.\n\n{exc}",
+                )
+                return
+            self.plot_channel = plot_channel
+            self._refresh_settings_summary()
 
         def _browse_input(self) -> None:
             """Open a folder picker for the input `.bdf` folder."""
@@ -602,6 +646,7 @@ def launch_gui() -> int:
 
         def _set_navigation_busy(self, working: bool) -> None:
             self.settings_action.setEnabled(not working)
+            self.plot_channel_combo.setEnabled(not (working or self._settings_need_review))
             for action in self.view_actions:
                 action.setEnabled(not working)
 

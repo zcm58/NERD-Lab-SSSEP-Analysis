@@ -26,7 +26,8 @@ launcher opens the task home. Use **View** to switch workflows:
   with at most two identical prompts in a row, breaks, and optional countdowns.
   BioSemi markers use fixed `COM3`; confirmed test
   mode skips both participant information and markers.
-- **Process Data** processes saved `.bdf` files and creates FFT results.
+- **Process Data** processes saved `.bdf` files and creates FFT results. Choose
+  the electrode for its PNG plots directly in the **FFT output** card.
 - **Generate FFT Plots** reopens an earlier FFT CSV to make participant/group
   electrode or ROI plots and scalp maps without processing the BDF files again.
   Define separate electrodes or ROIs through **File > Settings > Regions of

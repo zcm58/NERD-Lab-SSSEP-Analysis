@@ -66,7 +66,11 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
             assert window.pages.currentWidget() is window.analysis_page
             window.input_edit.setText(str(input_folder))
             window.output_edit.setText(str(output_root))
-            window.plot_channel = "C4"
+            assert window.plot_channel_combo.count() == 64
+            assert not window.plot_channel_combo.isEditable()
+            assert window.plot_channel_combo.isEnabled()
+            window.plot_channel_combo.setCurrentText("C4")
+            assert window.plot_channel == "C4"
             window._start_processing()
 
             @checked
@@ -85,6 +89,10 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
                 assert not window.close(), "Active worker window accepted close"
                 assert window.isVisible()
                 assert not window.process_button.isEnabled()
+                assert not window.plot_channel_combo.isEnabled()
+                window.plot_channel_combo.setCurrentText("C3")
+                assert window.plot_channel_combo.currentText() == "C4"
+                assert window.plot_channel == "C4"
                 assert all(not action.isEnabled() for action in window.view_actions)
                 window._show_view(0)
                 assert window.pages.currentIndex() == 1
@@ -97,6 +105,7 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
                     QTimer.singleShot(10, wait_for_finished)
                     return
                 assert window.process_button.isEnabled()
+                assert window.plot_channel_combo.isEnabled()
                 assert window.settings_action.isEnabled()
                 assert all(action.isEnabled() for action in window.view_actions)
                 assert window.output_edit.text() == str(output_root)
@@ -154,6 +163,7 @@ def test_launcher_retains_worker_and_opens_actual_run_folder(tmp_path, outcome):
             saved, opened, messages, errors = [], [], [], []
             observed = set()
             gui.run_batch = fake_batch
+            gui.SETTINGS_PATH = output_root.parent / "gui-settings.json"
             gui.load_launcher_settings = lambda defaults, **kwargs: defaults
             gui.save_folder_defaults = lambda *args, **kwargs: saved.append(args)
             qt = gui._require_pyside6()

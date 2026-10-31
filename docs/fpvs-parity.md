@@ -2,11 +2,17 @@
 
 ## Method and reference
 
-`fpvs_amplitude_epoch_crop_v2` follows the active FPVS Toolbox preprocessing
+`fpvs_amplitude_epoch_crop_c4_interp_v3` follows the FPVS Toolbox preprocessing
 and per-electrode FFT formula at commit
-`185d803f0056daebee04e5f28cc6b554c47336ce`. SSSEP adds its own epoch crop
-before the FFT. The Toolbox is a reference for verification, not a runtime
-dependency. SSSEP still runs locally from `main.py` in PyCharm.
+`185d803f0056daebee04e5f28cc6b554c47336ce`, with SSSEP's epoch crop and the
+authorized C4 interpolation policy described below. C4 is reconstructed in every
+new recording analysis before the final average reference. The Toolbox is a
+reference for verification, not a runtime dependency. SSSEP still runs locally
+from `main.py` in PyCharm.
+
+Earlier `fpvs_amplitude_epoch_crop_v2` results remain readable for saved plotting.
+Their recorded method is preserved; loading them does not repair their C4 data.
+Keep v2 and v3 runs separate when comparing results.
 
 The reference source files are:
 
@@ -50,7 +56,12 @@ changes, the test fails rather than silently accepting a different reference.
    No events array is passed to resampling. Preserve the successfully applied
    filter cutoff metadata. This Hann window belongs to resampling, not the
    later amplitude FFT.
-6. **Detect and interpolate bad channels:** Use the algorithm below.
+6. **Mark C4, detect and interpolate bad channels:** Mark the recorded C4 signal
+   bad before automatic screening. It is excluded from the kurtosis reference
+   distribution and the good-electrode set used to reconstruct other bad
+   channels. Interpolate C4 and all other marked bads together with the algorithm
+   below. This replaces C4's recorded samples while retaining its electrode
+   label. The source BDF is never modified.
 7. **Final reference:** Create the average EEG reference projection and apply
    it after interpolation. All retained good EEG electrodes contribute; the
    later plotting ROI does not define this reference.
@@ -95,7 +106,16 @@ already-computed amplitude spectrum equal weight; usable epoch count does not
 change a participant's weight. Participant time-domain signals are never
 averaged together across people.
 
-## How FPVS interpolation works
+## Bad-channel policy and FPVS interpolation
+
+The user-authorized 2026-10-30 revision sets `FORCED_BAD_CHANNELS = ("C4",)` in
+`config.py` for every SSSEP recording. This policy addresses severe C4 artifacts
+that passed kurtosis screening and contaminated interpolation and the final
+average reference. It changes analysis outputs and is an intentional addition
+to the reference method, independent of the automatic kurtosis threshold.
+Disabling automatic screening therefore does not disable C4 reconstruction.
+Missing C4 or failed reconstruction is logged; an unresolved C4 remains marked
+bad and is excluded from reference and FFT calculations.
 
 FPVS calculates SciPy excess kurtosis on the continuous, filtered, resampled
 signal for each currently good EEG channel (`fisher=True`, `bias=False`). It
@@ -118,11 +138,14 @@ For EEG in MNE 1.9.0 this uses spherical splines and all eligible retained good
 EEG electrodes, not a nearest-neighbor average and not the 16-channel SSSEP
 plotting ROI. Successful interpolation resets the bad list. A missing montage
 or interpolation failure is logged; unresolved bads remain excluded from the
-final reference and Epochs FFT. A threshold of `0` or `None` skips both
-automatic detection **and interpolation**, including previously marked bads.
+final reference and Epochs FFT. In the unmodified reference, a threshold of `0`
+or `None` skips automatic detection and interpolation, including previously
+marked bads. SSSEP preserves that behavior when no forced channel is present;
+its explicit C4 policy still requests reconstruction when automatic screening
+is disabled. `bad_channel_metrics.csv` records `bad_by_policy` separately from
+`bad_by_kurtosis`, with `interpolated` reporting successful reconstruction.
 
-No additional FPVS QC workflow, automatic participant exclusion, or artifact
-repair has been added. Existing per-file logs and screening CSVs remain.
+No automatic participant exclusion or broader FPVS QC workflow has been added.
 
 ## SSSEP-specific boundaries
 
@@ -130,6 +153,10 @@ Parity means identical preprocessing and per-electrode amplitude FFT
 calculation for identical input data, settings, electrode labels, and samples
 supplied to the FFT. These experiment-specific choices remain:
 
+- C4 reconstruction is applied in every new analysis under the v3 method.
+  Reference comparisons must use the same bad-channel selection, or explicitly
+  disable the SSSEP policy to isolate the shared FPVS calculations. The FFT
+  arithmetic and equal-participant group weighting are unchanged by this rule.
 - Both SSSEP conditions supply fixed trigger codes (`11`/`12` and `21`/`22`);
   cue duration remains editable in File > Settings. The default full window is 6
   seconds, or 1536 samples at 256 Hz. Other durations use
@@ -212,6 +239,9 @@ active epochs is reported as failed.
   `20 * log10(ratio)`. Missing active/baseline measurements remain unavailable.
 - Old power and Welch outputs are retired. Do not combine them with the new
   amplitudes. Rerun recordings under the same new settings for comparisons.
+- The v3 method name identifies mandatory C4 reconstruction. Earlier v2 CSVs
+  keep their original method and amplitudes when reopened. A new v3 batch uses
+  a fresh run folder; it does not overwrite or silently update an earlier run.
 
 ## Verification and reproducibility
 
@@ -237,10 +267,13 @@ $env:FPVS_REFERENCE_ROOT = "C:\Projects\FPVS Toolbox Repo"
 ```
 
 The source comparison directly exercises the reference loader/preprocessor
-on deterministic 67-channel BDFs at 256, 512, and 2048 Hz. Four cases cover
-clean data, automatic bad-channel detection/interpolation, a pre-marked bad
-channel, and disabled interpolation. Both sides use matching `biosemi64`
-coordinates as described above. Assertions require exact array equality
+on deterministic 67-channel BDFs at 256, 512, and 2048 Hz. The original four
+cases cover clean data, automatic bad-channel detection/interpolation, a
+pre-marked bad channel, and disabled interpolation; they disable SSSEP's forced
+policy to compare with unmodified FPVS. A fifth case compares SSSEP's forced C4
+policy with C4 manually marked bad in the reference before preprocessing. Both
+sides use matching `biosemi64` coordinates as described above. Assertions
+require exact array equality
 for final continuous samples, events, epochs, and participant FFT amplitudes.
 No numerical tolerance is used for those source-parity comparisons. Separate
 end-to-end tests check the consolidated participant and group CSV values.
@@ -249,8 +282,8 @@ Other tests exercise BDF calibration and digital triggers, two real process
 workers, complete amplitude outputs/PNGs, fresh rerun folders, per-electrode
 phase preservation, FFT DC/Nyquist scaling, and real SSSEP Qt runner lifetime.
 
-No participant recording was supplied for this verification. Synthetic tests
-establish the implemented numerical contract but cannot validate a study's
+The original source-parity verification used synthetic recordings. These tests
+establish the shared numerical contract but cannot validate a study's
 recording labels, trigger protocol, or artifacts. An additional real-recording
 smoke test is available:
 

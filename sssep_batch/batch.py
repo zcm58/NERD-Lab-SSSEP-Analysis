@@ -43,6 +43,7 @@ from sssep_batch.config import (
     FFT_CROP_START_SEC,
     FMAX,
     FMIN,
+    FORCED_BAD_CHANNELS,
     HIGHCUT,
     INCLUDE_POST_STIMULUS,
     INPUT_FOLDER,
@@ -556,6 +557,10 @@ def run_batch(
     logger.info(f"Input folder: {input_path}")
     logger.info(f"Output folder: {output_path}")
     logger.info(f"FFT plot electrode: {selected_plot_channel}")
+    logger.info(
+        "Forced interpolation electrodes before average reference: %s",
+        list(FORCED_BAD_CHANNELS),
+    )
     logger.info(
         "Task analysis protocol: triggers=%s, duration=%g s, expected repetitions=%d",
         list(selected_protocol.active_event_codes),

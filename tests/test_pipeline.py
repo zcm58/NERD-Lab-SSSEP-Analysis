@@ -101,7 +101,10 @@ def test_pipeline_uses_fpvs_order_and_creates_one_plot_per_cue(monkeypatch, tmp_
     assert summary.fft_crop_end_sec.tolist() == [0.0, 0.0, 0.0, 0.0]
     assert summary.analysis_window_sec.tolist() == [5.0, 5.0, 5.0, 5.0]
     assert summary.edge_excluded_epochs.tolist() == [0, 0, 0, 0]
-    assert set(summary.processing_method) == {"fpvs_amplitude_epoch_crop_v2"}
+    assert set(summary.processing_method) == {"fpvs_amplitude_epoch_crop_c4_interp_v3"}
+    bad_metrics = pd.read_csv(Path(result["output_folder"]) / "bad_channel_metrics.csv")
+    c4 = bad_metrics.loc[bad_metrics.channel.eq("C4")].iloc[0]
+    assert c4.bad_by_policy and c4.interpolated
     assert "sssep_fft_nearest_amplitude_uv" in summary
     assert not any("power" in name or "welch" in name for name in summary.columns)
     assert len(plots) == 4

@@ -20,15 +20,19 @@ explicitly asks for an analysis change.
 3. Identify the smallest module that owns the behavior. Keep `pipeline.py` as
    orchestration only.
 4. Preserve these invariants:
-   - The current method is `fpvs_amplitude_epoch_crop_v2`, based on FPVS commit
-     `185d803f0056daebee04e5f28cc6b554c47336ce`; the old power/Welch method was
-     intentionally replaced.
+   - The current method is `fpvs_amplitude_epoch_crop_c4_interp_v3`, based on
+     FPVS commit `185d803f0056daebee04e5f28cc6b554c47336ce` with the authorized
+     forced C4 interpolation policy. Earlier v2 saved FFTs remain readable;
+     the old power/Welch method was intentionally replaced.
    - Load the reference BioSemi channel subset and apply `biosemi64`
      before preprocessing, then EXG reference/drop and scalp-plus-Status
      retention.
    - Apply the scaled-duration 0.1–50 Hz FIR at the original sampling rate,
-     downsample to 256 Hz, screen/interpolate bad channels at kurtosis threshold
-     5, and apply the final average reference. Keep the reference's logged
+     downsample to 256 Hz, mark C4 bad, screen/interpolate bad channels at kurtosis
+     threshold 5, and apply the final average reference. Exclude recorded C4
+     samples from detection statistics and interpolation donors. Reconstruct C4
+     even when automatic screening is disabled, and retain unresolved bad flags
+     on interpolation failure. Keep the reference's logged
      warning-and-continue behavior explicit.
    - Detect `Status` events after preprocessing with the reference MNE options.
      Require complete SSSEP onset windows (default 6 seconds), with no extra

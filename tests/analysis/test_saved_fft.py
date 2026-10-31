@@ -319,10 +319,11 @@ def test_saved_fft_loads_schema_one_table_without_crop_provenance(tmp_path):
     assert dataset.provenance.fft_crop_end_sec == 0.0
 
 
-def test_saved_fft_rejects_current_crop_method_without_crop_provenance(tmp_path):
+@pytest.mark.parametrize("method", ["fpvs_amplitude_epoch_crop_v2", PROCESSING_METHOD])
+def test_saved_fft_rejects_current_crop_method_without_crop_provenance(tmp_path, method):
     run_folder, source_csv = write_saved_dataset(
         tmp_path,
-        (make_record("P01", {"C3": [1, 2, 3]}, method=PROCESSING_METHOD),),
+        (make_record("P01", {"C3": [1, 2, 3]}, method=method),),
     )
     frame = pd.read_csv(source_csv).drop(
         columns=[
@@ -335,6 +336,16 @@ def test_saved_fft_rejects_current_crop_method_without_crop_provenance(tmp_path)
 
     with pytest.raises(ValueError, match="requires all three"):
         load_saved_fft_dataset(run_folder)
+
+
+@pytest.mark.parametrize("method", ["fpvs_amplitude_epoch_crop_v2", PROCESSING_METHOD])
+def test_saved_fft_preserves_old_and_c4_repaired_method_metadata(tmp_path, method):
+    run_folder, _ = write_saved_dataset(
+        tmp_path, (make_record("P01", {"C3": [1, 2, 3]}, method=method),),
+    )
+    dataset = load_saved_fft_dataset(run_folder)
+    assert dataset.processing_method == method
+    np.testing.assert_array_equal(dataset.records[0].spectrum.amplitude_uv, [[1, 2, 3]])
 
 
 def test_saved_fft_rejects_partial_crop_provenance(tmp_path):

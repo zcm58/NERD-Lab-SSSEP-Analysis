@@ -2,6 +2,17 @@
 
 This page records the task behavior that the software must preserve.
 
+Analysis revision (2026-10-30): mark C4 bad in every SSSEP recording before
+automatic bad-channel screening and interpolation. Reconstruct C4 with the
+existing BioSemi64 spherical-spline interpolation before the final average
+reference; exclude its recorded signal from the interpolation of other bad
+electrodes. Successful reconstruction retains the C4 label in FFT outputs.
+If reconstruction fails, keep C4 marked bad and exclude it from reference and
+FFT calculations, with the failure logged. This authorized rule is recorded as
+`fpvs_amplitude_epoch_crop_c4_interp_v3`; it changes processed amplitudes but
+does not change task timing, trigger codes, stimulation frequency, or FFT
+arithmetic. Preserve earlier runs and reprocess into a new results folder.
+
 Timing revision (2026-09-24): after the visible electrode confirmation screen,
 a fresh Y press starts the same five-second `The experiment is about to begin..`
 lead-in used before Condition 1. Condition 2's first cue and trigger follow the

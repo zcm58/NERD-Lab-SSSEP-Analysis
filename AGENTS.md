@@ -10,8 +10,9 @@ to be run from PyCharm. The current user-facing workflow is:
 3. Use View > SSSEP Task, Process Data, or Generate FFT Plots
 
 Do not redesign this around command-line flags unless the user explicitly asks
-for that. Task settings and the plotted electrode belong in **File > Settings**;
-`config.py` remains the source for analysis defaults and advanced settings.
+for that. Task settings belong in **File > Settings**. The processing-plot
+electrode is also selectable directly on **Process Data**, synchronized with
+Settings. `config.py` remains the source for analysis defaults and advanced settings.
 
 Use **trigger code** in app text and plot labels. Preserve internal `cue` event
 values, task-log fields, and filenames so existing results remain compatible.
@@ -102,7 +103,7 @@ future timing, code, frequency, or counterbalancing change in
 
 ## Known Pipeline Constraints
 
-The authorized `fpvs_amplitude_epoch_crop_v2` method replaces the former SSSEP
+The authorized `fpvs_amplitude_epoch_crop_c4_interp_v3` method replaces the former SSSEP
 power/Welch pipeline. Preserve this current design unless a further change is
 authorized:
 
@@ -113,6 +114,11 @@ authorized:
   then downsample to 256 Hz, screen/interpolate bad channels, and apply the
   final average reference. Preserve the reference's explicitly logged
   warning-and-continue paths; do not add silent fallbacks.
+- In every recording, mark C4 bad before kurtosis screening and interpolation.
+  Exclude its recorded samples from detection statistics and interpolation
+  training, reconstruct C4 with the other bad channels before average reference,
+  and record the policy/outcome. Forced C4 interpolation remains active when
+  automatic kurtosis detection is disabled. Old v2 saved FFTs remain readable.
 - Detect `Status` events after preprocessing with the reference MNE options.
   Require complete SSSEP onset windows (6 seconds by default), with no extra
   FIR edge exclusion or EEG zero replacement.

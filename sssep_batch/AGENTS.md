@@ -71,7 +71,7 @@ The package is organized around these boundaries:
 
 ## Pipeline Facts Future Agents Must Preserve
 
-- Current method: `fpvs_amplitude_epoch_crop_v2`, referenced to FPVS commit
+- Current method: `fpvs_amplitude_epoch_crop_c4_interp_v3`, referenced to FPVS commit
   `185d803f0056daebee04e5f28cc6b554c47336ce`. See
   [FPVS method and parity checks](../docs/fpvs-parity.md).
 - Load the reference channel subset, assign `biosemi64` before
@@ -79,6 +79,10 @@ The package is organized around these boundaries:
 - Apply the scaled-duration 0.1–50 Hz FIR at the original sampling rate before
   downsampling to 256 Hz. Kurtosis screening/interpolation precedes the final
   average-reference projection.
+- Mark C4 bad before kurtosis screening and interpolation in every recording.
+  Its samples must not train interpolation of any other bad channel. Reconstruct
+  it before average reference and record the forced policy separately from
+  automatic kurtosis flags. Keep old v2 FFT files readable without relabeling.
 - `find_status_events()` runs after preprocessing on the final sampling grid.
   Its MNE options match the reference; do not restore the old mask or
   event-before-downsample path.

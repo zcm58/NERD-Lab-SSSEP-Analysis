@@ -74,13 +74,21 @@ Recording analysis:
 `entrypoint → File > Settings → four-code analysis protocol → batch → pipeline → preprocessing / events / FFT → participant outputs → group outputs`
 
 The numerical order is load/montage → EXG reference/drop → filter → resample
-→ interpolate → average reference → recorded events → complete SSSEP epochs
+→ mark C4 bad → screen/interpolate → average reference → recorded events
+→ complete SSSEP epochs
 → remove the first 1.0 second of each epoch → trial mean within each participant
 and cue → per-electrode amplitude FFT. The default 6-second epoch therefore
 uses its final 5 seconds for the FFT. After all files finish, the batch
 averages participant amplitude spectra with equal participant weight. It writes
 consolidated participant and group FFT CSVs plus one selected-electrode PNG per
 cue at each level.
+
+New runs use `fpvs_amplitude_epoch_crop_c4_interp_v3`: the recorded C4 signal is
+excluded before automatic screening and interpolation, then reconstructed with
+the other bad channels before average referencing. Successful interpolation
+retains C4 in outputs; failed interpolation leaves it excluded and logged.
+`config.py` owns this mandatory `FORCED_BAD_CHANNELS` policy. Earlier v2 saved
+results remain readable with their original method and values.
 
 Saved-result plotting is separate:
 
@@ -111,7 +119,12 @@ Scalp-map names retain their frequency, and old exports are not renamed.
 - Keep one launcher with **View > SSSEP Task / Process Data / Generate FFT
   Plots** and a `QStackedWidget`, not main workflow tabs. The home shows only
   its NERD Lab SSSEP Task title, Start SSSEP Task button, and settings hint.
-  Experiment fields and analysis defaults live in File > Settings. Save
+  Experiment fields and analysis defaults live in File > Settings. Process Data
+  also provides the processing-plot electrode selector in its FFT output card;
+  direct changes atomically save the shared preference before applying it and
+  stay synchronized with Settings. Disable this selector while a task or worker
+  is active or saved preferences need review. A failed save retains the previous
+  electrode and reports the error. Settings Save
   validates and atomically writes the draft to ignored `.sssep_gui_settings.json`
   before applying it; Cancel changes neither disk nor current preferences.
   Preserve fixed hardware codes and fresh randomization outside saved settings.
@@ -199,6 +212,11 @@ Scalp-map names retain their frequency, and old exports are not renamed.
   event audit as the epoch-end/break delimiter, but exclude it from baseline FFT
   calculation for this task because those following intervals vary in duration.
 - Preserve the validated FPVS analysis method unless a change is authorized.
+- Apply the authorized C4 policy before kurtosis screening and interpolation
+  in every new recording analysis. C4 must not train another bad electrode's
+  interpolation or enter the average reference as an unrepaired signal. Record
+  forced and automatic bad-channel decisions separately. A disabled automatic
+  threshold does not disable forced C4 reconstruction.
 - Require a complete configured epoch, then remove 1.0 second from its start
   and nothing from its end before cue averaging and FFT calculation. This SSSEP
   analysis window is separate from FPVS's visual-oddball marker crop.

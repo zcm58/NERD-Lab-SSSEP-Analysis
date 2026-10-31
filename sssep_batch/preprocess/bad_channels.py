@@ -1,7 +1,7 @@
 """Detect unusually noisy EEG channels and interpolate them when possible.
 
-This module uses excess kurtosis as a simple automatic bad-channel detector.
-Channels with very unusual kurtosis are marked bad, written to
+This module marks the configured policy channels bad before excess-kurtosis
+screening. Channels with very unusual kurtosis are also marked bad, written to
 `bad_channel_metrics.csv`, and interpolated if the recording has a montage.
 Interpolation uses spherical splines and the positions of all retained good
 EEG channels to estimate each bad channel's signal.
@@ -15,7 +15,9 @@ import numpy as np
 import pandas as pd
 from scipy.stats import kurtosis
 
-from sssep_batch.config import KURTOSIS_REJECT_Z, KURTOSIS_TRIM_PROPORTION
+from sssep_batch.config import (
+    FORCED_BAD_CHANNELS, KURTOSIS_REJECT_Z, KURTOSIS_TRIM_PROPORTION,
+)
 
 
 def detect_and_interpolate_bad_channels_by_kurtosis(
@@ -25,18 +27,37 @@ def detect_and_interpolate_bad_channels_by_kurtosis(
     log_func: Callable[[str], None],
     debug_enabled: bool = False,
 ) -> pd.DataFrame:
-    """Detect high-kurtosis EEG channels, interpolate them, and save metrics."""
+    """Interpolate policy and detected bads together, excluding both from training."""
+
+    eeg_names = {
+        raw.ch_names[index].casefold(): raw.ch_names[index]
+        for index in mne.pick_types(raw.info, eeg=True, stim=False, exclude=[])
+    }
+    policy_bads = []
+    for configured in FORCED_BAD_CHANNELS:
+        channel = eeg_names.get(configured.casefold())
+        if channel is None:
+            log_func(
+                f"Warn: Policy electrode {configured!r} is not an EEG channel in "
+                f"{filename_for_log}; it cannot be interpolated."
+            )
+        elif channel not in policy_bads:
+            policy_bads.append(channel)
+    if policy_bads:
+        raw.info["bads"].extend(ch for ch in policy_bads if ch not in raw.info["bads"])
+        log_func(f"Bad by policy for {filename_for_log}: {policy_bads}")
 
     if not KURTOSIS_REJECT_Z:
         log_func(f"Skip Kurtosis for {filename_for_log} (no threshold).")
-        metrics = pd.DataFrame()
-        metrics.to_csv(output_folder / "bad_channel_metrics.csv", index=False)
-        return metrics
-
-    log_func(
-        f"Kurtosis rejection for {filename_for_log} "
-        f"(abs(Z) > {KURTOSIS_REJECT_Z})..."
-    )
+        if not policy_bads:
+            metrics = pd.DataFrame()
+            metrics.to_csv(output_folder / "bad_channel_metrics.csv", index=False)
+            return metrics
+    else:
+        log_func(
+            f"Kurtosis rejection for {filename_for_log} "
+            f"(abs(Z) > {KURTOSIS_REJECT_Z})..."
+        )
 
     bad_k_auto: list[str] = []
     metrics = pd.DataFrame()
@@ -48,7 +69,7 @@ def detect_and_interpolate_bad_channels_by_kurtosis(
         exclude=raw.info["bads"],
     )
 
-    if len(eeg_picks) >= 2:
+    if KURTOSIS_REJECT_Z and len(eeg_picks) >= 2:
         data = raw.get_data(picks=eeg_picks)
         k_values = kurtosis(data, axis=1, fisher=True, bias=False)
         k_values = np.nan_to_num(k_values, copy=False)
@@ -89,6 +110,7 @@ def detect_and_interpolate_bad_channels_by_kurtosis(
                 "excess_kurtosis": k_values,
                 "kurtosis_z": z_scores,
                 "bad_by_kurtosis": [ch in bad_k_auto for ch in ch_names_pick],
+                "bad_by_policy": False,
                 "interpolated": False,
             }
         )
@@ -106,7 +128,7 @@ def detect_and_interpolate_bad_channels_by_kurtosis(
                 f"[KURTOSIS] {filename_for_log}: "
                 f"n_bad={len(bad_k_auto)} bad_chs={bad_k_auto}"
             )
-    else:
+    elif KURTOSIS_REJECT_Z:
         log_func(
             f"Skip Kurtosis for {filename_for_log} "
             f"(< 2 good EEG channels; n_picks={len(eeg_picks)})."
@@ -117,14 +139,28 @@ def detect_and_interpolate_bad_channels_by_kurtosis(
                 f"(n_eeg_picks={len(eeg_picks)})"
             )
 
+    if policy_bads:
+        policy_metrics = pd.DataFrame({
+            "channel": policy_bads,
+            "excess_kurtosis": np.nan,
+            "kurtosis_z": np.nan,
+            "bad_by_kurtosis": False,
+            "bad_by_policy": True,
+            "interpolated": False,
+        })
+        metrics = (
+            pd.concat([metrics, policy_metrics], ignore_index=True)
+            if not metrics.empty else policy_metrics
+        )
+
     new_bads = [b for b in bad_k_auto if b not in raw.info["bads"]]
     if new_bads:
         raw.info["bads"].extend(new_bads)
 
     interpolation_success = False
+    interp_targets = list(raw.info["bads"])
     if raw.info["bads"] and raw.get_montage():
         try:
-            interp_targets = list(raw.info["bads"])
             log_func(f"Interpolating bads in {filename_for_log}: {interp_targets}")
             if debug_enabled:
                 print(
@@ -139,6 +175,9 @@ def detect_and_interpolate_bad_channels_by_kurtosis(
             interpolation_success = True
             log_func(f"Interpolation OK for {filename_for_log}.")
         except Exception as exc:
+            # A partially failed operation must not release unrepaired channels
+            # into the subsequent average reference or FFT.
+            raw.info["bads"] = list(dict.fromkeys([*raw.info["bads"], *interp_targets]))
             log_func(f"Warn: Interpolation failed for {filename_for_log}: {exc}")
             if debug_enabled:
                 print(
@@ -161,7 +200,7 @@ def detect_and_interpolate_bad_channels_by_kurtosis(
             print(f"[INTERP] {filename_for_log}: no bads")
 
     if not metrics.empty and interpolation_success:
-        metrics.loc[metrics["bad_by_kurtosis"], "interpolated"] = True
+        metrics.loc[metrics["channel"].isin(interp_targets), "interpolated"] = True
 
     metrics.to_csv(output_folder / "bad_channel_metrics.csv", index=False)
 
