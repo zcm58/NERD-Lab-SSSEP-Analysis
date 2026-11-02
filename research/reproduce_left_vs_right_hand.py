@@ -9,7 +9,7 @@ matplotlib==3.10.3, pandas==2.3.0. No other project files are required.
 
 Both FFT methods are exported: time-average trials before FFT (canonical),
 and FFT each trial then average amplitudes (diagnostic). Primary response:
-mean amplitude at 25–27 Hz, raw and minus outside-band background from
+mean amplitude at only 25.4 and 26.4 Hz, raw and minus background from
 23–24.4 and 27.6–29 Hz. Negative corrected amplitudes remain signed.
 Statistics are participant-paired, two-sided and uncorrected. Historical
 fixed/matched-peak analyses are separate outputs, not the pooled primary result.
@@ -47,8 +47,8 @@ CONFIG = {'name': 'left_vs_right_hand',
                                                                'Without_C3_Left': -1}},
  'roi_display_names': {'Left': 'Left central scalp', 'Right': 'Right central scalp'},
  'marker_label': 'Left-hand TENS: nominal 26 Hz',
- 'frequency_note': 'The left-hand unit was set to 26 Hz; the right-hand frequency is unknown. Nearby '
-                   'peaks are pooled as one 25–27 Hz response, not assigned to a measured pulse rate. A '
+ 'frequency_note': 'The left-hand unit was set to 26 Hz; the right-hand frequency is unknown. Only the '
+                   '25.4 and 26.4 Hz bins are pooled, without a measured pulse-rate assignment. A '
                    'left-hand tag predicts greater right-central amplitude during the left cue.'}
 
 # BEGIN EMBEDDED RECORDING METHOD
@@ -535,13 +535,19 @@ def analyze_and_export(dataset, config, output_dir):
         assert wanted and len(set(wanted)) == len(wanted)
         picks[roi] = [channels.index(ch) for ch in wanted]
     tol = 1e-9
-    signal = (frequency >= 25-tol) & (frequency <= 27+tol)
+    selected_frequencies = (25.4, 26.4)
+    signal = np.zeros(frequency.shape, dtype=bool)
+    for hz in selected_frequencies:
+        index = np.flatnonzero(np.isclose(frequency, hz, rtol=0, atol=tol))
+        if len(index) != 1:
+            raise ValueError(f"Selected frequency {hz:g} Hz requires exactly one saved FFT bin.")
+        signal[index[0]] = True
     background = (((frequency >= 23-tol) & (frequency <= 24.4+tol)) |
                   ((frequency >= 27.6-tol) & (frequency <= 29+tol)))
-    if signal.sum() != 11 or background.sum() != 16:
-        raise ValueError("This frozen analysis requires11signal bins25–27Hz and16background bins23–24.4/27.6–29Hz.")
+    if signal.sum() != 2 or background.sum() != 16:
+        raise ValueError("This frozen analysis requires only the 25.4 and 26.4 Hz signal bins and 16 background bins at 23–24.4/27.6–29 Hz.")
     assert not np.any(signal & background)
-    np.testing.assert_allclose(frequency[signal], np.arange(25, 27.01, .2), rtol=0, atol=tol)
+    np.testing.assert_allclose(frequency[signal], selected_frequencies, rtol=0, atol=tol)
     roi_spectra = {m:{r:v[:,:,idx,:].mean(axis=2) for r,idx in picks.items()} for m,v in methods.items()}
     channel_metrics, roi_metrics = {}, {}
     records, participant_records = [], []
@@ -574,7 +580,7 @@ def analyze_and_export(dataset, config, output_dir):
     pd.DataFrame(participant_records).to_csv(out/"participant_pooled_values.csv", index=False)
 
     # Historical peak analyses are separate from the newly frozen pooled metric.
-    near = np.flatnonzero(signal)
+    near = np.flatnonzero((frequency >= 25-tol) & (frequency <= 27+tol))
     pooled = sum(roi_spectra["phase_insensitive"][r] for r in primary)/2
     matched_indices = near[np.argmax(pooled.mean(axis=1)[:,near], axis=1)]
     selections = {"participant_matched_peak":matched_indices}
@@ -614,7 +620,8 @@ def analyze_and_export(dataset, config, output_dir):
             maximum = max(float(roi_spectra[method][r].mean(axis=0)[:,visible].max()) for r in primary)
             for col,roi in enumerate(primary):
                 ax = axes[row,col]
-                ax.axvspan(25,27,color="#e4c36e",alpha=.30,zorder=0)
+                for hz in selected_frequencies:
+                    ax.axvspan(hz-.1,hz+.1,color="#e4c36e",alpha=.30,zorder=0)
                 for a,b in ((23,24.4),(27.6,29)):
                     ax.axvspan(a,b,color="#8c949f",alpha=.18,zorder=0)
                 for ci in range(2):
@@ -630,12 +637,12 @@ def analyze_and_export(dataset, config, output_dir):
                 ax.grid(axis="y",alpha=.15)
         fig.suptitle(config["title"]+f" (N={n})\nTop: current cue-averaged FFT · bottom: mean single-trial magnitude",fontsize=14,y=.985)
         handles = [Line2D([],[],color=colors[i],ls="-" if i==0 else "--",label=label) for i,label in enumerate(config["condition_labels"])]
-        handles += [Line2D([],[],color="#d5ae4e",lw=8,alpha=.5,label="Signal: 25–27 Hz (11 bins)"),
+        handles += [Line2D([],[],color="#d5ae4e",lw=8,alpha=.5,label="Signal: 25.4 and 26.4 Hz only (2 bins)"),
                     Line2D([],[],color="#8c949f",lw=8,alpha=.4,label="Background: 23–24.4, 27.6–29 Hz (16 bins)"),
                     Line2D([],[],color="#68595c",ls=":",label=config["marker_label"])]
         fig.legend(handles=handles,loc="upper center",bbox_to_anchor=(.5,.91),ncol=3,frameon=False,fontsize=9)
         fig.subplots_adjust(left=.085,right=.98,top=.77,bottom=.18,hspace=.16,wspace=.12)
-        fig.text(.5,.025,"Raw spectra; shaded bands define pooled means. Background correction subtracts the outside-band mean, retaining negative values.\n"
+        fig.text(.5,.025,"Raw spectra; gold marks the two selected FFT bins. Background correction subtracts the gray-bin mean, retaining negative values.\n"
                  +textwrap.fill(config["frequency_note"],125)+"\nC4 is interpolated; diagnostic magnitudes include non-phase-locked signal and noise.",
                  ha="center",va="bottom",fontsize=9)
         filename = f"spectra_{lower}_{upper}Hz.png"
@@ -662,7 +669,7 @@ def analyze_and_export(dataset, config, output_dir):
                         transform=ax.transAxes,va="top",fontsize=9)
                 ax.set(xticks=[0,1],xticklabels=[textwrap.fill(x,18) for x in config["condition_labels"]],
                        xlim=(-.25,1.25),ylim=(low-pad if low<0 else 0,high+2*pad),title=display[roi])
-                ax.set_ylabel("Mean 25–27 Hz amplitude (µV)" if row==0 else "Background-corrected amplitude (µV)")
+                ax.set_ylabel("Mean of 25.4 and 26.4 Hz (µV)" if row==0 else "Background-corrected amplitude (µV)")
             ax = axes[row,2]
             difference = sum(float(w)*(roi_metrics[method][metric][r][:,0]-roi_metrics[method][metric][r][:,1]) for r,w in weights.items())
             summary = _paired_summary(difference)
@@ -679,7 +686,7 @@ def analyze_and_export(dataset, config, output_dir):
                     ax.axhline(0,color="#7a666a",ls=":",lw=.8)
                 ax.spines[["top","right"]].set_visible(False)
                 ax.grid(axis="y",alpha=.15)
-        fig.suptitle(config["title"]+f" · {method_names[method]} (N={n})\nTop: pooled raw amplitude · bottom: pooled amplitude minus outside-band background",fontsize=13,y=.985)
+        fig.suptitle(config["title"]+f" · {method_names[method]} (N={n})\n25.4 and 26.4 Hz only · top: raw mean · bottom: mean minus background",fontsize=13,y=.985)
         fig.subplots_adjust(left=.075,right=.98,top=.83,bottom=.20,hspace=.48,wspace=.30)
         interaction_text = "; ".join(f"{r}:{w:+g}" for r,w in weights.items())
         fig.text(.5,.025,"Lines connect participants; diamonds are means with 95% t intervals. All differences are first cue minus second cue.\n"
@@ -723,7 +730,7 @@ def analyze_and_export(dataset, config, output_dir):
                 cax1=fig.add_axes([.895,.52,.018,.23]); cax2=fig.add_axes([.895,.18,.018,.23])
                 fig.colorbar(images[0],cax=cax1).set_label("Amplitude minus background (µV)",fontsize=9)
                 fig.colorbar(images[2],cax=cax2).set_label("Cue difference (µV)",fontsize=9)
-                fig.text(.5,.025,"Signal: mean 25–27 Hz; background: mean 23–24.4 plus 27.6–29 Hz. Signed subtraction; no power conversion or ratio.\n"
+                fig.text(.5,.025,"Signal: mean of 25.4 and 26.4 Hz only; background: mean 23–24.4 plus 27.6–29 Hz. Signed subtraction; no power or ratio.\n"
                          "Cue maps share one zero-centered scale; difference map has its own scale. Nose up, L/R label scalp sides.\n"
                          "C4 is interpolated. Descriptive scalp maps, not cortical source maps or electrode-level significance tests.",ha="center",fontsize=9)
                 filename=f"pooled_background_corrected_scalp_{method}.png"
@@ -737,20 +744,20 @@ def analyze_and_export(dataset, config, output_dir):
         "condition_labels":config["condition_labels"],"roi_channels":rois,"primary_rois":primary,"interaction_weights":weights,
         "historical_interactions":historical_interactions,
         "signal_bins_hz":frequency[signal].tolist(),"background_bins_hz":frequency[background].tolist(),
-        "primary_metric":"Mean11signal-bin amplitudes minus mean16outside-background-bin amplitudes, perparticipant/cue/electrode then ROImean; negative values retained.",
-        "sum_equivalent":"Multiplying raw or corrected means by11 yields a signal-bin amplitude sum; no power or PSD conversion.",
+        "primary_metric":"Mean of only the 25.4 and 26.4 Hz amplitudes minus the unchanged mean of 16 background-bin amplitudes, per participant/cue/electrode then ROI mean; negative values retained.",
+        "sum_equivalent":"Multiplying raw or corrected means by 2 yields the two-bin amplitude sum or background-corrected sum, with identical paired statistics; no power or PSD conversion.",
         "statistics":"Two-sided participant-paired t tests, df=N-1; uncorrected95%t confidence intervals and paired dz. Wilcoxon signed-rank is secondary and uncorrected.",
         "matched_selection":"Historical only: one25–27Hz bin perparticipant chosen from equally weighted primary ROImeans, pooled bothcues, meantrialmagnitude; same bin used for bothmethods/allcells.",
         "historical_matched_frequencies_hz":frequency[matched_indices].tolist(),"paired_statistics":records,
         "historical_statistics":historical_stats,"figures":figures,"omitted_figures":omitted,"scalp_maps":map_metadata,
         "frequency_note":config["frequency_note"],"provenance":config.get("provenance",{}),
-        "limits":["Nearby-band pooling is newly authorized and exploratory; statistics are uncorrected.",
+        "limits":["Pooling only the 25.4 and 26.4 Hz bins is newly authorized and exploratory; statistics are uncorrected.",
                   "A nearby peak/band alone cannot identify its stimulator or establish a neural response.",
                   "Scalp ROIs are proxies, not cortical source localizers. C4 is reconstructed.",
                   "Meantrialmagnitudes include non-phase-locked EEG/noise; canonical trialmeans can cancel phase-inconsistent responses."]}
     _write_json(out/"analysis_results.json",results)
     lines=["# "+config["title"],"",f"N={n}; all p-values and95%confidence intervals are uncorrected.","",
-        "Primary response: mean amplitude over25–27Hz (11bins). Background: mean amplitudes over23–24.4 and27.6–29Hz (16bins). Subtract background after pooling; retain negative values. No power or ratio is calculated.","",
+        "Primary response: (amplitude at 25.4 Hz + amplitude at 26.4 Hz) / 2. No intervening bins enter this response. Background stays the mean of 23–24.4 and 27.6–29 Hz (16 bins). Subtract that mean once; retain negative values. No power or ratio is calculated.","",
         config["frequency_note"],"","Differences below are first condition minus second: "+" versus ".join(config["condition_labels"])+".","",
         "| Method | Measure | Region/contrast | Change,µV |95%tCI | Uncorrected p | Wilcoxon p |",
         "|---|---|---|---:|---|---:|---:|"]

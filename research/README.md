@@ -48,12 +48,14 @@ final average reference, six-second epochs and final-five-second FFT window
 The newly requested pooled response uses the same frequencies for every person
 and cue:
 
-- Signal: mean amplitude in **25–27 Hz**, inclusive: 11 bins.
+- Signal: the arithmetic mean of the two saved FFT amplitudes at **25.4 Hz and
+  26.4 Hz**: `(amplitude_25.4 + amplitude_26.4) / 2`. Other bins, including
+  those between these frequencies, do not enter the primary response.
 - Spectral background: mean amplitude in **23–24.4 Hz and 27.6–29 Hz**, inclusive:
-  16 bins outside the whole signal band, with a 0.4 Hz guard beyond each edge.
+  the same 16 background bins used in the earlier analysis.
 - Corrected response: signal mean minus background mean, in microvolts.
-  Negative corrected values are retained. Multiplying by 11 gives an equivalent
-  signal-bin amplitude sum; it leaves paired t statistics unchanged.
+  Negative corrected values are retained. Multiplying by 2 gives an equivalent
+  two-bin amplitude sum; it leaves paired t statistics unchanged.
 
 This is frequency-domain background subtraction. It is not a TENS-off/resting
 baseline or subtraction of the variable intervals after trigger code 100.
@@ -67,8 +69,9 @@ t intervals, paired effect sizes, and secondary Wilcoxon results.
 
 Earlier fixed-bin and participant-specific peak checks are exported separately.
 They reproduce the previous analyses but do not define the new pooled response.
-The nearby peak is selected from both cues pooled together, never separately
-for each cue. ROI sensitivities are retained in the tables; primary plots use
+The historical nearby-peak search still considers all 11 bins in 25–27 Hz,
+using both cues pooled together, never selecting separately for each cue.
+ROI sensitivities are retained in the tables; primary plots use
 the two prespecified regions. Scalp maps are descriptive, not source localization
 or electrode-level statistical tests.
 
@@ -96,6 +99,7 @@ spectra, paired plots, corrected-amplitude scalp maps, `analysis_results.json`,
 versions. Raw runs also retain processing-quality reports and the reusable cache.
 Numerical verification is recorded in the manifest when references are supplied.
 
-The new pooled/background-corrected definition changes the earlier selected-peak
-findings. Assess the pooled tables separately; do not present the earlier 4%
-left-cue increase or 4.6% ankle-cue increase as results of the new definition.
+The two-bin/background-corrected definition differs from both the earlier
+25–27 Hz average and selected-peak analyses. Assess the pooled tables separately;
+do not present the earlier 4% left-cue increase or 4.6% ankle-cue increase as
+results of the new definition.

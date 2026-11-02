@@ -23,17 +23,28 @@ def script(request):
 
 
 def synthetic_dataset(script, n=5):
-    """A cue's broadband increase hides its opposite narrow-band change."""
+    """Two unequal target amplitudes amid larger, excluded nearby FFT bins."""
     frequencies = np.fft.rfftfreq(1280, 1 / 256)
     channels = mne.channels.make_standard_montage("biosemi64").ch_names
     values = np.empty((n, 2, 64, len(frequencies)))
-    signal = (frequencies >= 25 - 1e-9) & (frequencies <= 27 + 1e-9)
+    near = (frequencies >= 25 - 1e-9) & (frequencies <= 27 + 1e-9)
+    at = {hz: np.flatnonzero(np.isclose(frequencies, hz, rtol=0, atol=1e-9))[0]
+          for hz in (25.4, 26.0, 26.2, 26.4)}
     for pi in range(n):
         base = 1 + pi * .2
         values[pi, 0] = base
         values[pi, 1] = base + .8
-        values[pi, 0, :, signal] = base - .3 + .01 * pi
-        values[pi, 1, :, signal] = base + .8 - .5
+        values[pi, 0, :, near] = 100 + pi
+        values[pi, 1, :, near] = 200 + pi
+        values[pi, 0, :, at[25.4]] = base - .6 + .02 * pi
+        values[pi, 0, :, at[26.4]] = base
+        values[pi, 1, :, at[25.4]] = base + .1 + .01 * pi
+        values[pi, 1, :, at[26.4]] = base + .5 - .01 * pi
+        # Both intervening peaks must be excluded from the two-bin response.
+        # The larger 26 Hz bin must remain eligible for historical peak matching.
+        values[pi, 0, :, at[26.0]] = 1000 + 3 * pi
+        values[pi, 1, :, at[26.0]] = 1001 + 2 * pi
+        values[pi, :, :, at[26.2]] = 500 + pi
     return {"participant_ids": np.asarray([f"Synthetic{pi}" for pi in range(n)]),
             "trigger_codes": np.asarray(script.CONFIG["codes"]),
             "channel_names": np.asarray(channels), "frequencies_hz": frequencies,
@@ -46,15 +57,21 @@ def test_pooled_background_subtraction_retains_negative_values_and_pairing(scrip
     monkeypatch.setattr(script.plt.Figure, "savefig", lambda *args, **kwargs: None)
     result = script.analyze_and_export(dataset, script.CONFIG, tmp_path)
     assert result["N"] == 5
-    assert len(result["signal_bins_hz"]) == 11
+    np.testing.assert_allclose(result["signal_bins_hz"], [25.4, 26.4], rtol=0, atol=1e-9)
     assert len(result["background_bins_hz"]) == 16
     assert not set(result["signal_bins_hz"]) & set(result["background_bins_hz"])
+    np.testing.assert_allclose(result["historical_matched_frequencies_hz"], np.full(5, 26.0), rtol=0, atol=1e-9)
     values = pd.read_csv(tmp_path / "participant_pooled_values.csv")
     assert (values.background_corrected_amplitude_uv < 0).all()
     primary = script.CONFIG["primary_rois"][0]
     rows = values[(values.method == "phase_insensitive") & (values.roi == primary)]
     cue0 = rows[rows.trigger_code == script.CONFIG["codes"][0]].sort_values("participant_id")
     cue1 = rows[rows.trigger_code == script.CONFIG["codes"][1]].sort_values("participant_id")
+    bases = 1 + .2 * np.arange(5)
+    np.testing.assert_allclose(cue0.pooled_raw_amplitude_uv, bases - .3 + .01 * np.arange(5), atol=2e-15)
+    np.testing.assert_allclose(cue1.pooled_raw_amplitude_uv, bases + .3, atol=2e-15)
+    np.testing.assert_allclose(cue0.background_mean_amplitude_uv, bases, atol=2e-15)
+    np.testing.assert_allclose(cue1.background_mean_amplitude_uv, bases + .8, atol=2e-15)
     np.testing.assert_allclose(cue0.background_corrected_amplitude_uv, -.3 + .01 * np.arange(5), atol=2e-15)
     np.testing.assert_allclose(cue1.background_corrected_amplitude_uv, -.5, atol=2e-15)
     stats = pd.read_csv(tmp_path / "paired_statistics_uncorrected.csv")

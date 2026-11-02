@@ -67,5 +67,5 @@ The analysis method follows the FPVS Toolbox while keeping SSSEP trial timing;
 see [method and verification details](docs/fpvs-parity.md).
 
 Standalone scripts for the two exploratory attention comparisons, including
-pooled 25–27 Hz raw and background-corrected amplitudes, are in
+pooled 25.4/26.4 Hz raw and background-corrected amplitudes, are in
 [research/](research/README.md).
