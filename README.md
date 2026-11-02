@@ -66,6 +66,6 @@ For code changes, use the [code map and testing steps](architecture.md).
 The analysis method follows the FPVS Toolbox while keeping SSSEP trial timing;
 see [method and verification details](docs/fpvs-parity.md).
 
-Standalone scripts for the two exploratory attention comparisons, including
-pooled 25.4/26.4 Hz raw and background-corrected amplitudes, are in
+Standalone scripts for the two exploratory attention comparisons, with separate
+25.4/26.4 Hz and full 25–27 Hz raw/background-corrected analyses, are in
 [research/](research/README.md).

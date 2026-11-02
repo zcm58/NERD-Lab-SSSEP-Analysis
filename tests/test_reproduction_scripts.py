@@ -11,15 +11,31 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ["reproduce_left_vs_right_hand", "reproduce_right_hand_vs_right_ankle"]
+FULL_BAND_SCRIPTS = [name + "_full_band" for name in SCRIPTS]
+ALL_SCRIPTS = SCRIPTS + FULL_BAND_SCRIPTS
+
+
+def load_script(name):
+    spec = spec_from_file_location(name, ROOT / "research" / (name + ".py"))
+    module = module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(params=ALL_SCRIPTS)
+def script(request):
+    return load_script(request.param)
 
 
 @pytest.fixture(params=SCRIPTS)
-def script(request):
-    spec = spec_from_file_location(request.param, ROOT / "research" / (request.param + ".py"))
-    module = module_from_spec(spec)
-    sys.modules[request.param] = module
-    spec.loader.exec_module(module)
-    return module
+def two_bin_script(request):
+    return load_script(request.param)
+
+
+@pytest.fixture(params=FULL_BAND_SCRIPTS)
+def full_band_script(request):
+    return load_script(request.param)
 
 
 def synthetic_dataset(script, n=5):
@@ -51,7 +67,8 @@ def synthetic_dataset(script, n=5):
             "coherent_amplitude_uv": values.copy(), "phase_insensitive_amplitude_uv": values.copy()}
 
 
-def test_pooled_background_subtraction_retains_negative_values_and_pairing(script, tmp_path, monkeypatch):
+def test_pooled_background_subtraction_retains_negative_values_and_pairing(two_bin_script, tmp_path, monkeypatch):
+    script = two_bin_script
     dataset = synthetic_dataset(script)
     # Raster integrity/layout are checked on real-data exports; this checks calculations.
     monkeypatch.setattr(script.plt.Figure, "savefig", lambda *args, **kwargs: None)
@@ -81,6 +98,63 @@ def test_pooled_background_subtraction_retains_negative_values_and_pairing(scrip
     raw = stats[stats.metric == "pooled_raw_amplitude_uv"].iloc[0]
     assert corrected.mean_change_uv == pytest.approx(.22)
     assert raw.mean_change_uv == pytest.approx(-.58)
+
+
+def test_full_band_averages_all_eleven_bins_and_excludes_outside_bins(full_band_script, tmp_path, monkeypatch):
+    script = full_band_script
+    dataset = synthetic_dataset(script)
+    frequency = dataset["frequencies_hz"]
+    signal_indices = [np.flatnonzero(np.isclose(frequency, hz, rtol=0, atol=1e-9))[0]
+                      for hz in np.linspace(25, 27, 11)]
+    background_indices = [np.flatnonzero(np.isclose(frequency, hz, rtol=0, atol=1e-9))[0]
+                          for hz in [*np.linspace(23, 24.4, 8), *np.linspace(27.6, 29, 8)]]
+    outside = np.ones(len(frequency), dtype=bool)
+    outside[signal_indices + background_indices] = False
+    values = dataset["phase_insensitive_amplitude_uv"]
+    for pi in range(5):
+        base = 1 + .2 * pi
+        # Large values include the four guard bins and must enter neither mean.
+        values[pi, 0, :, outside] = 5000 + pi
+        values[pi, 1, :, outside] = 10000 + pi
+        for j, index in enumerate(signal_indices):
+            values[pi, 0, :, index] = base - .3 + .01 * pi + .02 * (j - 5)
+            values[pi, 1, :, index] = base + .3 + .03 * (j - 5)
+        for j, index in enumerate(background_indices):
+            values[pi, 0, :, index] = base + .005 * (j - 7.5)
+            values[pi, 1, :, index] = base + .8 + .007 * (j - 7.5)
+    dataset["coherent_amplitude_uv"] = values.copy()
+    # Identities, rather than lexical row positions, define each paired value.
+    permutation = [2, 0, 4, 1, 3]
+    for key in ("participant_ids", "coherent_amplitude_uv", "phase_insensitive_amplitude_uv"):
+        dataset[key] = dataset[key][permutation]
+    monkeypatch.setattr(script.plt.Figure, "savefig", lambda *args, **kwargs: None)
+    result = script.analyze_and_export(dataset, script.CONFIG, tmp_path)
+    np.testing.assert_allclose(result["signal_bins_hz"], np.linspace(25, 27, 11), rtol=0, atol=1e-9)
+    np.testing.assert_allclose(result["background_bins_hz"], frequency[background_indices], rtol=0, atol=1e-9)
+    assert not set(result["signal_bins_hz"]) & set(result["background_bins_hz"])
+    rows = pd.read_csv(tmp_path / "participant_pooled_values.csv")
+    statistics = pd.read_csv(tmp_path / "paired_statistics_uncorrected.csv")
+    bases = 1 + .2 * np.arange(5)
+    changes = .2 + .01 * np.arange(5)
+    for method in ("coherent", "phase_insensitive"):
+        for roi in script.CONFIG["primary_rois"]:
+            selected = rows[(rows.method == method) & (rows.roi == roi)]
+            cue0 = selected[selected.trigger_code == script.CONFIG["codes"][0]].sort_values("participant_id")
+            cue1 = selected[selected.trigger_code == script.CONFIG["codes"][1]].sort_values("participant_id")
+            np.testing.assert_allclose(cue0.pooled_raw_amplitude_uv, bases - .3 + .01 * np.arange(5), atol=2e-15)
+            np.testing.assert_allclose(cue1.pooled_raw_amplitude_uv, bases + .3, atol=2e-15)
+            np.testing.assert_allclose(cue0.background_mean_amplitude_uv, bases, atol=2e-15)
+            np.testing.assert_allclose(cue1.background_mean_amplitude_uv, bases + .8, atol=2e-15)
+            np.testing.assert_allclose(cue0.background_corrected_amplitude_uv, -.3 + .01 * np.arange(5), atol=2e-15)
+            np.testing.assert_allclose(cue1.background_corrected_amplitude_uv, -.5, atol=2e-15)
+            stats = statistics[(statistics.method == method) & (statistics.comparison == roi)]
+            assert stats.N.eq(5).all() and stats.df.eq(4).all()
+            corrected = stats[stats.metric == "background_corrected_amplitude_uv"].iloc[0]
+            raw = stats[stats.metric == "pooled_raw_amplitude_uv"].iloc[0]
+            assert corrected.mean_change_uv == pytest.approx(changes.mean())
+            assert corrected.t_statistic == pytest.approx(changes.mean() / (changes.std(ddof=1) / np.sqrt(5)))
+            assert raw.mean_change_uv == pytest.approx(-.58)
+    assert (rows.background_corrected_amplitude_uv < 0).all()
 
 
 @pytest.mark.parametrize("problem", ["duplicate_participant", "one_participant", "missing_code", "grid", "negative", "missing_channel"])
@@ -155,11 +229,11 @@ def test_cancelled_run_is_not_left_running(script, tmp_path, monkeypatch):
     assert json.loads(manifest.read_text(encoding="utf-8"))["status"] == "cancelled"
 
 
-def test_both_standalone_files_embed_identical_recording_method():
+def test_all_four_standalone_files_embed_identical_recording_method():
     sections = []
-    for name in SCRIPTS:
+    for name in ALL_SCRIPTS:
         source = (ROOT / "research" / (name + ".py")).read_text(encoding="utf-8")
         assert "from sssep_batch" not in source and "import sssep_batch" not in source
         sections.append(source.split("# BEGIN EMBEDDED RECORDING METHOD\n", 1)[1].split("# END EMBEDDED RECORDING METHOD", 1)[0])
         assert source.index('os.environ[_thread_variable] = "1"') < source.index("import mne")
-    assert sections[0] == sections[1]
+    assert all(section == sections[0] for section in sections[1:])

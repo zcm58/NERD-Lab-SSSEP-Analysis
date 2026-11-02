@@ -1,9 +1,12 @@
 # Reproduce the two attention comparisons
 
-These are two independent, single-file research scripts:
+Choose the comparison and frequency definition to reproduce. Each entry is an
+independent, single-file research script:
 
-- [reproduce_left_vs_right_hand.py](reproduce_left_vs_right_hand.py): trigger codes 11 and 12.
-- [reproduce_right_hand_vs_right_ankle.py](reproduce_right_hand_vs_right_ankle.py): trigger codes 21 and 22.
+| Comparison | Two selected bins: 25.4 and 26.4 Hz | Earlier full band: 25–27 Hz, 11 bins |
+| --- | --- | --- |
+| Left versus right hand, codes 11/12 | [Two-bin script](reproduce_left_vs_right_hand.py) | [Full-band script](reproduce_left_vs_right_hand_full_band.py) |
+| Right hand versus right ankle, codes 21/22 | [Two-bin script](reproduce_right_hand_vs_right_ankle.py) | [Full-band script](reproduce_right_hand_vs_right_ankle_full_band.py) |
 
 Each file contains its own preprocessing, FFTs, statistics and plotting code.
 It does not import `sssep_batch`, another research script, or earlier analysis
@@ -45,17 +48,20 @@ final average reference, six-second epochs and final-five-second FFT window
 - **Diagnostic:** calculate electrode FFT amplitudes for every trial first,
   then average their magnitudes. This also retains non-phase-locked signal and noise.
 
-The newly requested pooled response uses the same frequencies for every person
-and cue:
+Each version uses its fixed signal frequencies for every person and cue:
 
-- Signal: the arithmetic mean of the two saved FFT amplitudes at **25.4 Hz and
+- **Two-bin signal:** the arithmetic mean of the two saved FFT amplitudes at **25.4 Hz and
   26.4 Hz**: `(amplitude_25.4 + amplitude_26.4) / 2`. Other bins, including
   those between these frequencies, do not enter the primary response.
+- **Full-band signal:** the arithmetic mean of all **11 saved FFT amplitudes in
+  25–27 Hz**, inclusive, in 0.2 Hz steps. Use the `_full_band.py` scripts to
+  reproduce the earlier full-band analysis.
 - Spectral background: mean amplitude in **23–24.4 Hz and 27.6–29 Hz**, inclusive:
-  the same 16 background bins used in the earlier analysis.
+  the same 16 background bins for both versions.
 - Corrected response: signal mean minus background mean, in microvolts.
-  Negative corrected values are retained. Multiplying by 2 gives an equivalent
-  two-bin amplitude sum; it leaves paired t statistics unchanged.
+  Negative corrected values are retained. Multiplying by the number of signal
+  bins (2 or 11) gives an equivalent amplitude sum; it leaves paired t
+  statistics unchanged.
 
 This is frequency-domain background subtraction. It is not a TENS-off/resting
 baseline or subtraction of the variable intervals after trigger code 100.
@@ -78,7 +84,7 @@ or electrode-level statistical tests.
 ## Reuse the first run's cache
 
 Raw processing captures all four task codes once and saves
-`full_task_spectra.npz`. Either script can then analyze its own condition from
+`full_task_spectra.npz`. Any of the four scripts can analyze its own condition from
 that cache without reading the BDFs again. Set `CACHE_FILE` at the top, or use:
 
 ```powershell
@@ -99,7 +105,22 @@ spectra, paired plots, corrected-amplitude scalp maps, `analysis_results.json`,
 versions. Raw runs also retain processing-quality reports and the reusable cache.
 Numerical verification is recorded in the manifest when references are supplied.
 
-The two-bin/background-corrected definition differs from both the earlier
-25–27 Hz average and selected-peak analyses. Assess the pooled tables separately;
-do not present the earlier 4% left-cue increase or 4.6% ankle-cue increase as
-results of the new definition.
+## Find the earlier p ≈ 0.0451 result
+
+Run [reproduce_left_vs_right_hand_full_band.py](reproduce_left_vs_right_hand_full_band.py),
+using the original 22 participants or their full-spectrum cache. In the new
+run's `paired_statistics_uncorrected.csv`, select this row:
+
+- `method`: `phase_insensitive`
+- `metric`: `pooled_raw_amplitude_uv`
+- `comparison`: `Spatial interaction`
+
+This reproduces the earlier full-band result, approximately **p = 0.04505**:
+the right-minus-left difference between the left-cue and right-cue changes.
+It is an uncorrected exploratory test of raw mean single-trial amplitudes.
+The background-corrected row and the two-bin scripts use different response
+definitions and need not give that p-value.
+
+Keep the two-bin, full-band and selected-peak findings separate. The earlier 4%
+left-cue increase and 4.6% ankle-cue increase came from selected-peak analyses;
+their reproduction is in the historical tables, not the pooled primary rows.

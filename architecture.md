@@ -110,10 +110,11 @@ Hemisphere comparisons and statistics remain external.
 The independent [research reproduction scripts](research/README.md) each embed
 the fixed C4-reconstructed recording method and their own analysis/plotting code.
 They import no application modules, keep results outside the checkout, and do
-not change the GUI pipeline. Their analysis pools only the 25.4 and 26.4 Hz
-amplitudes with equal weight; separate historical peak tables retain their
-25–27 Hz search. These are research outputs. Keep the two embedded recording
-snapshots identical and verify them against canonical spectra when changing them.
+not change the GUI pipeline. Separate versions average either the two 25.4 and
+26.4 Hz amplitudes or all 11 amplitudes in 25–27 Hz; both retain the same
+background bins and historical 25–27 Hz peak search. These are research outputs.
+Keep all four embedded recording snapshots identical and verify them against
+canonical spectra when changing them.
 
 All FFT spectrum PNGs use `Condition_ROI_FFT_Amplitude.png`. Use the full recorded
 trigger label and ROI name (selected electrode for processing plots); replace
