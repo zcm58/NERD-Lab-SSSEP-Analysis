@@ -1,7 +1,7 @@
 """One PySide6 launcher for participant tasks and recording analysis.
 
-Participant presentation runs on Qt's GUI thread. BDF processing and saved
-plot work stay off the GUI thread.
+Participant presentation runs on Qt's GUI thread. Recording processing,
+saved plot work, and demographics export stay off the GUI thread.
 """
 
 from __future__ import annotations
@@ -26,6 +26,10 @@ from sssep_batch.experiment import (
     QtTaskRunner,
     TaskSettings,
     analysis_protocol_for_task,
+)
+from sssep_batch.experiment.demographics import (
+    DemographicsExportResult,
+    export_demographics,
 )
 from sssep_batch.models import AnalysisProtocol
 from sssep_batch.launcher_settings import (
@@ -171,6 +175,22 @@ def launch_gui() -> int:
             total = int(event.get("total", 0) or 0)
             self.progress_changed.emit(message, completed, total)
 
+    class DemographicsExportWorker(QThread):
+        """Read task logs and save the CSV off the UI thread."""
+
+        def __init__(self, log_folder: Path, output_path: Path, parent: QWidget) -> None:
+            super().__init__(parent)
+            self.log_folder = log_folder
+            self.output_path = output_path
+            self.result: DemographicsExportResult | None = None
+            self.error: Exception | None = None
+
+        def run(self) -> None:
+            try:
+                self.result = export_demographics(self.log_folder, self.output_path)
+            except Exception as exc:
+                self.error = exc
+
     class LauncherWindow(QWidget):
         """Single launcher for task presentation and BDF analysis."""
 
@@ -178,6 +198,7 @@ def launch_gui() -> int:
             """Create widgets, load saved folders, and wire up button actions."""
             super().__init__()
             self.worker: BatchWorker | None = None
+            self.demographics_worker: DemographicsExportWorker | None = None
             self.task_runner: QtTaskRunner | None = None
             self.task_running = False
             self.output_folder = ""
@@ -193,6 +214,7 @@ def launch_gui() -> int:
                 trigger_codes=CueTriggerCodes(11, 12, 21, 22),
             )
             self.settings_action = QAction("Settings...", self)
+            self.demographics_action = QAction("Export Participant Demographics...", self)
             self.start_task_button = QPushButton("Start SSSEP Task")
             self.task_status_label = QLabel("")
             self.task_status_label.hide()
@@ -333,6 +355,7 @@ def launch_gui() -> int:
             # Retain the wrapper so Qt's menu action survives Python collection.
             self.file_menu_action = self.file_menu.menuAction()
             self.file_menu.addAction(self.settings_action)
+            self.file_menu.addAction(self.demographics_action)
             self.view_menu = menu_bar.addMenu("View")
             self.view_menu_action = self.view_menu.menuAction()
             self.view_action_group = QActionGroup(self)
@@ -368,6 +391,7 @@ def launch_gui() -> int:
         def _connect_signals(self) -> None:
             """Connect button clicks to the methods that handle them."""
             self.settings_action.triggered.connect(self._open_settings)
+            self.demographics_action.triggered.connect(self._export_demographics)
             self.start_task_button.clicked.connect(self._start_task)
             self.input_browse_button.clicked.connect(self._browse_input)
             self.output_browse_button.clicked.connect(self._browse_output)
@@ -378,9 +402,76 @@ def launch_gui() -> int:
                 self._saved_plot_busy_changed
             )
 
+        def _workflow_is_busy(self) -> bool:
+            return (
+                self.worker is not None or self.task_running
+                or self.saved_plots_page.is_busy() or self.demographics_worker is not None
+            )
+
+        def _export_demographics(self) -> None:
+            """Choose an export path for the participant data in the task logs."""
+            if self._workflow_is_busy():
+                return
+            log_folder = (
+                None if self._settings_need_review else self.session_settings.output_folder
+            )
+            try:
+                has_log_folder = log_folder is not None and log_folder.is_dir()
+            except OSError:
+                has_log_folder = False
+            if not has_log_folder:
+                selected = QFileDialog.getExistingDirectory(
+                    self, "Choose SSSEP Task Log Folder", str(log_folder or ""),
+                )
+                if not selected:
+                    return
+                log_folder = Path(selected)
+
+            dialog = QFileDialog(
+                self, "Export Participant Demographics", str(log_folder), "CSV files (*.csv)",
+            )
+            dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+            dialog.setDefaultSuffix("csv")
+            dialog.selectFile("participant_demographics.csv")
+            selected_paths = (
+                dialog.selectedFiles()
+                if dialog.exec() == QDialog.DialogCode.Accepted else []
+            )
+            dialog.deleteLater()
+            if not selected_paths or self._workflow_is_busy():
+                return
+
+            self.demographics_worker = DemographicsExportWorker(
+                log_folder, Path(selected_paths[0]), self,
+            )
+            self.demographics_worker.finished.connect(self._demographics_finished)
+            self.demographics_worker.finished.connect(self.demographics_worker.deleteLater)
+            self.pages.setEnabled(False)
+            self._set_navigation_busy(True)
+            self.demographics_worker.start()
+
+        def _demographics_finished(self) -> None:
+            """Restore the launcher before opening the result message."""
+            worker = self.demographics_worker
+            self.demographics_worker = None
+            self.pages.setEnabled(True)
+            self._set_navigation_busy(self._workflow_is_busy())
+            if worker.error is not None:
+                QMessageBox.warning(
+                    self, "Could Not Export Participant Demographics", str(worker.error),
+                )
+                return
+            result = worker.result
+            message = f"Exported {result.exported_count} task run(s).\n{result.output_path}"
+            if result.skipped_count:
+                message += f"\n\nSkipped {result.skipped_count} log file(s)."
+            if result.invalid_count:
+                message += f" {result.invalid_count} had invalid or conflicting records."
+            QMessageBox.information(self, "Participant Demographics Exported", message)
+
         def _open_settings(self) -> None:
             """Apply a validated draft only after the operator chooses Save."""
-            if self.worker is not None or self.task_running or self.saved_plots_page.is_busy():
+            if self._workflow_is_busy():
                 return
             dataset = self.saved_plots_page.dataset
             available = tuple(dict.fromkeys((
@@ -436,8 +527,7 @@ def launch_gui() -> int:
             finally:
                 self.plot_channel_combo.blockSignals(blocked)
             self.plot_channel_combo.setEnabled(not (
-                self._settings_need_review or self.worker is not None
-                or self.task_running or self.saved_plots_page.is_busy()
+                self._settings_need_review or self._workflow_is_busy()
             ))
             settings = self.session_settings
             frequency = "Not set" if self.stimulation_hz is None else f"{self.stimulation_hz:g} Hz"
@@ -452,8 +542,7 @@ def launch_gui() -> int:
             if plot_channel == self.plot_channel:
                 return
             if (
-                self._settings_need_review or self.worker is not None
-                or self.task_running or self.saved_plots_page.is_busy()
+                self._settings_need_review or self._workflow_is_busy()
                 or plot_channel not in BIOSEMI64_CHANNELS
             ):
                 self._refresh_settings_summary()
@@ -495,7 +584,7 @@ def launch_gui() -> int:
 
         def _start_processing(self) -> None:
             """Start setup checks and processing off the UI thread."""
-            if self.worker is not None or self.task_running or self.saved_plots_page.is_busy():
+            if self._workflow_is_busy():
                 return
             input_folder = self.input_edit.text().strip()
             output_root = self.output_edit.text().strip()
@@ -551,7 +640,7 @@ def launch_gui() -> int:
 
         def _start_task(self) -> None:
             """Validate task fields and start the Qt presentation session."""
-            if self.task_running or self.worker is not None or self.saved_plots_page.is_busy():
+            if self._workflow_is_busy():
                 return
             try:
                 settings = self._task_settings()
@@ -591,6 +680,9 @@ def launch_gui() -> int:
 
         def closeEvent(self, event) -> None:
             """Block closing while participant or analysis work is active."""
+            if self.demographics_worker is not None:
+                event.ignore()
+                return
             if self.worker is not None and self.worker.isRunning():
                 event.ignore()
                 self.status_label.setText(
@@ -618,6 +710,8 @@ def launch_gui() -> int:
                 self.task_runner.request_stop()
             if self.worker is not None and self.worker.isRunning():
                 self.worker.wait()
+            if self.demographics_worker is not None and self.demographics_worker.isRunning():
+                self.demographics_worker.wait()
             self.saved_plots_page.wait_for_workers()
 
         def _worker_finished(self) -> None:
@@ -642,10 +736,11 @@ def launch_gui() -> int:
 
         def _saved_plot_busy_changed(self, working: bool) -> None:
             """Keep other workflows idle during saved-result work."""
-            self._set_navigation_busy(working)
+            self._set_navigation_busy(working or self.demographics_worker is not None)
 
         def _set_navigation_busy(self, working: bool) -> None:
             self.settings_action.setEnabled(not working)
+            self.demographics_action.setEnabled(not working)
             self.plot_channel_combo.setEnabled(not (working or self._settings_need_review))
             for action in self.view_actions:
                 action.setEnabled(not working)

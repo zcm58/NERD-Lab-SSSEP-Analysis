@@ -22,6 +22,7 @@ PySide6 also presents the fullscreen participant task.
 | Analysis defaults and advanced processing settings | [config.py](sssep_batch/config.py) |
 | Task settings and event records | [experiment/models.py](sssep_batch/experiment/models.py) |
 | Participant information survey | [experiment/participant_information.py](sssep_batch/experiment/participant_information.py) |
+| Participant demographics CSV export from task logs | [experiment/demographics.py](sssep_batch/experiment/demographics.py) |
 | Balanced randomized cue order | [experiment/schedule.py](sssep_batch/experiment/schedule.py) |
 | Fullscreen prompts, breaks, countdowns, or task CSV log | [experiment/runner.py](sssep_batch/experiment/runner.py) |
 | Fixed COM3 connection or one-byte BioSemi markers | [experiment/triggers.py](sssep_batch/experiment/triggers.py) |

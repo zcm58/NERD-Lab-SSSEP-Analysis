@@ -55,6 +55,19 @@ frame's Qt buffer swap. Confirm physical screen and BioSemi timing before data c
 Press **Escape** to abort. Keep the task log with the matching BioSemi
 recording; an aborted run still needs review before analysis.
 
+## Export participant demographics
+
+Choose **File > Export Participant Demographics…**, then choose where to save
+the CSV. The app reads the task logs in the task log folder set in
+**File > Settings**. If that folder is unavailable, choose the folder containing
+the task logs when prompted.
+
+Each row contains the participant number, age, sex, handedness, and colorblind
+status for one task run, along with the run ID, start time, and source filename.
+Repeated participant numbers appear on separate rows. Aborted runs with
+demographics are marked as aborted. The export skips test runs and older logs
+without demographics.
+
 ## Analyze recordings
 
 1. In **File > Settings**, match the epoch duration and per-condition count to
